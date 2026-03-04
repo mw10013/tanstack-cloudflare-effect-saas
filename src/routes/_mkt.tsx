@@ -151,6 +151,16 @@ export function Footer() {
             </li>
             <li>
               <a
+                href="https://effect.website/"
+                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Effect
+              </a>
+            </li>
+            <li>
+              <a
                 href="https://www.better-auth.com/"
                 className="text-muted-foreground data-hovered:text-foreground transition-colors"
                 target="_blank"
