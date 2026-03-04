@@ -53,7 +53,7 @@ function RouteComponent() {
             variant="outline"
             render={
               <a
-                href="https://github.com/mw10013/tanstack-cloudflare-agent"
+                href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
                 target="_blank"
                 rel="noopener noreferrer"
               />
@@ -405,7 +405,7 @@ function RouteComponent() {
               variant="outline"
               render={
                 <a
-                  href="https://github.com/mw10013/tanstack-cloudflare-agent"
+                  href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
                   target="_blank"
                   rel="noopener noreferrer"
                 />
