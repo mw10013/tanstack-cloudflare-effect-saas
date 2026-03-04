@@ -70,7 +70,7 @@ delete from Organization where id in (
             );
 
             const message = `Deleted user ${email}, deletedOrganizationCount: ${String(deleteOrganizationResult.results.length)} deletedUserCount: ${String(deleteUserResult.results.length)})`;
-            console.log(message);
+            yield* Effect.logInfo(message);
             return Response.json({
               success: true,
               message,

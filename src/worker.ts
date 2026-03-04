@@ -169,22 +169,24 @@ export default {
   },
 
   async scheduled(scheduledEvent, env, _ctx) {
+    const runEffect = makeRunEffect(env);
     switch (scheduledEvent.cron) {
-      case "0 0 * * *": {
-        const runEffect = makeRunEffect(env);
-        const deletedCount = await runEffect(
+      case "0 0 * * *":
+        await runEffect(
           Effect.gen(function* () {
             const repository = yield* Repository;
-            return yield* repository.deleteExpiredSessions();
+            const deletedCount = yield* repository.deleteExpiredSessions();
+            yield* Effect.logInfo("session.cleanup.expired", { deletedCount });
           }),
         );
-        console.log(`Deleted ${String(deletedCount)} expired sessions`);
         break;
-      }
-      default: {
-        console.warn(`Unexpected cron schedule: ${scheduledEvent.cron}`);
+      default:
+        await runEffect(
+          Effect.logWarning("session.cleanup.unexpectedCronSchedule", {
+            cron: scheduledEvent.cron,
+          }),
+        );
         break;
-      }
     }
   },
 } satisfies ExportedHandler<Env>;

@@ -118,11 +118,11 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
             cachedPlans,
           );
           if (Option.isSome(parseResult)) {
-            console.log(`stripeService: getPlans: cache hit`);
+            yield* Effect.logInfo("stripe.getPlans.cacheHit");
             return [...parseResult.value] as readonly Plan[];
           }
         }
-        console.log(`stripeService: getPlans: cache miss`);
+        yield* Effect.logInfo("stripe.getPlans.cacheMiss");
         const prices = yield* getPrices();
         const plans = yield* Effect.all(
           planData.map((plan) =>
@@ -242,13 +242,12 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
               },
             }),
           );
-          console.log(
-            `stripeService: ensureBillingPortalConfiguration: created billing portal configuration`,
-          );
+          yield* Effect.logInfo("stripe.ensureBillingPortalConfiguration.created");
         } else {
           if (configurations.data.length > 1) {
-            console.log(
-              "WARNING: More than 1 billing portal configuration found. Should not be more than 1.",
+            yield* Effect.logWarning(
+              "stripe.ensureBillingPortalConfiguration.multipleConfigurations",
+              { count: configurations.data.length },
             );
           }
           yield* tryStripe("KV.put(stripe:isBillingPortalConfigured)", () =>

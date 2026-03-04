@@ -80,7 +80,7 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
             subscriptions.length > 0
               ? subscriptions[0].stripeSubscriptionId
               : undefined;
-          console.log(`pricing: upgradeSubscription`, {
+          yield* Effect.logInfo("pricing.upgradeSubscription.start", {
             plan: plan.name,
             subscriptionId,
           });
@@ -101,12 +101,15 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
                   disableRedirect: false,
                 },
               })
-              .catch((error: unknown) => {
-                console.error("pricing: upgradeSubscription failed", error);
-                throw error;
-              }),
+          ).pipe(
+            Effect.tapError((error) =>
+              Effect.logError("pricing.upgradeSubscription.failed", { error }),
+            ),
           );
-          console.log(`pricing: upgradeSubscription`, { isRedirect, url });
+          yield* Effect.logInfo("pricing.upgradeSubscription.response", {
+            isRedirect,
+            url,
+          });
           if (!isRedirect || !url) {
             return yield* Effect.fail(
               new Error("Failed to create checkout session"),

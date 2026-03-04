@@ -69,7 +69,7 @@ export const login = createServerFn({
           ? ((yield* Effect.tryPromise(() => KV.get(`demo:magicLink`))) ??
             undefined)
           : undefined;
-        console.log("magicLink", magicLink);
+        yield* Effect.logInfo("auth.magicLink.generated", { magicLink });
         return { success: true as const, magicLink };
       }),
     ),
