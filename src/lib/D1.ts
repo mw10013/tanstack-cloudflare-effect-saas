@@ -1,5 +1,4 @@
 import { Cause, Data, Effect, Layer, Schedule, ServiceMap } from "effect";
-import { dual } from "effect/Function";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
 // https://gist.github.com/rxliuli/be31cbded41ef7eac6ae0da9070c8ef8
