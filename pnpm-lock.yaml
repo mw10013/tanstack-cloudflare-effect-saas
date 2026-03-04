@@ -201,9 +201,6 @@ importers:
       '@ianvs/prettier-plugin-sort-imports':
         specifier: 4.7.0
         version: 4.7.0(prettier@3.7.4)
-      '@opencode-ai/plugin':
-        specifier: 1.1.51
-        version: 1.1.51
       '@playwright/test':
         specifier: 1.57.0
         version: 1.57.0
@@ -1616,12 +1613,6 @@ packages:
 
   '@open-draft/until@2.1.0':
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
-
-  '@opencode-ai/plugin@1.1.51':
-    resolution: {integrity: sha512-FMtwIEG1HdXaQ4qtzRelF++qjKL4QKtJOB5Atud0Xu5c9T48TGCDDQJONTAjgVleyq3bb73tUt+ACBK0QSEOyw==}
-
-  '@opencode-ai/sdk@1.1.51':
-    resolution: {integrity: sha512-UL66X46AGgui5xURGEenXsIsgNVmgfkmJJeRtdeOMLhi/RcbTBikfPjjtmym3VLnqp855Wt7dZ/vAjOXqiUKXA==}
 
   '@openrouter/ai-sdk-provider@2.0.2':
     resolution: {integrity: sha512-G+8Z7Q4R61anj/nk/hmb1JAAjYpP/LEFA4mjQnitMGDLscoeThPpOl6xFKalzfkd2WSweeKRYAID5HxzEMCbPQ==}
@@ -7124,9 +7115,6 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.1.8:
-    resolution: {integrity: sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ==}
-
   zod@4.3.3:
     resolution: {integrity: sha512-bQ7Rxwfn04DCrTjjRfD9SavY2vWdmf3REjs/mkc1LdwI1KkcHClBRJmnvmA/6epGeqlHePtIRF1J4SrMMlW7IA==}
 
@@ -8402,13 +8390,6 @@ snapshots:
       outvariant: 1.4.3
 
   '@open-draft/until@2.1.0': {}
-
-  '@opencode-ai/plugin@1.1.51':
-    dependencies:
-      '@opencode-ai/sdk': 1.1.51
-      zod: 4.1.8
-
-  '@opencode-ai/sdk@1.1.51': {}
 
   '@openrouter/ai-sdk-provider@2.0.2(ai@6.0.49(zod@4.3.6))(zod@4.3.6)':
     dependencies:
@@ -14761,8 +14742,6 @@ snapshots:
       zod: 4.3.3
 
   zod@3.25.76: {}
-
-  zod@4.1.8: {}
 
   zod@4.3.3: {}
 
