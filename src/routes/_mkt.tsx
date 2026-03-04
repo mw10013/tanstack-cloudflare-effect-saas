@@ -199,7 +199,7 @@ export function Footer() {
       </div>
       <div className="border-border/40 flex flex-col items-center justify-between gap-4 border-t border-dashed pt-8 sm:flex-row">
         <p className="text-muted-foreground text-sm">
-          © 2025 TCA. Built with ♥ by{" "}
+          © 2025 TCES. Built with ♥ by{" "}
           <a
             href="https://github.com/mw10013"
             target="_blank"
