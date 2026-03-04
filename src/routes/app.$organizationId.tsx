@@ -122,7 +122,7 @@ function AppSidebar({
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex w-full items-center gap-2 p-2">
+        <div className="flex w-full items-center gap-3 p-2">
           <Button
             variant="ghost"
             size="icon"
