@@ -35,8 +35,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Auth } from "@/lib/Auth";
-import { signOutServerFn } from "@/lib/Auth";
+import { Auth, signOutServerFn } from "@/lib/Auth";
 
 const switchOrganizationServerFn = createServerFn({ method: "POST" })
   .inputValidator((organizationId: string) => organizationId)
@@ -150,96 +149,6 @@ function AppSidebar({
                       params={{ organizationId: organization.id }}
                     >
                       Organization Home
-                    </Link>
-                  }
-                />
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={Boolean(
-                    matchRoute({ to: "/app/$organizationId/agent" }),
-                  )}
-                  render={
-                    <Link
-                      to="/app/$organizationId/agent"
-                      params={{ organizationId: organization.id }}
-                    >
-                      Agent
-                    </Link>
-                  }
-                />
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={Boolean(
-                    matchRoute({ to: "/app/$organizationId/chat" }),
-                  )}
-                  render={
-                    <Link
-                      to="/app/$organizationId/chat"
-                      params={{ organizationId: organization.id }}
-                    >
-                      Chat
-                    </Link>
-                  }
-                />
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={Boolean(
-                    matchRoute({ to: "/app/$organizationId/workflow" }),
-                  )}
-                  render={
-                    <Link
-                      to="/app/$organizationId/workflow"
-                      params={{ organizationId: organization.id }}
-                    >
-                      Workflow
-                    </Link>
-                  }
-                />
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={Boolean(
-                    matchRoute({ to: "/app/$organizationId/upload" }),
-                  )}
-                  render={
-                    <Link
-                      to="/app/$organizationId/upload"
-                      params={{ organizationId: organization.id }}
-                    >
-                      Upload
-                    </Link>
-                  }
-                />
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={Boolean(
-                    matchRoute({ to: "/app/$organizationId/google" }),
-                  )}
-                  render={
-                    <Link
-                      to="/app/$organizationId/google"
-                      params={{ organizationId: organization.id }}
-                    >
-                      Google
-                    </Link>
-                  }
-                />
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={Boolean(
-                    matchRoute({ to: "/app/$organizationId/inspector" }),
-                  )}
-                  render={
-                    <Link
-                      to="/app/$organizationId/inspector"
-                      params={{ organizationId: organization.id }}
-                    >
-                      Inspector
                     </Link>
                   }
                 />

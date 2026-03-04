@@ -24,18 +24,10 @@ import { Route as AdminSessionsRouteImport } from './routes/admin.sessions'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as MktPricingRouteImport } from './routes/_mkt.pricing'
 import { Route as AppOrganizationIdIndexRouteImport } from './routes/app.$organizationId.index'
-import { Route as AppOrganizationIdWorkflowRouteImport } from './routes/app.$organizationId.workflow'
-import { Route as AppOrganizationIdUploadRouteImport } from './routes/app.$organizationId.upload'
 import { Route as AppOrganizationIdMembersRouteImport } from './routes/app.$organizationId.members'
 import { Route as AppOrganizationIdInvitationsRouteImport } from './routes/app.$organizationId.invitations'
-import { Route as AppOrganizationIdInspectorRouteImport } from './routes/app.$organizationId.inspector'
-import { Route as AppOrganizationIdGoogleRouteImport } from './routes/app.$organizationId.google'
-import { Route as AppOrganizationIdChatRouteImport } from './routes/app.$organizationId.chat'
 import { Route as AppOrganizationIdBillingRouteImport } from './routes/app.$organizationId.billing'
-import { Route as AppOrganizationIdAgentRouteImport } from './routes/app.$organizationId.agent'
-import { Route as ApiGoogleCallbackRouteImport } from './routes/api/google/callback'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiOrgOrganizationIdUploadImageNameRouteImport } from './routes/api/org.$organizationId.upload-image.$name'
 import { Route as ApiE2eDeleteUserEmailRouteImport } from './routes/api/e2e/delete/user/$email'
 
 const MagicLinkRoute = MagicLinkRouteImport.update({
@@ -112,17 +104,6 @@ const AppOrganizationIdIndexRoute = AppOrganizationIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppOrganizationIdRoute,
 } as any)
-const AppOrganizationIdWorkflowRoute =
-  AppOrganizationIdWorkflowRouteImport.update({
-    id: '/workflow',
-    path: '/workflow',
-    getParentRoute: () => AppOrganizationIdRoute,
-  } as any)
-const AppOrganizationIdUploadRoute = AppOrganizationIdUploadRouteImport.update({
-  id: '/upload',
-  path: '/upload',
-  getParentRoute: () => AppOrganizationIdRoute,
-} as any)
 const AppOrganizationIdMembersRoute =
   AppOrganizationIdMembersRouteImport.update({
     id: '/members',
@@ -135,49 +116,17 @@ const AppOrganizationIdInvitationsRoute =
     path: '/invitations',
     getParentRoute: () => AppOrganizationIdRoute,
   } as any)
-const AppOrganizationIdInspectorRoute =
-  AppOrganizationIdInspectorRouteImport.update({
-    id: '/inspector',
-    path: '/inspector',
-    getParentRoute: () => AppOrganizationIdRoute,
-  } as any)
-const AppOrganizationIdGoogleRoute = AppOrganizationIdGoogleRouteImport.update({
-  id: '/google',
-  path: '/google',
-  getParentRoute: () => AppOrganizationIdRoute,
-} as any)
-const AppOrganizationIdChatRoute = AppOrganizationIdChatRouteImport.update({
-  id: '/chat',
-  path: '/chat',
-  getParentRoute: () => AppOrganizationIdRoute,
-} as any)
 const AppOrganizationIdBillingRoute =
   AppOrganizationIdBillingRouteImport.update({
     id: '/billing',
     path: '/billing',
     getParentRoute: () => AppOrganizationIdRoute,
   } as any)
-const AppOrganizationIdAgentRoute = AppOrganizationIdAgentRouteImport.update({
-  id: '/agent',
-  path: '/agent',
-  getParentRoute: () => AppOrganizationIdRoute,
-} as any)
-const ApiGoogleCallbackRoute = ApiGoogleCallbackRouteImport.update({
-  id: '/api/google/callback',
-  path: '/api/google/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiOrgOrganizationIdUploadImageNameRoute =
-  ApiOrgOrganizationIdUploadImageNameRouteImport.update({
-    id: '/api/org/$organizationId/upload-image/$name',
-    path: '/api/org/$organizationId/upload-image/$name',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiE2eDeleteUserEmailRoute = ApiE2eDeleteUserEmailRouteImport.update({
   id: '/api/e2e/delete/user/$email',
   path: '/api/e2e/delete/user/$email',
@@ -199,19 +148,11 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/google/callback': typeof ApiGoogleCallbackRoute
-  '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
-  '/app/$organizationId/chat': typeof AppOrganizationIdChatRoute
-  '/app/$organizationId/google': typeof AppOrganizationIdGoogleRoute
-  '/app/$organizationId/inspector': typeof AppOrganizationIdInspectorRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/members': typeof AppOrganizationIdMembersRoute
-  '/app/$organizationId/upload': typeof AppOrganizationIdUploadRoute
-  '/app/$organizationId/workflow': typeof AppOrganizationIdWorkflowRoute
   '/app/$organizationId/': typeof AppOrganizationIdIndexRoute
   '/api/e2e/delete/user/$email': typeof ApiE2eDeleteUserEmailRoute
-  '/api/org/$organizationId/upload-image/$name': typeof ApiOrgOrganizationIdUploadImageNameRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -225,19 +166,11 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminIndexRoute
   '/app': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/google/callback': typeof ApiGoogleCallbackRoute
-  '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
-  '/app/$organizationId/chat': typeof AppOrganizationIdChatRoute
-  '/app/$organizationId/google': typeof AppOrganizationIdGoogleRoute
-  '/app/$organizationId/inspector': typeof AppOrganizationIdInspectorRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/members': typeof AppOrganizationIdMembersRoute
-  '/app/$organizationId/upload': typeof AppOrganizationIdUploadRoute
-  '/app/$organizationId/workflow': typeof AppOrganizationIdWorkflowRoute
   '/app/$organizationId': typeof AppOrganizationIdIndexRoute
   '/api/e2e/delete/user/$email': typeof ApiE2eDeleteUserEmailRoute
-  '/api/org/$organizationId/upload-image/$name': typeof ApiOrgOrganizationIdUploadImageNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -256,19 +189,11 @@ export interface FileRoutesById {
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/google/callback': typeof ApiGoogleCallbackRoute
-  '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
-  '/app/$organizationId/chat': typeof AppOrganizationIdChatRoute
-  '/app/$organizationId/google': typeof AppOrganizationIdGoogleRoute
-  '/app/$organizationId/inspector': typeof AppOrganizationIdInspectorRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/members': typeof AppOrganizationIdMembersRoute
-  '/app/$organizationId/upload': typeof AppOrganizationIdUploadRoute
-  '/app/$organizationId/workflow': typeof AppOrganizationIdWorkflowRoute
   '/app/$organizationId/': typeof AppOrganizationIdIndexRoute
   '/api/e2e/delete/user/$email': typeof ApiE2eDeleteUserEmailRoute
-  '/api/org/$organizationId/upload-image/$name': typeof ApiOrgOrganizationIdUploadImageNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -287,19 +212,11 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/app/'
     | '/api/auth/$'
-    | '/api/google/callback'
-    | '/app/$organizationId/agent'
     | '/app/$organizationId/billing'
-    | '/app/$organizationId/chat'
-    | '/app/$organizationId/google'
-    | '/app/$organizationId/inspector'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/members'
-    | '/app/$organizationId/upload'
-    | '/app/$organizationId/workflow'
     | '/app/$organizationId/'
     | '/api/e2e/delete/user/$email'
-    | '/api/org/$organizationId/upload-image/$name'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -313,19 +230,11 @@ export interface FileRouteTypes {
     | '/admin'
     | '/app'
     | '/api/auth/$'
-    | '/api/google/callback'
-    | '/app/$organizationId/agent'
     | '/app/$organizationId/billing'
-    | '/app/$organizationId/chat'
-    | '/app/$organizationId/google'
-    | '/app/$organizationId/inspector'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/members'
-    | '/app/$organizationId/upload'
-    | '/app/$organizationId/workflow'
     | '/app/$organizationId'
     | '/api/e2e/delete/user/$email'
-    | '/api/org/$organizationId/upload-image/$name'
   id:
     | '__root__'
     | '/_mkt'
@@ -343,19 +252,11 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/app/'
     | '/api/auth/$'
-    | '/api/google/callback'
-    | '/app/$organizationId/agent'
     | '/app/$organizationId/billing'
-    | '/app/$organizationId/chat'
-    | '/app/$organizationId/google'
-    | '/app/$organizationId/inspector'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/members'
-    | '/app/$organizationId/upload'
-    | '/app/$organizationId/workflow'
     | '/app/$organizationId/'
     | '/api/e2e/delete/user/$email'
-    | '/api/org/$organizationId/upload-image/$name'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -365,9 +266,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MagicLinkRoute: typeof MagicLinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiGoogleCallbackRoute: typeof ApiGoogleCallbackRoute
   ApiE2eDeleteUserEmailRoute: typeof ApiE2eDeleteUserEmailRoute
-  ApiOrgOrganizationIdUploadImageNameRoute: typeof ApiOrgOrganizationIdUploadImageNameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -477,20 +376,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizationIdIndexRouteImport
       parentRoute: typeof AppOrganizationIdRoute
     }
-    '/app/$organizationId/workflow': {
-      id: '/app/$organizationId/workflow'
-      path: '/workflow'
-      fullPath: '/app/$organizationId/workflow'
-      preLoaderRoute: typeof AppOrganizationIdWorkflowRouteImport
-      parentRoute: typeof AppOrganizationIdRoute
-    }
-    '/app/$organizationId/upload': {
-      id: '/app/$organizationId/upload'
-      path: '/upload'
-      fullPath: '/app/$organizationId/upload'
-      preLoaderRoute: typeof AppOrganizationIdUploadRouteImport
-      parentRoute: typeof AppOrganizationIdRoute
-    }
     '/app/$organizationId/members': {
       id: '/app/$organizationId/members'
       path: '/members'
@@ -505,27 +390,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizationIdInvitationsRouteImport
       parentRoute: typeof AppOrganizationIdRoute
     }
-    '/app/$organizationId/inspector': {
-      id: '/app/$organizationId/inspector'
-      path: '/inspector'
-      fullPath: '/app/$organizationId/inspector'
-      preLoaderRoute: typeof AppOrganizationIdInspectorRouteImport
-      parentRoute: typeof AppOrganizationIdRoute
-    }
-    '/app/$organizationId/google': {
-      id: '/app/$organizationId/google'
-      path: '/google'
-      fullPath: '/app/$organizationId/google'
-      preLoaderRoute: typeof AppOrganizationIdGoogleRouteImport
-      parentRoute: typeof AppOrganizationIdRoute
-    }
-    '/app/$organizationId/chat': {
-      id: '/app/$organizationId/chat'
-      path: '/chat'
-      fullPath: '/app/$organizationId/chat'
-      preLoaderRoute: typeof AppOrganizationIdChatRouteImport
-      parentRoute: typeof AppOrganizationIdRoute
-    }
     '/app/$organizationId/billing': {
       id: '/app/$organizationId/billing'
       path: '/billing'
@@ -533,32 +397,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizationIdBillingRouteImport
       parentRoute: typeof AppOrganizationIdRoute
     }
-    '/app/$organizationId/agent': {
-      id: '/app/$organizationId/agent'
-      path: '/agent'
-      fullPath: '/app/$organizationId/agent'
-      preLoaderRoute: typeof AppOrganizationIdAgentRouteImport
-      parentRoute: typeof AppOrganizationIdRoute
-    }
-    '/api/google/callback': {
-      id: '/api/google/callback'
-      path: '/api/google/callback'
-      fullPath: '/api/google/callback'
-      preLoaderRoute: typeof ApiGoogleCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/org/$organizationId/upload-image/$name': {
-      id: '/api/org/$organizationId/upload-image/$name'
-      path: '/api/org/$organizationId/upload-image/$name'
-      fullPath: '/api/org/$organizationId/upload-image/$name'
-      preLoaderRoute: typeof ApiOrgOrganizationIdUploadImageNameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/e2e/delete/user/$email': {
@@ -602,28 +445,16 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface AppOrganizationIdRouteChildren {
-  AppOrganizationIdAgentRoute: typeof AppOrganizationIdAgentRoute
   AppOrganizationIdBillingRoute: typeof AppOrganizationIdBillingRoute
-  AppOrganizationIdChatRoute: typeof AppOrganizationIdChatRoute
-  AppOrganizationIdGoogleRoute: typeof AppOrganizationIdGoogleRoute
-  AppOrganizationIdInspectorRoute: typeof AppOrganizationIdInspectorRoute
   AppOrganizationIdInvitationsRoute: typeof AppOrganizationIdInvitationsRoute
   AppOrganizationIdMembersRoute: typeof AppOrganizationIdMembersRoute
-  AppOrganizationIdUploadRoute: typeof AppOrganizationIdUploadRoute
-  AppOrganizationIdWorkflowRoute: typeof AppOrganizationIdWorkflowRoute
   AppOrganizationIdIndexRoute: typeof AppOrganizationIdIndexRoute
 }
 
 const AppOrganizationIdRouteChildren: AppOrganizationIdRouteChildren = {
-  AppOrganizationIdAgentRoute: AppOrganizationIdAgentRoute,
   AppOrganizationIdBillingRoute: AppOrganizationIdBillingRoute,
-  AppOrganizationIdChatRoute: AppOrganizationIdChatRoute,
-  AppOrganizationIdGoogleRoute: AppOrganizationIdGoogleRoute,
-  AppOrganizationIdInspectorRoute: AppOrganizationIdInspectorRoute,
   AppOrganizationIdInvitationsRoute: AppOrganizationIdInvitationsRoute,
   AppOrganizationIdMembersRoute: AppOrganizationIdMembersRoute,
-  AppOrganizationIdUploadRoute: AppOrganizationIdUploadRoute,
-  AppOrganizationIdWorkflowRoute: AppOrganizationIdWorkflowRoute,
   AppOrganizationIdIndexRoute: AppOrganizationIdIndexRoute,
 }
 
@@ -649,10 +480,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MagicLinkRoute: MagicLinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiGoogleCallbackRoute: ApiGoogleCallbackRoute,
   ApiE2eDeleteUserEmailRoute: ApiE2eDeleteUserEmailRoute,
-  ApiOrgOrganizationIdUploadImageNameRoute:
-    ApiOrgOrganizationIdUploadImageNameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
