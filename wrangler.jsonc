@@ -14,8 +14,7 @@
     "DEMO_MODE": "true",
     "TRANSACTIONAL_EMAIL": "noreply@example.com",
     "BETTER_AUTH_URL": "http://localhost:3000",
-    "ANALYTICS_TOKEN": "",
-    "EMAIL_WHITELIST": ""
+    "ANALYTICS_TOKEN": ""
   },
   "observability": {
     "enabled": true

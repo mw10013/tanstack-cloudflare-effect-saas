@@ -6,7 +6,6 @@ import { Config, Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Auth } from "@/lib/Auth";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,6 +21,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Auth } from "@/lib/Auth";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
 export const Route = createFileRoute("/login")({
@@ -51,21 +51,9 @@ export const login = createServerFn({
     runEffect(
       Effect.gen(function* () {
         const auth = yield* Auth;
-        const environment = yield* Config.nonEmptyString("ENVIRONMENT");
         const demoMode = yield* Config.boolean("DEMO_MODE");
-        const emailWhitelist = yield* Config.nonEmptyString("EMAIL_WHITELIST");
         const { KV } = yield* CloudflareEnv;
-        const normalizedEmail = data.email.trim().toLowerCase();
-        if (environment !== "local") {
-          const whitelist = emailWhitelist.split(",")
-            .map((email: string) => email.trim().toLowerCase())
-            .filter(Boolean);
-          if (whitelist.length > 0 && !whitelist.includes(normalizedEmail)) {
-            return yield* Effect.fail(
-              new Error("Email not allowed. Please contact support."),
-            );
-          }
-        }
+
         const result = yield* Effect.tryPromise(() =>
           auth.api.signInMagicLink({
             headers: request.headers,
@@ -77,11 +65,10 @@ export const login = createServerFn({
             new Error("Failed to send magic link. Please try again."),
           );
         }
-        const magicLink =
-          demoMode
-            ? ((yield* Effect.tryPromise(() => KV.get(`demo:magicLink`))) ??
-              undefined)
-            : undefined;
+        const magicLink = demoMode
+          ? ((yield* Effect.tryPromise(() => KV.get(`demo:magicLink`))) ??
+            undefined)
+          : undefined;
         console.log("magicLink", magicLink);
         return { success: true as const, magicLink };
       }),
