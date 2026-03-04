@@ -126,7 +126,6 @@ pnpm test:e2e
 
 - pnpm exec wrangler kv namespace create tces-kv-production
 - Update wrangler.jsonc production kv_namespaces
-- pnpm exec wrangler queues create r2-upload-notifications
 - pnpm d1:reset:PRODUCTION
 - pnpm deploy:PRODUCTION
 - pnpm exec wrangler secret put SECRET --env production
