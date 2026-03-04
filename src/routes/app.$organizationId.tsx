@@ -8,7 +8,6 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { Cause, Effect } from "effect";
 import { ChevronsUpDown, LogOut } from "lucide-react";
 import { AppLogo } from "@/components/app-logo";
@@ -39,10 +38,9 @@ import { Auth, signOutServerFn } from "@/lib/Auth";
 
 const switchOrganizationServerFn = createServerFn({ method: "POST" })
   .inputValidator((organizationId: string) => organizationId)
-  .handler(({ data: organizationId, context: { runEffect } }) =>
+  .handler(({ data: organizationId, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.setActiveOrganization({
@@ -56,7 +54,7 @@ const switchOrganizationServerFn = createServerFn({ method: "POST" })
 
 const beforeLoadServerFn = createServerFn({ method: "GET" })
   .inputValidator((organizationId: string) => organizationId)
-  .handler(({ context: { runEffect, session }, data: organizationId }) =>
+  .handler(({ context: { runEffect, request, session }, data: organizationId }) =>
     runEffect(
       Effect.gen(function* () {
         const validSession = yield* Effect.fromNullishOr(session).pipe(
@@ -65,7 +63,6 @@ const beforeLoadServerFn = createServerFn({ method: "GET" })
             () => new Cause.NoSuchElementError(),
           ),
         );
-        const request = getRequest();
         const auth = yield* Auth;
         const organizations = yield* Effect.tryPromise(() =>
           auth.api.listOrganizations({ headers: request.headers }),

@@ -93,9 +93,31 @@ const makeRunEffect = (env: Env) => {
   };
 };
 
+/**
+ * Per-request context injected by `serverEntry.fetch` and typed via Start's
+ * `Register.server.requestContext`.
+ *
+ * Server functions consume this through `context` in handlers
+ * (`createServerFn(...).handler(({ context }) => ...)`), so request-bound
+ * data (especially `request`) is available without importing
+ * `@tanstack/react-start/server`.
+ *
+ * Why avoid that import in route modules: `@tanstack/react-start/server` is a
+ * barrel that re-exports SSR stream/runtime modules, which pull Node builtins
+ * (`node:stream`, `node:stream/web`, `node:async_hooks`) into the client build
+ * graph and can trigger Rollup errors like:
+ * `"Readable" is not exported by "__vite-browser-external"`.
+ *
+ * References:
+ * - Import Protection (why imports can stay alive):
+ *   https://tanstack.com/start/latest/docs/framework/react/guide/import-protection#common-pitfall-why-some-imports-stay-alive
+ * - Server Entry Point request context (this pattern):
+ *   https://tanstack.com/start/latest/docs/framework/react/guide/server-entry-point#request-context
+ */
 export interface ServerContext {
   env: Env;
   runEffect: ReturnType<typeof makeRunEffect>;
+  request: Request;
   session?: AuthTypes["$Infer"]["Session"];
 }
 
@@ -138,6 +160,7 @@ export default {
       context: {
         env,
         runEffect,
+        request,
         session: session ?? undefined,
       },
     });

@@ -16,6 +16,11 @@ const config = defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    rollupOptions: {
+      external: ["node:stream", "node:stream/web", "node:async_hooks"],
+    },
+  },
   plugins: [
     devtools(),
     cloudflare({ viteEnvironment: { name: "ssr" } }),

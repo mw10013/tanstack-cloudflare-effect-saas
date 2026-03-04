@@ -2,7 +2,6 @@ import type { BetterAuthOptions } from "better-auth";
 import { stripe as stripePlugin } from "@better-auth/stripe";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { admin, magicLink, organization } from "better-auth/plugins";
@@ -516,10 +515,9 @@ export type AuthTypes = ReturnType<
 >;
 
 export const signOutServerFn = createServerFn({ method: "POST" }).handler(
-  ({ context: { runEffect } }) =>
+  ({ context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.signOut({ headers: request.headers }),

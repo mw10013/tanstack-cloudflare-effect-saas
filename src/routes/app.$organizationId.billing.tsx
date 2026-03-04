@@ -7,7 +7,6 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
@@ -36,10 +35,9 @@ export const Route = createFileRoute("/app/$organizationId/billing")({
 
 const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
-  .handler(({ data: { organizationId }, context: { runEffect } }) =>
+  .handler(({ data: { organizationId }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         const subscriptions = yield* Effect.tryPromise(() =>
           auth.api.listActiveSubscriptions({
@@ -260,10 +258,9 @@ function NoSubscriptionCard() {
  */
 const manageBilling = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
-  .handler(({ data: { organizationId }, context: { runEffect } }) =>
+  .handler(({ data: { organizationId }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         return yield* Effect.tryPromise(() =>
           auth.api.createBillingPortal({
@@ -284,10 +281,9 @@ const manageBilling = createServerFn({ method: "POST" })
  */
 const cancelSubscription = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(subscriptionActionSchema))
-  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
+  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         return yield* Effect.tryPromise(() =>
           auth.api.cancelSubscription({
@@ -309,10 +305,9 @@ const cancelSubscription = createServerFn({ method: "POST" })
  */
 const restoreSubscription = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(subscriptionActionSchema))
-  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
+  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.restoreSubscription({

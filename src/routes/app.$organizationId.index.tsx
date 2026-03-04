@@ -5,7 +5,6 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { Cause, Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { Button } from "@/components/ui/button";
@@ -64,10 +63,9 @@ const getLoaderData = createServerFn({ method: "GET" })
 
 const acceptInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(acceptInvitationSchema))
-  .handler(({ data: { invitationId, organizationId }, context: { runEffect } }) =>
+  .handler(({ data: { invitationId, organizationId }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.acceptInvitation({
@@ -90,10 +88,9 @@ const acceptInvitation = createServerFn({ method: "POST" })
 
 const rejectInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(invitationIdSchema))
-  .handler(({ data: { invitationId }, context: { runEffect } }) =>
+  .handler(({ data: { invitationId }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.rejectInvitation({

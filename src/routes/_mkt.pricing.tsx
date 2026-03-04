@@ -7,7 +7,6 @@ import {
   useHydrated,
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
@@ -45,7 +44,7 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
     ),
   )
   .handler(
-    ({ data: { intent }, context: { runEffect, session } }) =>
+    ({ data: { intent }, context: { runEffect, request, session } }) =>
       runEffect(
         Effect.gen(function* () {
           if (!session) {
@@ -68,7 +67,6 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
           const activeOrganizationId = yield* Effect.fromNullishOr(
             session.session.activeOrganizationId,
           );
-          const request = getRequest();
           const subscriptions = yield* Effect.tryPromise(() =>
             auth.api.listActiveSubscriptions({
               headers: request.headers,

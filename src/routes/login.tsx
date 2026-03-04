@@ -2,7 +2,6 @@ import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { Config, Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
@@ -48,10 +47,9 @@ export const login = createServerFn({
   method: "POST",
 })
   .inputValidator(Schema.toStandardSchemaV1(loginSchema))
-  .handler(({ data, context: { runEffect } }) =>
+  .handler(({ data, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         const environment = yield* Config.nonEmptyString("ENVIRONMENT");
         const demoMode = yield* Config.boolean("DEMO_MODE");

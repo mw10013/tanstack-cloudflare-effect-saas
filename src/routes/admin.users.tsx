@@ -8,7 +8,6 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import {
@@ -116,10 +115,9 @@ export const Route = createFileRoute("/admin/users")({
 
 export const unbanUser = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(userIdSchema))
-  .handler(({ data, context: { runEffect } }) =>
+  .handler(({ data, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.unbanUser({
@@ -134,10 +132,9 @@ export const unbanUser = createServerFn({ method: "POST" })
 
 export const impersonateUser = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(userIdSchema))
-  .handler(({ data, context: { runEffect } }) =>
+  .handler(({ data, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.impersonateUser({
@@ -367,10 +364,9 @@ const banUserSchema = Schema.Struct({
 
 export const banUser = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(banUserSchema))
-  .handler(({ data, context: { runEffect } }) =>
+  .handler(({ data, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.banUser({

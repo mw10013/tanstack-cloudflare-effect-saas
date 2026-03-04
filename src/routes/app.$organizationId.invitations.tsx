@@ -6,7 +6,6 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
@@ -60,10 +59,9 @@ export const Route = createFileRoute("/app/$organizationId/invitations")({
 
 const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator((data: { organizationId: string }) => data)
-  .handler(({ data, context: { runEffect } }) =>
+  .handler(({ data, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         const { success: canManageInvitations } = yield* Effect.tryPromise(() =>
           auth.api.hasPermission({
@@ -155,10 +153,9 @@ const invitationIdSchema = Schema.Struct({ invitationId: Schema.String });
  */
 const invite = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(inviteSchema))
-  .handler(({ data: { organizationId, emails, role }, context: { runEffect } }) =>
+  .handler(({ data: { organizationId, emails, role }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         const repository = yield* Repository;
         for (const email of emails) {
@@ -323,10 +320,9 @@ function InviteForm({ organizationId }: { organizationId: string }) {
  */
 const cancelInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(invitationIdSchema))
-  .handler(({ data: { invitationId }, context: { runEffect } }) =>
+  .handler(({ data: { invitationId }, context: { runEffect, request } }) =>
     runEffect(
       Effect.gen(function* () {
-        const request = getRequest();
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.cancelInvitation({
