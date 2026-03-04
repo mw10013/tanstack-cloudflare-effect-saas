@@ -309,20 +309,14 @@ function RouteComponent() {
             className="inline-flex items-center gap-1.5 hover:underline"
           >
             <svg
-              fill="none"
-              viewBox="0 0 500 500"
-              className="inline-block size-6"
+              viewBox="69 121 361 259"
+              fill="currentColor"
+              className="text-primary size-6"
+              aria-hidden="true"
             >
-              <path fill="#fff" d="M0 0h500v500H0z" />
-              <path
-                fill="#000"
-                d="M69 121h86.988v259H69zM337.575 121H430v259h-92.425z"
-              />
-              <path
-                fill="#000"
-                d="M427.282 121v83.456h-174.52V121zM430 296.544V380H252.762v-83.456z"
-              />
-              <path fill="#000" d="M252.762 204.455v92.089h-96.774v-92.089z" />
+              <path d="M69 121h86.988v259H69zM337.575 121H430v259h-92.425z" />
+              <path d="M427.282 121v83.456h-174.52V121zM430 296.544V380H252.762v-83.456z" />
+              <path d="M252.762 204.455v92.089h-96.774v-92.089z" />
             </svg>
             <span className="text-primary font-semibold">Better-Auth</span>
           </a>
@@ -337,8 +331,8 @@ function RouteComponent() {
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 32 32"
-                className="inline-block size-6 brightness-125"
-                fill="#6772e5"
+                className="text-primary size-6"
+                fill="currentColor"
               >
                 <path
                   d="M111.328 15.602c0-4.97-2.415-8.9-7.013-8.9s-7.423 3.924-7.423 8.863c0 5.85 3.32 8.8 8.036 8.8 2.318 0 4.06-.528 5.377-1.26V19.22a10.246 10.246 0 0 1-4.764 1.075c-1.9 0-3.556-.67-3.774-2.943h9.497a39.64 39.64 0 0 0 .063-1.748zm-9.606-1.835c0-2.186 1.35-3.1 2.56-3.1s2.454.906 2.454 3.1zM89.4 6.712a5.434 5.434 0 0 0-3.801 1.509l-.254-1.208h-4.27v22.64l4.85-1.032v-5.488a5.434 5.434 0 0 0 3.444 1.265c3.472 0 6.64-2.792 6.64-8.957.003-5.66-3.206-8.73-6.614-8.73zM88.23 20.1a2.898 2.898 0 0 1-2.288-.906l-.03-7.2a2.928 2.928 0 0 1 2.315-.96c1.775 0 2.998 2 2.998 4.528.003 2.593-1.198 4.546-2.995 4.546zM79.25.57l-4.87 1.035v3.95l4.87-1.032z"
