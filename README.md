@@ -72,7 +72,7 @@
 ### Stripe
 
 - Install the [Stripe CLI](https://stripe.com/docs/stripe-cli).
-- Go to stripe and create a sandbox for testing named `tca-int`
+- Go to stripe and create a sandbox for testing named `tces-int`
   - Remember secret key for `STRIPE_SECRET_KEY` environment variable.
 
 ### Local Env
@@ -84,7 +84,7 @@
 ```
 pnpm i
 pnpm d1:reset
-stripe login --project-name=tca-int
+stripe login --project-name=tces-int
 pnpm stripe:listen
 # copy webhook signing secret to STRIPE_WEBHOOK_SECRET in .env
 pnpm dev
@@ -124,7 +124,7 @@ pnpm test:e2e
 - Cloudflare Web Analytics | Add a site
   - Remember token from script for ANALYTICS_TOKEN secret below.
 
-- pnpm exec wrangler kv namespace create tca-kv-production
+- pnpm exec wrangler kv namespace create tces-kv-production
 - Update wrangler.jsonc production kv_namespaces
 - pnpm exec wrangler queues create r2-upload-notifications
 - pnpm d1:reset:PRODUCTION
@@ -136,7 +136,7 @@ pnpm test:e2e
   - Build configuration
     - Build command: CLOUDFLARE_ENV=production pnpm build
     - Deploy command: pnpm exec wrangler deploy --env production
-- Storage & databases: tca-d1-production: Settings
+- Storage & databases: tces-d1-production: Settings
   - Enable read replication
 
 ## Shadcn with Base UI
