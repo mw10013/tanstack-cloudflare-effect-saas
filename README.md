@@ -172,14 +172,6 @@ Effect.services + Effect.runPromiseWith
 Or use a FiberSet
 ```
 
-```Okay, imagine you have a toy box (your program), and you need helpers to do things for you — like a robot that fetches snacks or a teddy bear that tells you stories. In the old version (v3), there were four different ways to ask for a helper: Context.Tag, Context.GenericTag, Effect.Tag, and Effect.Service. That's confusing — like having four different doors into the same room.
-So in v4, they knocked down all four doors and built one nice door: ServiceMap.Service. Now there's only one way to make a helper, and everyone uses the same door.
-Here's what else changed, in kid terms:
-No more magic shortcuts. Effect.Tag used to let you call a helper's abilities directly, like saying "Robot, get snacks!" without first going to find the robot. But this magic trick had a problem — it would sometimes forget important details about what the robot could do (generic types got erased). So they removed the magic. Now you either find the robot first (yield*), or use .use() which is like saying "hey robot, do this one thing for me."
-No more auto-built instruction manuals. Effect.Service used to automatically create a "layer" (think: instructions for building your helper) and wire up everything it needed. Now you build that yourself with Layer.effect. It's a little more work, but you can see exactly what's happening — no hidden magic.
-The toy box got renamed. The container that holds all your helpers changed from Context to ServiceMap — same idea, new name.
-TL;DR: Too many ways to do the same thing → one way. Magic that lost information → removed. Hidden wiring → explicit wiring. Everything is simpler and more honest about what it does.
-```
 ## Credit
 
 Homepage / Pricing design by [dev-xo](https://github.com/dev-xo). See his [remix-saas](https://github.com/dev-xo/remix-saas) for a production-ready saas template for remix.
