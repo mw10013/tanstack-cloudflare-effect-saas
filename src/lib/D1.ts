@@ -50,17 +50,3 @@ const tryD1 = <A>(evaluate: () => Promise<A>) =>
       schedule: Schedule.exponential("1 second"),
     }),
   );
-
-export const bind = dual<
-  (
-    ...values: unknown[]
-  ) => <E, R>(
-    self: Effect.Effect<D1PreparedStatement, E, R>,
-  ) => Effect.Effect<D1PreparedStatement, E, R>,
-  <E, R>(
-    ...args: [Effect.Effect<D1PreparedStatement, E, R>, ...unknown[]]
-  ) => Effect.Effect<D1PreparedStatement, E, R>
->(
-  (args) => Effect.isEffect(args[0]),
-  (self, ...values) => Effect.map(self, (stmt) => stmt.bind(...values)),
-);
