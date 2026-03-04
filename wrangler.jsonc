@@ -15,7 +15,7 @@
     "TRANSACTIONAL_EMAIL": "noreply@example.com",
     "BETTER_AUTH_URL": "http://localhost:3000",
     "ANALYTICS_TOKEN": "",
-    "EMAIL_WHITELIST": "",
+    "EMAIL_WHITELIST": ""
   },
   "observability": {
     "enabled": true
@@ -53,8 +53,7 @@
         "ENVIRONMENT": "production",
         "DEMO_MODE": "true",
         "TRANSACTIONAL_EMAIL": "noreply@example.com",
-        "BETTER_AUTH_URL": "https://tces.devxo.workers.dev",
-        "CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773"
+        "BETTER_AUTH_URL": "https://tces.devxo.workers.dev"
       },
       "d1_databases": [
         {
