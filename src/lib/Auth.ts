@@ -9,7 +9,7 @@ import { createAuthMiddleware } from "better-auth/api";
 import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
-import * as Schema from "effect/Schema";
+
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { D1 } from "./D1";
 import { KV } from "./KV";
@@ -465,22 +465,14 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
     return {
       auth,
       api: auth.api,
-      handler: (request: Request) =>
-        tryAuth(() =>
-          runEffect(
-            Effect.tryPromise(() => auth.handler(request)).pipe(
-              Effect.withLogSpan("auth.handler"),
-            ),
-          ),
-        ),
-      getSession: (headers: Headers) =>
-        tryAuth(() =>
-          runEffect(
-            Effect.tryPromise(() => auth.api.getSession({ headers })).pipe(
-              Effect.withLogSpan("auth.getSession"),
-            ),
-          ),
-        ),
+      handler: Effect.fn("auth.handler")(function* (request: Request) {
+        return yield* Effect.tryPromise(() => auth.handler(request));
+      }),
+      getSession: Effect.fn("auth.getSession")(function* (headers: Headers) {
+        return yield* Effect.tryPromise(() =>
+          auth.api.getSession({ headers }),
+        );
+      }),
     };
   }),
 }) {
@@ -491,23 +483,6 @@ export type AuthTypes = ReturnType<
   typeof betterAuth<ReturnType<typeof createBetterAuthOptions>>
 >;
 
-export class AuthError extends Schema.TaggedErrorClass<AuthError>()(
-  "AuthError",
-  {
-    message: Schema.String,
-    cause: Schema.Defect,
-  },
-) {}
-
-const tryAuth = <A>(evaluate: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: evaluate,
-    catch: (cause) =>
-      new AuthError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        cause,
-      }),
-  }).pipe(Effect.tapError((error) => Effect.logError(error)));
 
 export const signOutServerFn = createServerFn({ method: "POST" }).handler(
   ({ context: { runEffect, request } }) =>
