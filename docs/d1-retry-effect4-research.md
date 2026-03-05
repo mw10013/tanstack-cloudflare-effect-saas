@@ -78,22 +78,37 @@ Policy for this class: no app retry (both idempotent and non-idempotent) to avoi
   - non-idempotent batch: no retry
   - idempotent batch: retry on transient allow-list only, max 1-2 attempts
 
-
-Ok, we need a way to opt-in for just run and batch. I wonder if an idempotent flag would suffice. No need to specify whether read-only or not. If the flag is set, the retry logic applies. And if it's set for a read-only query, then D1 automatic retry logic will apply (as always) and additional our idempotent retry logic will apply.
-
-I would prefer to keep it just a simple flag, but I get that it may be confusing if you have a read-only query and you are not sure whether to set the flag or not. Maybe the flag should be called isIdemponentWrite or some such? I don't know if we should use the is prefix or not. What would effect v4 do?
-
-Or should it be something along the lines of retry with literal value specified. Trade-offs, recommendation
-
 ## Opt-in API Direction
 
-Use explicit retry mode at call sites (no SQL inspection).
+Scope: opt-in only for `run` and `batch`.
 
-Example API shape:
+### Option 1: Boolean flag
+
+- `d1.run(stmt, { idempotentWrite: true })`
+- `d1.batch(stmts, { idempotentWrite: true })`
+
+Trade-offs:
+- simplest call-site API
+- harder to extend if we later need more modes
+- unclear semantics when operation is read-only
+
+### Option 2: Literal retry mode
 
 - `d1.run(stmt, { retry: "none" | "idempotent-write" })`
-- `d1.first(stmt, { retry: "none" | "read" })`
 - `d1.batch(stmts, { retry: "none" | "idempotent-write" })`
+
+Trade-offs:
+- explicit intent at call site
+- extensible without API break
+- slightly more verbose
+
+Recommendation:
+- use literal retry mode for clarity + future growth.
+- keep `first` without retry options for now.
+- if you prefer flag simplicity, use `idempotentWrite` (not `isIdempotentWrite`).
+
+Naming note:
+- Effect option objects typically use concise capability keys (`concurrent`, `times`, `schedule`, `while`) rather than `is*` naming (`refs/effect4/packages/effect/src/Effect.ts:2535`, `refs/effect4/packages/effect/src/Effect.ts:3914-3925`).
 
 ## Source List
 
