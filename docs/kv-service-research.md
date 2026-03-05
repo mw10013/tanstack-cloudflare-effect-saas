@@ -208,9 +208,9 @@ const RETRYABLE_KV_WRITE_SIGNALS = [
 ] as const;
 ```
 
-Both layers use `times: 2`, `Schedule.exponential("1 second")` with jitter. The 1s base delay aligns with the 1 write/sec/key limit for 429s and is a reasonable backoff for transient infra errors.
+#### Recommendation: single unified retry
 
-From a retry perspective, I don't think we need to distinguish between put vs read, especially if delay is 1 second, right? reads should never get a 429 but can still have the logic for 429. Trade-offs, recommendation?
+Collapsing to one retry layer applied in `tryKV`. Reads will never produce a 429 message, so including the 429 signal in the unified list is a no-op for reads — zero cost, zero false positives. This eliminates the two-layer complexity while keeping the same behavior.
 
 ### Skeleton
 
@@ -238,8 +238,7 @@ export class KV extends ServiceMap.Service<KV>()("KV", {
         key: string,
         value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
         options?: KVNamespacePutOptions,
-      ) =>
-        tryKV(() => kv.put(key, value, options)).pipe(retryWriteRateLimit),
+      ) => tryKV(() => kv.put(key, value, options)),
       delete: (key: string) => tryKV(() => kv.delete(key)),
       list: <Metadata = unknown>(options?: KVNamespaceListOptions) =>
         tryKV(() => kv.list<Metadata>(options)),
@@ -252,13 +251,8 @@ export class KV extends ServiceMap.Service<KV>()("KV", {
 const RETRYABLE_KV_SIGNALS = [
   "network connection lost",
   "daemondown",
-] as const;
-
-const RETRYABLE_KV_WRITE_SIGNALS = [
   "kv put failed: 429 too many requests",
 ] as const;
-
-const retrySchedule = Schedule.exponential("1 second").pipe(Schedule.jittered);
 
 const tryKV = <A>(evaluate: () => Promise<A>) =>
   Effect.tryPromise({
@@ -278,33 +272,14 @@ const tryKV = <A>(evaluate: () => Promise<A>) =>
         );
       },
       times: 2,
-      schedule: retrySchedule,
-    }),
-  );
-
-const retryWriteRateLimit = <A>(effect: Effect.Effect<A, KVError>) =>
-  effect.pipe(
-    Effect.retry({
-      while: (error) => {
-        const message = error.message.toLowerCase();
-        return RETRYABLE_KV_WRITE_SIGNALS.some((signal) =>
-          message.includes(signal),
-        );
-      },
-      times: 2,
-      schedule: retrySchedule,
+      schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),
     }),
   );
 ```
 
 ### Resolved questions
 
-1. **Retry** — Two automatic layers, no opt-in flag needed:
-   - **All operations**: auto-retry on transient infra errors (`"network connection lost"`, `"daemondown"`) via `tryKV`.
-   - **Put only**: additional auto-retry on `"KV PUT failed: 429 Too Many Requests"` via `retryWriteRateLimit`. Safe because KV puts are inherently idempotent (no auto-increment, last-write-wins).
-   - Both: 2 retries, exponential backoff from 1s with jitter.
-
-2 layers may be too complex and unecessary.    
+1. **Retry** — Single unified retry in `tryKV`, no opt-in flag, no separate layers. Retries on transient infra errors (`"network connection lost"`, `"daemondown"`) and write rate limit (`"kv put failed: 429 too many requests"`). The 429 signal is harmless for reads (never matches). 2 retries, exponential backoff from 1s with jitter.
 
 2. **Bulk get** — Exposed as `getBulk(keys[])`. Returns `Map<string, string | null>`. Counts as single operation against 1,000 ops/invocation limit. Max 100 keys.
 
