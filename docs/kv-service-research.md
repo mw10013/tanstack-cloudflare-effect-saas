@@ -165,12 +165,98 @@ Following the D1 pattern of thin wrappers that return Effects:
 | `list` | `kv.list(options?)` | `Effect<KVNamespaceListResult<Metadata>, KVError>` |
 | `getWithMetadata` | `kv.getWithMetadata(key, type?)` | `Effect<{value, metadata, cacheStatus}, KVError>` |
 
-### Retry considerations
-- KV has a 429 rate limit on writes (1 write/sec per key)
-- Could add optional retry for `put` with `"KV PUT failed: 429 Too Many Requests"` signal
-- D1 uses `retryIfIdempotentWrite` pattern — similar pattern applicable for idempotent KV puts
+### Retry Deep Dive
 
-Need more details and ressearch about retries. In context of Cloudflare KV, when should we retry? Does the concept of idempotent KV put make sense? For a 429, do we wait for > 1 sec and then retry? Or do we think things are too overloaded and just fail. Is the 429 for the same specific key? Need deeper research here to figure out what we need to retry, why, and what retry policy
+#### KV 429 behavior — what exactly happens?
+
+- **Rate limit is per key, per second**: 1 write/sec to the **same key**. Writes to different keys are unlimited (paid plan). Source: `refs/cloudflare-docs/src/content/docs/kv/platform/limits.mdx` line 14, FAQ line 48.
+- **Error message**: `"KV PUT failed: 429 Too Many Requests"` — thrown as an exception from the `put()` promise.
+- **Only affects writes**: reads (`get`, `getWithMetadata`, `list`) are not rate limited per-key. Reads have daily limits on free plan (100k/day) but unlimited on paid.
+- **Scope**: The 429 is specific to writing the same key too fast. Writing different keys concurrently is fine.
+
+#### Is "idempotent KV put" a valid concept?
+
+Yes. KV `put` is inherently idempotent — calling `put(key, value)` multiple times with the same arguments produces the same final state. There's no auto-increment, no append, no read-modify-write. A retry after 429 is safe because:
+- The value hasn't changed between attempts
+- No partial writes — `put` either succeeds or fails entirely
+- Last-write-wins semantics mean repeated identical writes are harmless
+
+This is actually simpler than D1's `idempotentWrite` concept, where you must reason about whether a SQL mutation is safe to replay.
+
+#### Recommended retry policy
+
+Cloudflare docs explicitly recommend exponential backoff for 429 errors (source: `refs/cloudflare-docs/src/content/docs/kv/api/write-key-value-pairs.mdx` lines 200-267). Their example uses:
+- `maxAttempts = 5`
+- `initialDelay = 1000` (1 second — matches the 1 write/sec/key limit)
+- `delay *= 2` (exponential)
+
+**Proposed Effect retry for KV put**:
+```ts
+const RETRYABLE_KV_SIGNALS = [
+  "kv put failed: 429 too many requests",
+] as const;
+
+const retryIfIdempotentWrite =
+  (idempotentWrite?: boolean) =>
+  <A>(effect: Effect.Effect<A, KVError>) =>
+    idempotentWrite
+      ? effect.pipe(
+          Effect.retry({
+            while: (error) => {
+              const message = error.message.toLowerCase();
+              return RETRYABLE_KV_SIGNALS.some((signal) =>
+                message.includes(signal),
+              );
+            },
+            times: 2,
+            schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),
+          }),
+        )
+      : effect;
+```
+
+Using `times: 2` (3 total attempts) with exponential backoff starting at 1s is conservative and appropriate. The 1s base delay aligns with the 1 write/sec/key limit. With jitter: ~1s, ~2s, done — total worst-case ~3s which is acceptable for a write operation that was already rate-limited.
+
+#### When NOT to retry
+- `delete` — while technically idempotent, 429 doesn't apply (no per-key write rate limit documented for delete)
+- `get`/`list` — reads aren't rate limited per-key
+- Non-429 errors — network errors, auth errors, etc. should fail immediately
+
+I'm confused why we need an idempotentWrite flag? I thought you said puts are implicitly idempotent.
+
+Where is the research on errors unrelated to 429. Surely we would want a retry policy around them.
+
+### getWithMetadata Deep Dive
+
+#### What is metadata?
+
+Metadata is a JSON-serializable object (max 1024 bytes) attached to a KV entry via `put()`:
+```ts
+await kv.put("user:123", largeProfileJSON, {
+  metadata: { role: "admin", updatedAt: 1700000000 }
+});
+```
+
+#### Why use getWithMetadata vs get?
+
+- `get(key)` → returns just the value
+- `getWithMetadata(key)` → returns `{ value, metadata, cacheStatus }`
+
+Key use cases:
+1. **Content-type/MIME info**: store file type in metadata when value is binary
+2. **Timestamps/versioning**: track when value was last updated without parsing the value
+3. **Access control**: store `userId`/`role` to check permissions before processing large value
+4. **List optimization**: metadata is returned by `list()` too — store display fields in metadata to avoid N+1 `get()` calls
+
+#### Recommendation: keep minimal
+
+Expose just two variants matching the most common patterns:
+- `getWithMetadata(key)` — text value + metadata (default)
+- `getWithMetadataJson(key)` — JSON-parsed value + metadata
+
+The `arrayBuffer`/`stream` variants are rare and can be added later if needed. This matches the `get`/`getJson` split.
+
+Ok. You can remove this section and just incorporate getWithMetadataJson.
 
 ### Skeleton
 
@@ -189,18 +275,33 @@ export class KV extends ServiceMap.Service<KV>()("KV", {
     return {
       get: (key: string) => tryKV(() => kv.get(key)),
       getJson: <T>(key: string) => tryKV(() => kv.get<T>(key, "json")),
-      put: (key: string, value: string, options?: KVNamespacePutOptions) =>
-        tryKV(() => kv.put(key, value, options)),
+      getBulk: (keys: string[]) => tryKV(() => kv.get(keys)),
+      getWithMetadata: <Metadata = unknown>(key: string) =>
+        tryKV(() => kv.getWithMetadata<Metadata>(key)),
+      getWithMetadataJson: <T, Metadata = unknown>(key: string) =>
+        tryKV(() => kv.getWithMetadata<T, Metadata>(key, "json")),
+      put: (
+        key: string,
+        value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+        options?: KVNamespacePutOptions & { readonly idempotentWrite?: boolean },
+      ) => {
+        const { idempotentWrite, ...putOptions } = options ?? {};
+        return tryKV(() => kv.put(key, value, putOptions)).pipe(
+          retryIfIdempotentWrite(idempotentWrite),
+        );
+      },
       delete: (key: string) => tryKV(() => kv.delete(key)),
       list: <Metadata = unknown>(options?: KVNamespaceListOptions) =>
         tryKV(() => kv.list<Metadata>(options)),
-      getWithMetadata: <Metadata = unknown>(key: string) =>
-        tryKV(() => kv.getWithMetadata<Metadata>(key)),
     };
   }),
 }) {
   static layer = Layer.effect(this, this.make);
 }
+
+const RETRYABLE_KV_SIGNALS = [
+  "kv put failed: 429 too many requests",
+] as const;
 
 const tryKV = <A>(evaluate: () => Promise<A>) =>
   Effect.tryPromise({
@@ -211,21 +312,34 @@ const tryKV = <A>(evaluate: () => Promise<A>) =>
         cause,
       }),
   }).pipe(Effect.tapError((error) => Effect.logError(error)));
+
+const retryIfIdempotentWrite =
+  (idempotentWrite?: boolean) =>
+  <A>(effect: Effect.Effect<A, KVError>) =>
+    idempotentWrite
+      ? effect.pipe(
+          Effect.retry({
+            while: (error) => {
+              const message = error.message.toLowerCase();
+              return RETRYABLE_KV_SIGNALS.some((signal) =>
+                message.includes(signal),
+              );
+            },
+            times: 2,
+            schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),
+          }),
+        )
+      : effect;
 ```
 
-### Open questions
-1. Should `put` support retry for 429 rate limiting (like D1's `idempotentWrite`)? The 429 error message is `"KV PUT failed: 429 Too Many Requests"`.
+### Resolved questions
 
-I think so but we need more research regarding retry policies and such.
+1. **Retry for put 429** — Yes. KV puts are inherently idempotent. Use same `idempotentWrite` opt-in pattern as D1. Retry only on `"KV PUT failed: 429 Too Many Requests"`, 2 retries with exponential backoff starting at 1s (aligns with 1 write/sec/key limit).
 
-2. Should bulk `get(keys[])` be exposed as a separate method?
+Since puts are inherently idempotent, we don't need complexity of opt-in. Seems we need a separate retry policy for puts vs reads.
 
-Yes.
+2. **Bulk get** — Yes. Exposed as `getBulk(keys[])`. Returns `Map<string, string | null>`. Counts as single operation against 1,000 ops/invocation limit. Max 100 keys.
 
-3. Should `getWithMetadata` variants for json/stream/arrayBuffer be exposed or kept minimal?
+3. **getWithMetadata variants** — Keep minimal: `getWithMetadata` (text) and `getWithMetadataJson`. Skip arrayBuffer/stream variants.
 
-What's your recommendation and why? I need more details on getWithMetadata in general.
-
-4. Should `list` handle pagination automatically (cursor iteration) or leave that to callers?
-
-I think leave that to caller for now. Keep thin wrapper.
+4. **List pagination** — Leave to caller. Thin wrapper returning `KVNamespaceListResult`. Caller checks `list_complete` and passes `cursor` for next page.
