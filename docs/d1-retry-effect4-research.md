@@ -78,6 +78,13 @@ Policy for this class: no app retry (both idempotent and non-idempotent) to avoi
   - non-idempotent batch: no retry
   - idempotent batch: retry on transient allow-list only, max 1-2 attempts
 
+
+Ok, we need a way to opt-in for just run and batch. I wonder if an idempotent flag would suffice. No need to specify whether read-only or not. If the flag is set, the retry logic applies. And if it's set for a read-only query, then D1 automatic retry logic will apply (as always) and additional our idempotent retry logic will apply.
+
+I would prefer to keep it just a simple flag, but I get that it may be confusing if you have a read-only query and you are not sure whether to set the flag or not. Maybe the flag should be called isIdemponentWrite or some such? I don't know if we should use the is prefix or not. What would effect v4 do?
+
+Or should it be something along the lines of retry with literal value specified. Trade-offs, recommendation
+
 ## Opt-in API Direction
 
 Use explicit retry mode at call sites (no SQL inspection).
