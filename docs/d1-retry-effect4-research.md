@@ -19,7 +19,13 @@ Cloudflare documents these facts:
 - App-level retries are specifically called out as useful for write queries with transient errors, and should use exponential backoff + jitter (`refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:11,21`).
 - Retry safety is tied to idempotency (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:57-63`).
 
-Does a read-only batch automatically retry? Can we get evidence for this either way?
+Read-only `batch` behavior is not explicitly called out in one sentence, but docs imply query-level behavior:
+
+- auto-retry wording is query-based (`.../debug-d1.mdx:86,91-92`).
+- `batch()` executes a list of statements sequentially (`refs/cloudflare-docs/src/content/docs/d1/worker-api/d1-database.mdx:94-98`).
+- `run` and `batch` both return `D1Result`, and `D1Result.meta.total_attempts` includes retries (`refs/cloudflare-docs/src/content/docs/d1/worker-api/return-object.mdx:14,19,42`).
+
+Practical interpretation: if a `batch` statement is read-only, it should be eligible for the same query retry behavior. Cloudflare docs do not provide a stricter batch-specific retry contract beyond that.
 
 ## Practical Implication
 
@@ -58,7 +64,13 @@ Recommended app behavior:
 Reason:
 - docs point to capacity/query-shape mitigation (optimize/shard/spread load), not aggressive retry loops.
 
-Would it be far to say that if a retry is attempted, it should be done after a long delay? We may also just want to fail since it seems we're hitting capacity issues and don't want to exacerbate.
+For overload/capacity class errors (`debug-d1.mdx:76-80`), fail-fast or one delayed retry is the safer default.
+
+- non-idempotent: fail-fast.
+- idempotent: optional single retry with longer delay + jitter (for example 2-5s randomized), then fail.
+- avoid short rapid retries, which can worsen queue pressure.
+
+Ok, we don't want to retry these. No need to get into this detailed explanation so remove this section. Simply note in the Retryable Error Signals section that we don't retry because we don't want to exacerbate any capacity issue.
 
 ## Codebase Method Notes
 
@@ -78,39 +90,15 @@ Would it be far to say that if a retry is attempted, it should be done after a l
   - non-idempotent batch: no retry
   - idempotent batch: retry on transient allow-list only, max 1-2 attempts
 
-## Classification Approach Options
+## Opt-in API Direction
 
-Get rid of this section. There is no way we're going to inspect sql. We'll figure out opt-in approach as we continue discussion.
-
-### SQL-string classification
-
-Determine retry mode by inspecting SQL text.
-
-Example:
-
-- SQL starts with `select` / `with` / `explain` => treat as read.
-- SQL starts with `insert`, `update`, `delete`, `replace`, `create`, `drop`, `alter`, `pragma` => treat as write.
-
-Pros:
-- centralized behavior, no per-call manual flags.
-
-Cons:
-- brittle for complex SQL and CTEs; parser edge cases.
-
-### API-level explicit retry mode
-
-Call site declares retry mode.
+Use explicit retry mode at call sites (no SQL inspection).
 
 Example API shape:
 
-- `d1.run(stmt, { retry: "none" | "read" | "idempotent-write" })`
+- `d1.run(stmt, { retry: "none" | "idempotent-write" })`
+- `d1.first(stmt, { retry: "none" | "read" })`
 - `d1.batch(stmts, { retry: "none" | "idempotent-write" })`
-
-Pros:
-- explicit intent, fewer false assumptions.
-
-Cons:
-- more call-site decisions.
 
 ## Source List
 
@@ -124,5 +112,5 @@ Cons:
 - `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:91-92`
 - `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:70-80`
 - `refs/cloudflare-docs/src/content/docs/d1/worker-api/prepared-statements.mdx:346-347`
-- `refs/cloudflare-docs/src/content/docs/d1/worker-api/d1-database.mdx:94-97`
-- `refs/cloudflare-docs/src/content/docs/d1/worker-api/return-object.mdx:42`
+- `refs/cloudflare-docs/src/content/docs/d1/worker-api/d1-database.mdx:94-98`
+- `refs/cloudflare-docs/src/content/docs/d1/worker-api/return-object.mdx:14,19,42`
