@@ -1,14 +1,6 @@
 import type { Plan } from "@/lib/Domain";
 import type { Stripe as StripeTypes } from "stripe";
-import {
-  Cause,
-  Config,
-  Data,
-  Effect,
-  Layer,
-  Redacted,
-  ServiceMap,
-} from "effect";
+import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as StripeClient from "stripe";
@@ -23,7 +15,7 @@ const isPriceWithLookupKey = (price: Price): price is PriceWithLookupKey =>
 
 const requirePriceWithLookupKey = (price: Price) =>
   price.lookup_key === null
-    ? failStripe("Stripe.getPlans", "Missing lookup_key")
+    ? failStripe("Missing lookup_key")
     : Effect.succeed(price);
 
 export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
@@ -39,7 +31,7 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
         plan.monthlyPriceLookupKey,
         plan.annualPriceLookupKey,
       ]);
-      const priceList = yield* tryStripe("Stripe.prices.list", () =>
+      const priceList = yield* tryStripe(() =>
         stripe.prices.list({
           lookup_keys: lookupKeys,
           expand: ["data.product"],
@@ -48,7 +40,7 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
       if (priceList.data.length === 0) {
         const products = yield* Effect.all(
           planData.map((plan) =>
-            tryStripe("Stripe.products.create", () =>
+            tryStripe(() =>
               stripe.products.create({
                 name: plan.displayName,
                 description: `${plan.displayName} plan.`,
@@ -58,7 +50,7 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
         );
         const prices = yield* Effect.all(
           products.flatMap(({ plan, product }) => [
-            tryStripe("Stripe.prices.create", () =>
+            tryStripe(() =>
               stripe.prices.create({
                 product: product.id,
                 unit_amount: plan.monthlyPriceInCents,
@@ -68,7 +60,7 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
                 expand: ["product"],
               }),
             ),
-            tryStripe("Stripe.prices.create", () =>
+            tryStripe(() =>
               stripe.prices.create({
                 product: product.id,
                 unit_amount: plan.annualPriceInCents,
@@ -85,7 +77,6 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
       const prices = priceList.data.filter(isPriceWithLookupKey);
       if (prices.length !== planData.length * 2) {
         return yield* failStripe(
-          "Stripe.getPlans",
           `Count of prices not ${String(planData.length * 2)} (${String(prices.length)})`,
         );
       }
@@ -114,22 +105,17 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
             );
             if (!monthlyPrice) {
               return yield* failStripe(
-                "Stripe.getPlans",
                 `Missing monthly price for ${plan.name}`,
               );
             }
             if (typeof monthlyPrice.product === "string") {
-              return yield* failStripe(
-                "Stripe.getPlans",
-                "Product should be expanded",
-              );
+              return yield* failStripe("Product should be expanded");
             }
             const annualPrice = prices.find(
               (price) => price.lookup_key === plan.annualPriceLookupKey,
             );
             if (!annualPrice) {
               return yield* failStripe(
-                "Stripe.getPlans",
                 `Missing annual price for ${plan.name}`,
               );
             }
@@ -159,30 +145,22 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
       const key = "stripe:isBillingPortalConfigured";
       const isConfigured = yield* kv.get(key);
       if (isConfigured === "true") return;
-      const configurations = yield* tryStripe(
-        "Stripe.billingPortal.configurations.list",
-        () =>
-          stripe.billingPortal.configurations.list({
-            limit: 2,
-          }),
+      const configurations = yield* tryStripe(() =>
+        stripe.billingPortal.configurations.list({
+          limit: 2,
+        }),
       );
       if (configurations.data.length === 0) {
         const plans = yield* getPlans();
         const basicPlan = plans.find((plan) => plan.name === "basic");
         if (!basicPlan) {
-          return yield* failStripe(
-            "Stripe.ensureBillingPortalConfiguration",
-            "Missing basic plan",
-          );
+          return yield* failStripe("Missing basic plan");
         }
         const proPlan = plans.find((plan) => plan.name === "pro");
         if (!proPlan) {
-          return yield* failStripe(
-            "Stripe.ensureBillingPortalConfiguration",
-            "Missing pro plan",
-          );
+          return yield* failStripe("Missing pro plan");
         }
-        yield* tryStripe("Stripe.billingPortal.configurations.create", () =>
+        yield* tryStripe(() =>
           stripe.billingPortal.configurations.create({
             business_profile: {
               headline: "Manage your subscription and billing information",
@@ -245,26 +223,23 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
   static layer = Layer.effect(this, this.make);
 }
 
-export class StripeError extends Data.TaggedError("StripeError")<{
-  readonly op: string;
-  readonly message: string;
-  readonly cause: Error;
-}> {}
+export class StripeError extends Schema.TaggedErrorClass<StripeError>()(
+  "StripeError",
+  {
+    message: Schema.String,
+    cause: Schema.Defect,
+  },
+) {}
 
-const toCause = (error: unknown) =>
-  Cause.isUnknownError(error) && error.cause instanceof Error
-    ? error.cause
-    : error instanceof Error
-      ? error
-      : new Error(String(error));
+const tryStripe = <A>(evaluate: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) =>
+      new StripeError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  }).pipe(Effect.tapError((error) => Effect.logError(error)));
 
-const tryStripe = <A>(op: string, evaluate: () => Promise<A>) =>
-  Effect.tryPromise(evaluate).pipe(
-    Effect.mapError((error) => {
-      const cause = toCause(error);
-      return new StripeError({ op, message: cause.message, cause });
-    }),
-  );
-
-const failStripe = (op: string, message: string) =>
-  Effect.fail(new StripeError({ op, message, cause: new Error(message) }));
+const failStripe = (message: string) =>
+  Effect.fail(new StripeError({ message, cause: new Error(message) }));
