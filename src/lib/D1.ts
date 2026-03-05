@@ -40,7 +40,7 @@ const tryD1 = <A>(evaluate: () => Promise<A>) =>
         cause,
       }),
   }).pipe(
-    Effect.tapError((error) => Effect.log(error)),
+    Effect.tapError((error) => Effect.logError(error)),
     Effect.retry({
       while: (error) => !NON_RETRYABLE.some((p) => error.message.includes(p)),
       times: 2,
