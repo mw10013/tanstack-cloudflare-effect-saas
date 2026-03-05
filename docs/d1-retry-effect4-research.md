@@ -1,5 +1,7 @@
 # D1 Retry + Effect v4 Research
 
+D1Error has been refactored along with some of tryD1. Update the research to reflect. I don't think we need discussion about v3 vs v4 since it should basically be idiomatic v4. And we need to focus on retry logic.
+
 ## Scope
 
 Analyze `src/lib/D1.ts` L28-51:
@@ -71,6 +73,10 @@ Cloudflare D1 docs explicitly state:
 - Retrying operations is only safe if query is idempotent (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:57-63`).
 - App-level retries should use exponential backoff + jitter (`refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:21`).
 
+I'm confused over D1 automatically retrying read-only queries vs app-level retries should use exponential backoff + jitter. First thing I need clarified is whether D1 always does the automatic retry for read-only? Is there anything to set up or configure for that behavior? Presumably it's doing exponential backoff + jitter?
+
+If it always does the retries for read-only, then we at the app-level only need to worry about write queries and whether they should be retried? Am I understanding that correctly? show me evidence.
+
 D1 `run()` / `batch()` results include `meta.total_attempts` (includes retries), useful for observability (`refs/cloudflare-docs/src/content/docs/d1/worker-api/return-object.mdx:42`).
 
 ## Interaction Risk: Current `tryD1` + D1 Auto-Retry
@@ -82,10 +88,14 @@ Potential consequence for read-only operations:
 - Wrapper retries: up to 3 app calls total (`times: 2`).
 - Worst-case total physical attempts can become multiplicative.
 
+Would you say that the app should not retry or be concerned about read-only queries and just let D1 take care of any retries automatically? Or are there cases where we should consider app-level retry of read-only queries.
+
 Potential consequence for writes:
 - D1 will not auto-retry write queries.
 - Wrapper currently may retry writes unless message contains one of only 3 SQLite fragments.
 - This can be unsafe for non-idempotent writes.
+
+Agreed. We're going to need to figure this out.
 
 ## Better v4 Pattern / Idiom
 
