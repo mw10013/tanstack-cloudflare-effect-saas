@@ -43,7 +43,11 @@ D1 error table marks these as retry candidates:
 - `Cannot resolve D1 DB due to transient issue on remote node.` (`.../debug-d1.mdx:74`)
 - `Can't read from request stream because client disconnected.` (`.../debug-d1.mdx:75`)
 
-The above errors seem like it should be safe to retry non-idempotent writes. Maybe not network connection lost, but what about the others? Too risky to consider?
+Policy: still no retry for non-idempotent writes, even for these transient/reset errors.
+
+Reason:
+- D1 docs explicitly tie retry safety to idempotency (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:57-63`).
+- non-idempotent write retry can duplicate side effects when commit state is uncertain at failure boundary.
 
 D1 error table does not recommend plain retry as primary fix for these:
 
@@ -54,25 +58,7 @@ D1 error table does not recommend plain retry as primary fix for these:
 
 (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:76-80`)
 
-## What To Do For "Not Marked As Simple Retry"
-
-Recommended app behavior:
-
-1. Treat them as `retry-limited` (not `retry-forever`).
-2. Retry at most once for idempotent operations only.
-3. If still failing, surface error immediately.
-4. Emit high-signal logs/metrics to trigger load/query tuning.
-
-Reason:
-- docs point to capacity/query-shape mitigation (optimize/shard/spread load), not aggressive retry loops.
-
-For overload/capacity class errors (`debug-d1.mdx:76-80`), fail-fast or one delayed retry is the safer default.
-
-- non-idempotent: fail-fast.
-- idempotent: optional single retry with longer delay + jitter (for example 2-5s randomized), then fail.
-- avoid short rapid retries, which can worsen queue pressure.
-
-Ok, we don't want to retry these. No need to get into this detailed explanation so remove this section. Simply note in the Retryable Error Signals section that we don't retry because we don't want to exacerbate any capacity issue.
+Policy for this class: no app retry (both idempotent and non-idempotent) to avoid exacerbating capacity pressure; handle via fail-fast + operational mitigation.
 
 ## Codebase Method Notes
 
