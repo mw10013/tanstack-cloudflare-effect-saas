@@ -33,6 +33,8 @@ const tryD1 = <A>(evaluate: () => Promise<A>) =>
 
 ## Direct Answers To Your Questions
 
+These are good answers. Just write up the answers as research and leave the questions out. Make it concise and doesn't need a lot of explanation.
+
 ### 1) Does D1 always auto-retry read-only queries?
 
 Short answer: D1 auto-retry is built-in behavior for read-only queries when the failure is retryable.
@@ -72,6 +74,8 @@ Evidence:
 
 ## Important Nuances
 
+Remove these nuances. We'll address them in our discussion but no need to enumerate these specific ones here.
+
 ### Read-only retry still might be needed at app level in some cases
 
 Possible cases:
@@ -103,6 +107,8 @@ Docs grounding:
 - App retries should use exponential backoff + jitter (`.../retry-queries.mdx:21`).
 
 ## D1 Error Signals To Allow-List For Retry
+
+Yes, we need ot really nail down errors can be retried in both read and write queries. I'm confused about the errors not marked as simple retry. Is cloudflare being too vague. What the hell should we do in those cases?
 
 From D1 error table, these are explicitly marked retryable:
 - `D1 DB reset because its code was updated.` (`.../debug-d1.mdx:70`)
@@ -167,6 +173,9 @@ Cons:
 
 1. How to classify operations as read-only/idempotent/non-idempotent in this repo.
 2. Whether we want SQL-string classification or API-level explicit retry mode per call.
+
+I don't understand sql-string classification. Example?
+
 3. Desired max retry budget and max wall-clock per request path.
 4. Whether to drop app retry for `first` reads entirely.
 
