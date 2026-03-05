@@ -89,10 +89,8 @@ Scope: opt-in only for `run` and `batch`.
 
 Trade-offs:
 - simplest call-site API
-- harder to extend if we later need more modes
-- unclear semantics when operation is read-only
-
-I think I prefer this one if we can make it optional. I don't think we'll ever need to extend this. How are the semantics unclear if the operation is read-only. In that case, they should just let it default or explicitly set idempotentWrite to false.
+- optional and explicit for write retries
+- read-only semantics are straightforward: omit flag (or set `idempotentWrite: false`) and rely on D1 built-in read retry
 
 ### Option 2: Literal retry mode
 
@@ -105,9 +103,10 @@ Trade-offs:
 - slightly more verbose
 
 Recommendation:
-- use literal retry mode for clarity + future growth.
+- use optional `idempotentWrite` flag.
 - keep `first` without retry options for now.
-- if you prefer flag simplicity, use `idempotentWrite` (not `isIdempotentWrite`).
+- keep default behavior as no app-level write retry unless flag is set.
+- use `idempotentWrite` (not `isIdempotentWrite`).
 
 Naming note:
 - Effect option objects typically use concise capability keys (`concurrent`, `times`, `schedule`, `while`) rather than `is*` naming (`refs/effect4/packages/effect/src/Effect.ts:2535`, `refs/effect4/packages/effect/src/Effect.ts:3914-3925`).
