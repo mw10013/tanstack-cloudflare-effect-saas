@@ -13,10 +13,24 @@ export class D1 extends ServiceMap.Service<D1>()("D1", {
     const { D1: d1 } = yield* CloudflareEnv;
     return {
       prepare: (query: string) => d1.prepare(query),
-      batch: <T = Record<string, unknown>>(statements: D1PreparedStatement[]) =>
-        tryD1(() => d1.batch<T>(statements)),
-      run: <T = Record<string, unknown>>(statement: D1PreparedStatement) =>
-        tryD1(() => statement.run<T>()),
+      batch: <T = Record<string, unknown>>(
+        statements: D1PreparedStatement[],
+        options?: {
+          readonly idempotentWrite?: boolean;
+        },
+      ) =>
+        tryD1(() => d1.batch<T>(statements)).pipe(
+          retryIfIdempotentWrite(options?.idempotentWrite),
+        ),
+      run: <T = Record<string, unknown>>(
+        statement: D1PreparedStatement,
+        options?: {
+          readonly idempotentWrite?: boolean;
+        },
+      ) =>
+        tryD1(() => statement.run<T>()).pipe(
+          retryIfIdempotentWrite(options?.idempotentWrite),
+        ),
       first: <T>(statement: D1PreparedStatement) =>
         tryD1(() => statement.first<T>()),
     };
@@ -25,10 +39,13 @@ export class D1 extends ServiceMap.Service<D1>()("D1", {
   static layer = Layer.effect(this, this.make);
 }
 
-const NON_RETRYABLE = [
-  "SQLITE_CONSTRAINT",
-  "SQLITE_ERROR",
-  "SQLITE_MISMATCH",
+const RETRYABLE_ERROR_SIGNALS = [
+  "reset because its code was updated",
+  "starting up d1 db storage caused object to be reset",
+  "network connection lost",
+  "internal error in d1 db storage caused object to be reset",
+  "cannot resolve d1 db due to transient issue on remote node",
+  "can't read from request stream because client disconnected",
 ] as const;
 
 const tryD1 = <A>(evaluate: () => Promise<A>) =>
@@ -39,11 +56,22 @@ const tryD1 = <A>(evaluate: () => Promise<A>) =>
         message: cause instanceof Error ? cause.message : String(cause),
         cause,
       }),
-  }).pipe(
-    Effect.tapError((error) => Effect.logError(error)),
-    Effect.retry({
-      while: (error) => !NON_RETRYABLE.some((p) => error.message.includes(p)),
-      times: 2,
-      schedule: Schedule.exponential("1 second"),
-    }),
-  );
+  }).pipe(Effect.tapError((error) => Effect.logError(error)));
+
+const retryIfIdempotentWrite =
+  (idempotentWrite?: boolean) =>
+  <A>(effect: Effect.Effect<A, D1Error>) =>
+    idempotentWrite
+      ? effect.pipe(
+          Effect.retry({
+            while: (error) => {
+              const message = error.message.toLowerCase();
+              return RETRYABLE_ERROR_SIGNALS.some((signal) =>
+                message.includes(signal),
+              );
+            },
+            times: 2,
+            schedule: Schedule.exponential("1 second"),
+          }),
+        )
+      : effect;

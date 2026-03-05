@@ -2,11 +2,12 @@
 
 ## Current Code
 
-`src/lib/D1.ts` currently applies one retry policy to `run`, `first`, and `batch` (`src/lib/D1.ts:15-49`):
+`src/lib/D1.ts` now uses opt-in app retry for `run` and `batch` only (`src/lib/D1.ts:16-69`):
 
-- retries up to 2 times (`times: 2`)
-- exponential backoff from 1s (`Schedule.exponential("1 second")`)
-- deny-list based retry stop (`SQLITE_CONSTRAINT`, `SQLITE_ERROR`, `SQLITE_MISMATCH`)
+- `run(..., { idempotentWrite: true })` enables app retry
+- `batch(..., { idempotentWrite: true })` enables app retry
+- `first(...)` has no app-level retry flag and uses base error mapping/logging only
+- retry policy (when enabled): `times: 2`, `Schedule.exponential("1 second")`, deny-list stop on `SQLITE_CONSTRAINT|SQLITE_ERROR|SQLITE_MISMATCH`
 
 ## D1 Built-in Retry Behavior (Cloudflare)
 
@@ -80,40 +81,16 @@ Policy for this class: no app retry (both idempotent and non-idempotent) to avoi
 
 ## Opt-in API Direction
 
-Scope: opt-in only for `run` and `batch`.
-
-### Option 1: Boolean flag
+Decision: optional boolean flag.
 
 - `d1.run(stmt, { idempotentWrite: true })`
 - `d1.batch(stmts, { idempotentWrite: true })`
-
-Trade-offs:
-- simplest call-site API
-- optional and explicit for write retries
-- read-only semantics are straightforward: omit flag (or set `idempotentWrite: false`) and rely on D1 built-in read retry
-
-### Option 2: Literal retry mode
-
-- `d1.run(stmt, { retry: "none" | "idempotent-write" })`
-- `d1.batch(stmts, { retry: "none" | "idempotent-write" })`
-
-Trade-offs:
-- explicit intent at call site
-- extensible without API break
-- slightly more verbose
-
-Recommendation:
-- use optional `idempotentWrite` flag.
-- keep `first` without retry options for now.
-- keep default behavior as no app-level write retry unless flag is set.
-- use `idempotentWrite` (not `isIdempotentWrite`).
-
-Naming note:
-- Effect option objects typically use concise capability keys (`concurrent`, `times`, `schedule`, `while`) rather than `is*` naming (`refs/effect4/packages/effect/src/Effect.ts:2535`, `refs/effect4/packages/effect/src/Effect.ts:3914-3925`).
+- omit flag (or `false`) for default no app-level write retry
+- keep `first` without retry options
 
 ## Source List
 
-- `src/lib/D1.ts:15-49`
+- `src/lib/D1.ts:16-69`
 - `src/lib/D1.ts:6-9`
 - `refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:11`
 - `refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:14`
