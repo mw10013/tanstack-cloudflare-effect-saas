@@ -71,7 +71,7 @@ const retryIfIdempotentWrite =
               );
             },
             times: 2,
-            schedule: Schedule.exponential("1 second"),
+            schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),
           }),
         )
       : effect;
