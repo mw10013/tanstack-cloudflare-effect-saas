@@ -1,5 +1,6 @@
 import type { BetterAuthOptions } from "better-auth";
 import type { Stripe as StripeTypes } from "stripe";
+import type { Subscription as StripeSubscription } from "@better-auth/stripe";
 import { stripe as stripePlugin } from "@better-auth/stripe";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
@@ -7,15 +8,8 @@ import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
-import {
-  Cause,
-  Config,
-  Data,
-  Effect,
-  Layer,
-  Redacted,
-  ServiceMap,
-} from "effect";
+import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
+import * as Schema from "effect/Schema";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { D1 } from "./D1";
 import { KV } from "./KV";
@@ -203,42 +197,46 @@ const createBetterAuthOptions = ({
                   annualDiscountPriceId: plan.annualPriceId,
                   freeTrial: {
                     days: plan.freeTrialDays,
-                    onTrialStart: (subscription: unknown) =>
+                    onTrialStart: (subscription: StripeSubscription) =>
                       runEffect(
                         Effect.logInfo("stripe.subscription.onTrialStart", {
                           planName: plan.name,
-                          subscriptionId: toId(subscription),
+                          subscriptionId: subscription.id,
                         }).pipe(
                           Effect.annotateLogs({
                             hook: "stripe.subscription.onTrialStart",
                             planName: plan.name,
-                            subscriptionId: toId(subscription),
+                            subscriptionId: subscription.id,
                           }),
                         ),
                       ),
-                    onTrialEnd: (payload: unknown) =>
+                    onTrialEnd: ({
+                      subscription,
+                    }: {
+                      subscription: StripeSubscription;
+                    }) =>
                       runEffect(
                         Effect.logInfo("stripe.subscription.onTrialEnd", {
                           planName: plan.name,
-                          subscriptionId: toNestedId(payload, "subscription"),
+                          subscriptionId: subscription.id,
                         }).pipe(
                           Effect.annotateLogs({
                             hook: "stripe.subscription.onTrialEnd",
                             planName: plan.name,
-                            subscriptionId: toNestedId(payload, "subscription"),
+                            subscriptionId: subscription.id,
                           }),
                         ),
                       ),
-                    onTrialExpired: (subscription: unknown) =>
+                    onTrialExpired: (subscription: StripeSubscription) =>
                       runEffect(
                         Effect.logInfo("stripe.subscription.onTrialExpired", {
                           planName: plan.name,
-                          subscriptionId: toId(subscription),
+                          subscriptionId: subscription.id,
                         }).pipe(
                           Effect.annotateLogs({
                             hook: "stripe.subscription.onTrialExpired",
                             planName: plan.name,
-                            subscriptionId: toId(subscription),
+                            subscriptionId: subscription.id,
                           }),
                         ),
                       ),
@@ -468,20 +466,18 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
       auth,
       api: auth.api,
       handler: (request: Request) =>
-        tryAuth("Auth.handler", () =>
+        tryAuth(() =>
           runEffect(
             Effect.tryPromise(() => auth.handler(request)).pipe(
               Effect.withLogSpan("auth.handler"),
-              Effect.annotateLogs({ op: "Auth.handler" }),
             ),
           ),
         ),
       getSession: (headers: Headers) =>
-        tryAuth("Auth.api.getSession", () =>
+        tryAuth(() =>
           runEffect(
             Effect.tryPromise(() => auth.api.getSession({ headers })).pipe(
               Effect.withLogSpan("auth.getSession"),
-              Effect.annotateLogs({ op: "Auth.api.getSession" }),
             ),
           ),
         ),
@@ -495,37 +491,23 @@ export type AuthTypes = ReturnType<
   typeof betterAuth<ReturnType<typeof createBetterAuthOptions>>
 >;
 
-export class AuthError extends Data.TaggedError("AuthError")<{
-  readonly op: string;
-  readonly message: string;
-  readonly cause: Error;
-}> {}
+export class AuthError extends Schema.TaggedErrorClass<AuthError>()(
+  "AuthError",
+  {
+    message: Schema.String,
+    cause: Schema.Defect,
+  },
+) {}
 
-const toCause = (error: unknown) =>
-  Cause.isUnknownError(error) && error.cause instanceof Error
-    ? error.cause
-    : error instanceof Error
-      ? error
-      : new Error(String(error));
-
-const toId = (value: unknown): string =>
-  typeof value === "object" && value !== null && "id" in value
-    ? String(value.id)
-    : "unknown";
-
-const toNestedId = (value: unknown, key: string): string => {
-  if (typeof value !== "object" || value === null) return "unknown";
-  const record = value as Record<string, unknown>;
-  return key in record ? toId(record[key]) : "unknown";
-};
-
-const tryAuth = <A>(op: string, evaluate: () => Promise<A>) =>
-  Effect.tryPromise(evaluate).pipe(
-    Effect.mapError((error) => {
-      const cause = toCause(error);
-      return new AuthError({ op, message: cause.message, cause });
-    }),
-  );
+const tryAuth = <A>(evaluate: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) =>
+      new AuthError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  }).pipe(Effect.tapError((error) => Effect.logError(error)));
 
 export const signOutServerFn = createServerFn({ method: "POST" }).handler(
   ({ context: { runEffect, request } }) =>
