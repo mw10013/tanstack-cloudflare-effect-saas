@@ -1,11 +1,6 @@
 import { Effect, Layer, Schedule, Schema, ServiceMap } from "effect";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
-export class KVError extends Schema.TaggedErrorClass<KVError>()("KVError", {
-  message: Schema.String,
-  cause: Schema.Defect,
-}) {}
-
 /**
  * Effect service wrapping Cloudflare Workers KV.
  *
@@ -44,6 +39,11 @@ export class KV extends ServiceMap.Service<KV>()("KV", {
   static layer = Layer.effect(this, this.make);
 }
 
+export class KVError extends Schema.TaggedErrorClass<KVError>()("KVError", {
+  message: Schema.String,
+  cause: Schema.Defect,
+}) {}
+
 const RETRYABLE_KV_SIGNALS = [
   "network connection lost",
   "daemondown",
@@ -63,9 +63,7 @@ const tryKV = <A>(evaluate: () => Promise<A>) =>
     Effect.retry({
       while: (error) => {
         const message = error.message.toLowerCase();
-        return RETRYABLE_KV_SIGNALS.some((signal) =>
-          message.includes(signal),
-        );
+        return RETRYABLE_KV_SIGNALS.some((signal) => message.includes(signal));
       },
       times: 2,
       schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),

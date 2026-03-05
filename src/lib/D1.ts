@@ -1,13 +1,6 @@
 import { Effect, Layer, Schedule, Schema, ServiceMap } from "effect";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
-// https://gist.github.com/rxliuli/be31cbded41ef7eac6ae0da9070c8ef8
-
-export class D1Error extends Schema.TaggedErrorClass<D1Error>()("D1Error", {
-  message: Schema.String,
-  cause: Schema.Defect,
-}) {}
-
 export class D1 extends ServiceMap.Service<D1>()("D1", {
   make: Effect.gen(function* () {
     const { D1: d1 } = yield* CloudflareEnv;
@@ -48,6 +41,11 @@ export class D1 extends ServiceMap.Service<D1>()("D1", {
 }) {
   static layer = Layer.effect(this, this.make);
 }
+
+export class D1Error extends Schema.TaggedErrorClass<D1Error>()("D1Error", {
+  message: Schema.String,
+  cause: Schema.Defect,
+}) {}
 
 const RETRYABLE_ERROR_SIGNALS = [
   "reset because its code was updated",
