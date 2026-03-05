@@ -25,6 +25,7 @@ export default defineConfig(
     "src/components/ui/toggle-group.tsx",
     "src/components/ai-elements/",
     "src/hooks/use-mobile.ts",
+    "src/hooks/use-mobile.tsx",
   ]),
 
   eslint.configs.recommended,
