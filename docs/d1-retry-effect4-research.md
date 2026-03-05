@@ -19,6 +19,8 @@ Cloudflare documents these facts:
 - App-level retries are specifically called out as useful for write queries with transient errors, and should use exponential backoff + jitter (`refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:11,21`).
 - Retry safety is tied to idempotency (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:57-63`).
 
+Does a read-only batch automatically retry? Can we get evidence for this either way?
+
 ## Practical Implication
 
 - Read-only: D1 already retries. App-level read retry is optional and should be minimal.
@@ -56,6 +58,8 @@ Recommended app behavior:
 Reason:
 - docs point to capacity/query-shape mitigation (optimize/shard/spread load), not aggressive retry loops.
 
+Would it be far to say that if a retry is attempted, it should be done after a long delay? We may also just want to fail since it seems we're hitting capacity issues and don't want to exacerbate.
+
 ## Codebase Method Notes
 
 - `run`: can be read or write depending SQL (`src/lib/D1.ts:18-19`).
@@ -75,6 +79,8 @@ Reason:
   - idempotent batch: retry on transient allow-list only, max 1-2 attempts
 
 ## Classification Approach Options
+
+Get rid of this section. There is no way we're going to inspect sql. We'll figure out opt-in approach as we continue discussion.
 
 ### SQL-string classification
 
