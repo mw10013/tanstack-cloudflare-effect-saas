@@ -92,6 +92,8 @@ Trade-offs:
 - harder to extend if we later need more modes
 - unclear semantics when operation is read-only
 
+I think I prefer this one if we can make it optional. I don't think we'll ever need to extend this. How are the semantics unclear if the operation is read-only. In that case, they should just let it default or explicitly set idempotentWrite to false.
+
 ### Option 2: Literal retry mode
 
 - `d1.run(stmt, { retry: "none" | "idempotent-write" })`
