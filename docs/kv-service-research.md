@@ -167,96 +167,50 @@ Following the D1 pattern of thin wrappers that return Effects:
 
 ### Retry Deep Dive
 
-#### KV 429 behavior — what exactly happens?
+#### KV error landscape
 
-- **Rate limit is per key, per second**: 1 write/sec to the **same key**. Writes to different keys are unlimited (paid plan). Source: `refs/cloudflare-docs/src/content/docs/kv/platform/limits.mdx` line 14, FAQ line 48.
-- **Error message**: `"KV PUT failed: 429 Too Many Requests"` — thrown as an exception from the `put()` promise.
-- **Only affects writes**: reads (`get`, `getWithMetadata`, `list`) are not rate limited per-key. Reads have daily limits on free plan (100k/day) but unlimited on paid.
-- **Scope**: The 429 is specific to writing the same key too fast. Writing different keys concurrently is fine.
+**1. Write rate limit — 429 (put only)**
+- 1 write/sec to the **same key**. Writes to different keys are unlimited (paid). Source: `refs/cloudflare-docs/src/content/docs/kv/platform/limits.mdx` line 14, FAQ line 48.
+- Error message: `"KV PUT failed: 429 Too Many Requests"`
+- Only affects `put`. Reads are not per-key rate limited (unlimited on paid plan).
 
-#### Is "idempotent KV put" a valid concept?
+**2. Transient infrastructure errors (all operations)**
+- Workers runtime documents `Network connection lost` as a retryable runtime error: "Connection failure. Catch a fetch or binding invocation and retry it." Source: Cloudflare Workers errors docs, runtime errors table.
+- `daemonDown` — "A temporary problem invoking the Worker." Also transient.
+- KV has experienced elevated timeouts during infrastructure issues (Oct 2025 incident, Jun 2025 major outage caused by storage provider failure).
+- D1 service already retries on similar transient signals: `"network connection lost"`, `"internal error"`, `"transient issue on remote node"`, `"reset because its code was updated"`. These same infrastructure-level errors can occur for KV since both sit on Workers runtime.
 
-Yes. KV `put` is inherently idempotent — calling `put(key, value)` multiple times with the same arguments produces the same final state. There's no auto-increment, no append, no read-modify-write. A retry after 429 is safe because:
-- The value hasn't changed between attempts
-- No partial writes — `put` either succeeds or fails entirely
-- Last-write-wins semantics mean repeated identical writes are harmless
+**3. Non-retryable errors**
+- Application logic errors (wrong key format, value too large >25MiB)
+- Auth/permission errors
+- Memory/CPU limit exceeded
 
-This is actually simpler than D1's `idempotentWrite` concept, where you must reason about whether a SQL mutation is safe to replay.
+#### Retry design: two layers
 
-#### Recommended retry policy
+Since KV puts are **inherently idempotent** (no auto-increment, no append, last-write-wins), we don't need an `idempotentWrite` opt-in flag like D1. All KV operations are safe to retry on transient errors. This simplifies the design vs D1.
 
-Cloudflare docs explicitly recommend exponential backoff for 429 errors (source: `refs/cloudflare-docs/src/content/docs/kv/api/write-key-value-pairs.mdx` lines 200-267). Their example uses:
-- `maxAttempts = 5`
-- `initialDelay = 1000` (1 second — matches the 1 write/sec/key limit)
-- `delay *= 2` (exponential)
+**Layer 1: Transient error retry (all operations)**
+Applied automatically to every `tryKV` call. Retries on infrastructure-level transient errors that affect any KV operation (reads and writes alike).
 
-**Proposed Effect retry for KV put**:
 ```ts
 const RETRYABLE_KV_SIGNALS = [
+  "network connection lost",
+  "daemondown",
+] as const;
+```
+
+**Layer 2: Write rate limit retry (put only)**
+Applied automatically to `put`. Retries on 429 rate limiting since puts are always idempotent.
+
+```ts
+const RETRYABLE_KV_WRITE_SIGNALS = [
   "kv put failed: 429 too many requests",
 ] as const;
-
-const retryIfIdempotentWrite =
-  (idempotentWrite?: boolean) =>
-  <A>(effect: Effect.Effect<A, KVError>) =>
-    idempotentWrite
-      ? effect.pipe(
-          Effect.retry({
-            while: (error) => {
-              const message = error.message.toLowerCase();
-              return RETRYABLE_KV_SIGNALS.some((signal) =>
-                message.includes(signal),
-              );
-            },
-            times: 2,
-            schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),
-          }),
-        )
-      : effect;
 ```
 
-Using `times: 2` (3 total attempts) with exponential backoff starting at 1s is conservative and appropriate. The 1s base delay aligns with the 1 write/sec/key limit. With jitter: ~1s, ~2s, done — total worst-case ~3s which is acceptable for a write operation that was already rate-limited.
+Both layers use `times: 2`, `Schedule.exponential("1 second")` with jitter. The 1s base delay aligns with the 1 write/sec/key limit for 429s and is a reasonable backoff for transient infra errors.
 
-#### When NOT to retry
-- `delete` — while technically idempotent, 429 doesn't apply (no per-key write rate limit documented for delete)
-- `get`/`list` — reads aren't rate limited per-key
-- Non-429 errors — network errors, auth errors, etc. should fail immediately
-
-I'm confused why we need an idempotentWrite flag? I thought you said puts are implicitly idempotent.
-
-Where is the research on errors unrelated to 429. Surely we would want a retry policy around them.
-
-### getWithMetadata Deep Dive
-
-#### What is metadata?
-
-Metadata is a JSON-serializable object (max 1024 bytes) attached to a KV entry via `put()`:
-```ts
-await kv.put("user:123", largeProfileJSON, {
-  metadata: { role: "admin", updatedAt: 1700000000 }
-});
-```
-
-#### Why use getWithMetadata vs get?
-
-- `get(key)` → returns just the value
-- `getWithMetadata(key)` → returns `{ value, metadata, cacheStatus }`
-
-Key use cases:
-1. **Content-type/MIME info**: store file type in metadata when value is binary
-2. **Timestamps/versioning**: track when value was last updated without parsing the value
-3. **Access control**: store `userId`/`role` to check permissions before processing large value
-4. **List optimization**: metadata is returned by `list()` too — store display fields in metadata to avoid N+1 `get()` calls
-
-#### Recommendation: keep minimal
-
-Expose just two variants matching the most common patterns:
-- `getWithMetadata(key)` — text value + metadata (default)
-- `getWithMetadataJson(key)` — JSON-parsed value + metadata
-
-The `arrayBuffer`/`stream` variants are rare and can be added later if needed. This matches the `get`/`getJson` split.
-
-Ok. You can remove this section and just incorporate getWithMetadataJson.
+From a retry perspective, I don't think we need to distinguish between put vs read, especially if delay is 1 second, right? reads should never get a 429 but can still have the logic for 429. Trade-offs, recommendation?
 
 ### Skeleton
 
@@ -283,13 +237,9 @@ export class KV extends ServiceMap.Service<KV>()("KV", {
       put: (
         key: string,
         value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
-        options?: KVNamespacePutOptions & { readonly idempotentWrite?: boolean },
-      ) => {
-        const { idempotentWrite, ...putOptions } = options ?? {};
-        return tryKV(() => kv.put(key, value, putOptions)).pipe(
-          retryIfIdempotentWrite(idempotentWrite),
-        );
-      },
+        options?: KVNamespacePutOptions,
+      ) =>
+        tryKV(() => kv.put(key, value, options)).pipe(retryWriteRateLimit),
       delete: (key: string) => tryKV(() => kv.delete(key)),
       list: <Metadata = unknown>(options?: KVNamespaceListOptions) =>
         tryKV(() => kv.list<Metadata>(options)),
@@ -300,8 +250,15 @@ export class KV extends ServiceMap.Service<KV>()("KV", {
 }
 
 const RETRYABLE_KV_SIGNALS = [
+  "network connection lost",
+  "daemondown",
+] as const;
+
+const RETRYABLE_KV_WRITE_SIGNALS = [
   "kv put failed: 429 too many requests",
 ] as const;
+
+const retrySchedule = Schedule.exponential("1 second").pipe(Schedule.jittered);
 
 const tryKV = <A>(evaluate: () => Promise<A>) =>
   Effect.tryPromise({
@@ -311,35 +268,46 @@ const tryKV = <A>(evaluate: () => Promise<A>) =>
         message: cause instanceof Error ? cause.message : String(cause),
         cause,
       }),
-  }).pipe(Effect.tapError((error) => Effect.logError(error)));
+  }).pipe(
+    Effect.tapError((error) => Effect.logError(error)),
+    Effect.retry({
+      while: (error) => {
+        const message = error.message.toLowerCase();
+        return RETRYABLE_KV_SIGNALS.some((signal) =>
+          message.includes(signal),
+        );
+      },
+      times: 2,
+      schedule: retrySchedule,
+    }),
+  );
 
-const retryIfIdempotentWrite =
-  (idempotentWrite?: boolean) =>
-  <A>(effect: Effect.Effect<A, KVError>) =>
-    idempotentWrite
-      ? effect.pipe(
-          Effect.retry({
-            while: (error) => {
-              const message = error.message.toLowerCase();
-              return RETRYABLE_KV_SIGNALS.some((signal) =>
-                message.includes(signal),
-              );
-            },
-            times: 2,
-            schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),
-          }),
-        )
-      : effect;
+const retryWriteRateLimit = <A>(effect: Effect.Effect<A, KVError>) =>
+  effect.pipe(
+    Effect.retry({
+      while: (error) => {
+        const message = error.message.toLowerCase();
+        return RETRYABLE_KV_WRITE_SIGNALS.some((signal) =>
+          message.includes(signal),
+        );
+      },
+      times: 2,
+      schedule: retrySchedule,
+    }),
+  );
 ```
 
 ### Resolved questions
 
-1. **Retry for put 429** — Yes. KV puts are inherently idempotent. Use same `idempotentWrite` opt-in pattern as D1. Retry only on `"KV PUT failed: 429 Too Many Requests"`, 2 retries with exponential backoff starting at 1s (aligns with 1 write/sec/key limit).
+1. **Retry** — Two automatic layers, no opt-in flag needed:
+   - **All operations**: auto-retry on transient infra errors (`"network connection lost"`, `"daemondown"`) via `tryKV`.
+   - **Put only**: additional auto-retry on `"KV PUT failed: 429 Too Many Requests"` via `retryWriteRateLimit`. Safe because KV puts are inherently idempotent (no auto-increment, last-write-wins).
+   - Both: 2 retries, exponential backoff from 1s with jitter.
 
-Since puts are inherently idempotent, we don't need complexity of opt-in. Seems we need a separate retry policy for puts vs reads.
+2 layers may be too complex and unecessary.    
 
-2. **Bulk get** — Yes. Exposed as `getBulk(keys[])`. Returns `Map<string, string | null>`. Counts as single operation against 1,000 ops/invocation limit. Max 100 keys.
+2. **Bulk get** — Exposed as `getBulk(keys[])`. Returns `Map<string, string | null>`. Counts as single operation against 1,000 ops/invocation limit. Max 100 keys.
 
-3. **getWithMetadata variants** — Keep minimal: `getWithMetadata` (text) and `getWithMetadataJson`. Skip arrayBuffer/stream variants.
+3. **getWithMetadata** — Two variants: `getWithMetadata` (text) and `getWithMetadataJson`. Skip arrayBuffer/stream.
 
-4. **List pagination** — Leave to caller. Thin wrapper returning `KVNamespaceListResult`. Caller checks `list_complete` and passes `cursor` for next page.
+4. **List pagination** — Leave to caller. Thin wrapper returning `KVNamespaceListResult`. Caller checks `list_complete` and passes `cursor`.
