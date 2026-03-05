@@ -43,6 +43,8 @@ D1 error table marks these as retry candidates:
 - `Cannot resolve D1 DB due to transient issue on remote node.` (`.../debug-d1.mdx:74`)
 - `Can't read from request stream because client disconnected.` (`.../debug-d1.mdx:75`)
 
+The above errors seem like it should be safe to retry non-idempotent writes. Maybe not network connection lost, but what about the others? Too risky to consider?
+
 D1 error table does not recommend plain retry as primary fix for these:
 
 - storage op timeout reset
