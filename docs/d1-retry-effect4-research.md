@@ -1,10 +1,8 @@
-# D1 Retry + Effect v4 Research
+# D1 Retry Research (Retry-Focused)
 
-D1Error has been refactored along with some of tryD1. Update the research to reflect. I don't think we need discussion about v3 vs v4 since it should basically be idiomatic v4. And we need to focus on retry logic.
+## Current Code Snapshot
 
-## Scope
-
-Analyze `src/lib/D1.ts` L28-51:
+Current `src/lib/D1.ts` retry path (`src/lib/D1.ts:28-49`):
 
 ```ts
 const NON_RETRYABLE = [
@@ -14,17 +12,15 @@ const NON_RETRYABLE = [
 ] as const;
 
 const tryD1 = <A>(evaluate: () => Promise<A>) =>
-  Effect.tryPromise(evaluate).pipe(
-    Effect.mapError((error) => {
-      const cause =
-        Cause.isUnknownError(error) && error.cause instanceof Error
-          ? error.cause
-          : error instanceof Error
-            ? error
-            : new Error(String(error));
-      return new D1Error({ message: cause.message, cause });
-    }),
-    Effect.tapError((error) => Effect.log(error)),
+  Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) =>
+      new D1Error({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  }).pipe(
+    Effect.tapError((error) => Effect.logError(error)),
     Effect.retry({
       while: (error) => !NON_RETRYABLE.some((p) => error.message.includes(p)),
       times: 2,
@@ -33,118 +29,157 @@ const tryD1 = <A>(evaluate: () => Promise<A>) =>
   );
 ```
 
-Source: `src/lib/D1.ts:28-51`
+`D1Error` is now `Schema.TaggedErrorClass` (`src/lib/D1.ts:6-9`).
 
-## What This Code Does
+## Direct Answers To Your Questions
 
-1. Defines a deny-list of SQLite message fragments that should not retry.
-2. Wraps a Promise D1 operation into `Effect` via `Effect.tryPromise`.
-3. Normalizes unknown failure shapes into `D1Error`.
-4. Logs every error.
-5. Retries up to 2 times with exponential delay starting at 1s, unless error message contains one of deny-listed strings.
+### 1) Does D1 always auto-retry read-only queries?
 
-Source excerpts:
-- Retry options API exists in v4: `while`, `until`, `times`, `schedule` (`refs/effect4/packages/effect/src/Effect.ts:3921-3926`).
-- `times` is enforced via schedule metadata attempt check (`refs/effect4/packages/effect/src/internal/schedule.ts:242-244`).
+Short answer: D1 auto-retry is built-in behavior for read-only queries when the failure is retryable.
 
-## Is This "Effect v3" or v4?
+Evidence:
+- "D1 detects read-only queries and automatically attempts up to two retries..." (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:86`).
+- "Only read-only queries ... `SELECT`, `EXPLAIN`, `WITH` are retried" (`.../debug-d1.mdx:91-92`).
 
-Short answer: mostly valid v4, but mixed-era style.
+Interpretation:
+- "Always" = no app opt-in needed.
+- It does not mean every read query gets retried; retries happen on retryable failures.
 
-What is v4-valid:
-- `Effect.tryPromise(...)` function form is valid (`refs/effect4/packages/effect/src/Effect.ts:1152-1156`).
-- `Effect.retry({ while, times, schedule })` options object is valid (`refs/effect4/packages/effect/src/Effect.ts:3921-3926`).
-- `ServiceMap.Service(..., { make })` style is valid (`refs/effect4/packages/effect/src/ServiceMap.ts:123-138`).
-- `Data.TaggedError` still exists (`refs/effect4/packages/effect/src/Data.ts:764-768`).
+### 2) Is there a setting/toggle to enable/disable that auto-retry?
 
-What is less idiomatic in v4 docs/examples:
-- v4 AI docs consistently model typed errors with `Schema.TaggedErrorClass`, not `Data.TaggedError`.
-  - Examples: `refs/effect4/ai-docs/src/01_effect/01_basics/10_creating-effects.ts:9-19`, `refs/effect4/ai-docs/src/06_schedule/10_schedules.ts:8-12`.
-- v4 examples usually prefer `Effect.tryPromise({ try, catch })` for direct typed mapping (`refs/effect4/ai-docs/src/01_effect/01_basics/10_creating-effects.ts:47-56`).
-- v4 schedule guidance favors composed schedule policies (retryable filter, cap, jitter) (`refs/effect4/ai-docs/src/06_schedule/10_schedules.ts:50-58`).
+I did not find any D1 retry setting in D1 docs. Automatic retries are documented as default behavior, not configuration.
 
-## What D1 Already Does (Automatic Retries)
+Evidence:
+- Auto-retry docs describe behavior directly, no config params in that section (`.../debug-d1.mdx:84-92`).
+- Retry best-practice page also states it as behavior, not setup (`.../retry-queries.mdx:13-15`).
 
-Cloudflare D1 docs explicitly state:
+### 3) Does D1 document its internal backoff/jitter strategy for those automatic retries?
 
-- "D1 automatically retries read-only queries up to two more times" (`refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:14`).
-- Automatic retries apply to read-only query keywords `SELECT`, `EXPLAIN`, `WITH` (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:91-92`).
-- D1 retry safety mechanism rolls back if retry path would write (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:88`).
-- Retrying operations is only safe if query is idempotent (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:57-63`).
-- App-level retries should use exponential backoff + jitter (`refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:21`).
+Not in these D1 docs. Docs specify count (up to two retries) and safety behavior, but not timing algorithm.
 
-I'm confused over D1 automatically retrying read-only queries vs app-level retries should use exponential backoff + jitter. First thing I need clarified is whether D1 always does the automatic retry for read-only? Is there anything to set up or configure for that behavior? Presumably it's doing exponential backoff + jitter?
+Evidence:
+- Count + read-only scope + rollback safety are documented (`.../debug-d1.mdx:86-92`).
+- No statement of D1-internal backoff/jitter policy in those sections.
 
-If it always does the retries for read-only, then we at the app-level only need to worry about write queries and whether they should be retried? Am I understanding that correctly? show me evidence.
+### 4) So app-level retry should focus on writes?
 
-D1 `run()` / `batch()` results include `meta.total_attempts` (includes retries), useful for observability (`refs/cloudflare-docs/src/content/docs/d1/worker-api/return-object.mdx:42`).
+Mostly yes.
 
-## Interaction Risk: Current `tryD1` + D1 Auto-Retry
+Evidence:
+- D1 docs explicitly frame app retry need around writes/transient errors (`.../retry-queries.mdx:11`).
+- D1 already retries read-only queries (`.../retry-queries.mdx:14`, `.../debug-d1.mdx:86`).
+- D1 warns retries are only safe for idempotent operations (`.../debug-d1.mdx:57-63`).
 
-Current wrapper applies app-level retries to all wrapped methods (`run`, `first`, `batch`).
+## Important Nuances
 
-Potential consequence for read-only operations:
-- D1 internal retries: up to 3 attempts total per app call.
-- Wrapper retries: up to 3 app calls total (`times: 2`).
-- Worst-case total physical attempts can become multiplicative.
+### Read-only retry still might be needed at app level in some cases
 
-Would you say that the app should not retry or be concerned about read-only queries and just let D1 take care of any retries automatically? Or are there cases where we should consider app-level retry of read-only queries.
+Possible cases:
+- You want more than D1's built-in retry budget.
+- Failure is outside D1's retry classification path.
+- You want request-level policy (total deadline, circuit-breaking, fallback source).
 
-Potential consequence for writes:
-- D1 will not auto-retry write queries.
-- Wrapper currently may retry writes unless message contains one of only 3 SQLite fragments.
-- This can be unsafe for non-idempotent writes.
+Tradeoff:
+- Extra app-level retries can multiply attempts and latency.
 
-Agreed. We're going to need to figure this out.
+### Multiplicative retry budget with current `tryD1`
 
-## Better v4 Pattern / Idiom
+For a read-only call:
+- D1 internal: up to 3 attempts total (1 + up to 2 retries).
+- App wrapper: up to 3 attempts total (`times: 2`).
+- Worst case: up to 9 physical attempts.
 
-1. Prefer allow-list retry predicate for transient D1 failures (not deny-list).
-2. Split retry policy by operation kind:
-- read-only: minimal/no app retry since D1 already retries.
-- idempotent writes: retry with strict transient allow-list + capped exponential + jitter.
-- non-idempotent writes: default no retry.
-3. Use `Effect.tryPromise({ try, catch })` to type/map errors at source.
-4. Keep schedule composition explicit in v4 style (`Schedule.exponential(...).pipe(..., Schedule.jittered, ...)`).
+## Why Current `tryD1` Is Risky For Writes
 
-D1 transient examples from docs that are retry candidates:
-- `Network connection lost.` (`debug-d1.mdx:72`)
-- `...object to be reset.` (`debug-d1.mdx:70-71,73`)
-- `Cannot resolve D1 DB due to transient issue on remote node.` (`debug-d1.mdx:74`)
+Current policy retries anything except three SQLite message fragments.
 
-## Specific Assessment of `src/lib/D1.ts` L28-51
+Issues:
+- Deny-list is too small; many non-idempotent write failures can still be retried.
+- Retries on writes can duplicate side effects unless query is idempotent.
+- No jitter in app schedule increases herd risk under contention.
 
-- Correct: wrapping Promise API in Effect; typed domain error boundary; retry combinator usage is v4-compatible.
-- Not ideal: retry classifier is too broad for writes and not aligned to D1’s documented transient retry messages.
-- Not ideal: no jitter.
-- Mixed-era compatibility logic: D1 docs say detailed `error.cause.message` behavior is mainly for older Wrangler (< 3.1.1), while this repo uses Wrangler 4.69.0 (`refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:37-40`, `package.json:147`).
-- Mixed-style: `Data.TaggedError` + manual unknown-error extraction is valid but not the dominant v4 docs idiom.
+Docs grounding:
+- Retry only safe for idempotent operations (`.../debug-d1.mdx:57-63`).
+- App retries should use exponential backoff + jitter (`.../retry-queries.mdx:21`).
 
-## Practical Strategy for `tryD1`
+## D1 Error Signals To Allow-List For Retry
 
-1. Add two wrappers, not one:
-- `tryD1Read` for read-only operations (`first`, read `run` paths).
-- `tryD1Write` for writes / `batch` with explicit idempotency flag.
-2. Use retry allow-list based on D1 documented transient messages.
-3. Add jitter to reduce synchronized retry spikes.
-4. Record `meta.total_attempts` from successful `run` / `batch` responses in logs/metrics.
+From D1 error table, these are explicitly marked retryable:
+- `D1 DB reset because its code was updated.` (`.../debug-d1.mdx:70`)
+- `Internal error while starting up D1 DB storage caused object to be reset.` (`.../debug-d1.mdx:71`)
+- `Network connection lost.` (`.../debug-d1.mdx:72`)
+- `Internal error in D1 DB storage caused object to be reset.` (`.../debug-d1.mdx:73`)
+- `Cannot resolve D1 DB due to transient issue on remote node.` (`.../debug-d1.mdx:74`)
+- `Can't read from request stream because client disconnected.` (`.../debug-d1.mdx:75`, app action suggests retry)
+
+Not marked as simple retry fixes (optimize/shard/load-manage instead):
+- Overload / queued too long / too many queued / timeout / memory / CPU (`.../debug-d1.mdx:76-80`).
+
+## Method-Level Considerations In This Codebase
+
+`D1` service wraps:
+- `run` (`src/lib/D1.ts:18-19`): can be read or write depending SQL text.
+- `first` (`src/lib/D1.ts:20-21`): usually read, but still depends on SQL text. Also returns no metadata (`refs/cloudflare-docs/src/content/docs/d1/worker-api/prepared-statements.mdx:346-347`).
+- `batch` (`src/lib/D1.ts:16-17`): transaction semantics; failures abort/rollback sequence (`refs/cloudflare-docs/src/content/docs/d1/worker-api/d1-database.mdx:94-97`).
+
+Observability:
+- `run` / `batch` have `meta.total_attempts` for successful calls (`refs/cloudflare-docs/src/content/docs/d1/worker-api/return-object.mdx:42`).
+- `first` has no metadata (`.../prepared-statements.mdx:346-347`).
+
+## Concrete Policy Options
+
+### Option A (Conservative, recommended baseline)
+
+- Read-only SQL: no app retry, trust D1 auto-retry.
+- Writes: no retry by default.
+- Explicit per-call opt-in for idempotent writes with transient allow-list + jitter.
+
+Pros:
+- Lowest duplicate-write risk.
+- Predictable latency.
+
+Cons:
+- Some transient write failures bubble to caller.
+
+### Option B (Balanced)
+
+- Read-only SQL: at most 1 app retry, only for transient allow-list.
+- Idempotent writes: at most 2 app retries, transient allow-list, exponential + jitter, capped max delay.
+- Non-idempotent writes: no retry.
+
+Pros:
+- Better resilience.
+
+Cons:
+- More complexity and latency.
+
+### Option C (Aggressive)
+
+- Generic retries for most operations with allow-list.
+
+Pros:
+- Highest automatic recovery.
+
+Cons:
+- Highest risk of write anomalies and tail-latency blowup.
+
+## Proposed Next Discussion Targets
+
+1. How to classify operations as read-only/idempotent/non-idempotent in this repo.
+2. Whether we want SQL-string classification or API-level explicit retry mode per call.
+3. Desired max retry budget and max wall-clock per request path.
+4. Whether to drop app retry for `first` reads entirely.
 
 ## Sources
 
-- `src/lib/D1.ts:28-51`
-- `refs/effect4/packages/effect/src/Effect.ts:1104-1109`
-- `refs/effect4/packages/effect/src/Effect.ts:1152-1156`
-- `refs/effect4/packages/effect/src/Effect.ts:3921-3926`
-- `refs/effect4/packages/effect/src/internal/schedule.ts:242-244`
-- `refs/effect4/packages/effect/src/ServiceMap.ts:123-138`
-- `refs/effect4/packages/effect/src/Data.ts:764-768`
-- `refs/effect4/ai-docs/src/01_effect/01_basics/10_creating-effects.ts:47-56`
-- `refs/effect4/ai-docs/src/06_schedule/10_schedules.ts:50-58`
+- `src/lib/D1.ts:6-9`
+- `src/lib/D1.ts:28-49`
+- `refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:11`
 - `refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:14`
 - `refs/cloudflare-docs/src/content/docs/d1/best-practices/retry-queries.mdx:21`
 - `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:57-63`
-- `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:37-40`
-- `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:86-92`
-- `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:70-75`
+- `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:84-92`
+- `refs/cloudflare-docs/src/content/docs/d1/observability/debug-d1.mdx:70-80`
 - `refs/cloudflare-docs/src/content/docs/d1/worker-api/return-object.mdx:42`
-- `package.json:147`
+- `refs/cloudflare-docs/src/content/docs/d1/worker-api/prepared-statements.mdx:346-347`
+- `refs/cloudflare-docs/src/content/docs/d1/worker-api/d1-database.mdx:94-97`
