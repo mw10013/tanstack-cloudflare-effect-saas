@@ -13,6 +13,11 @@ export class D1 extends ServiceMap.Service<D1>()("D1", {
     const { D1: d1 } = yield* CloudflareEnv;
     return {
       prepare: (query: string) => d1.prepare(query),
+      /**
+       * Executes a transactional batch of prepared statements.
+       * Set `idempotentWrite` to `true` to enable application-level retries
+       * for transient D1 errors.
+       */
       batch: <T = Record<string, unknown>>(
         statements: D1PreparedStatement[],
         options?: {
@@ -22,6 +27,11 @@ export class D1 extends ServiceMap.Service<D1>()("D1", {
         tryD1(() => d1.batch<T>(statements)).pipe(
           retryIfIdempotentWrite(options?.idempotentWrite),
         ),
+      /**
+       * Executes a prepared statement and returns a D1 result object.
+       * Set `idempotentWrite` to `true` to enable application-level retries
+       * for transient D1 errors.
+       */
       run: <T = Record<string, unknown>>(
         statement: D1PreparedStatement,
         options?: {
