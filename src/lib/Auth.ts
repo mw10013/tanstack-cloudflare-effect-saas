@@ -9,6 +9,7 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import type { Stripe as StripeTypes } from "stripe";
 import { Cause, Config, Data, Effect, Layer, Redacted, ServiceMap } from "effect";
 import { D1 } from "./D1";
+import { KV } from "./KV";
 import { Stripe } from "./Stripe";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
@@ -47,8 +48,7 @@ const tryAuth = <A>(op: string, evaluate: () => Promise<A>) =>
 interface CreateBetterAuthOptions {
   db: D1Database;
   stripeClient: StripeTypes;
-  runEffect: <A, E>(effect: Effect.Effect<A, E, D1 | Stripe>) => Promise<A>;
-  kv: KVNamespace;
+  runEffect: <A, E>(effect: Effect.Effect<A, E, D1 | KV | Stripe>) => Promise<A>;
   betterAuthUrl: string;
   betterAuthSecret: Redacted.Redacted;
   transactionalEmail: string;
@@ -69,7 +69,6 @@ const createBetterAuthOptions = ({
   db,
   stripeClient,
   runEffect,
-  kv,
   betterAuthUrl,
   betterAuthSecret,
   transactionalEmail,
@@ -160,11 +159,10 @@ const createBetterAuthOptions = ({
                 email: data.email,
                 url: data.url,
               });
-              yield* Effect.tryPromise(() =>
-                kv.put("demo:magicLink", data.url, {
-                  expirationTtl: 60,
-                }),
-              );
+              const kvService = yield* KV;
+              yield* kvService.put("demo:magicLink", data.url, {
+                expirationTtl: 60,
+              });
               yield* Effect.logInfo("magicLink.email.simulation", {
                 to: data.email,
                 subject: "Your Magic Link",
@@ -386,9 +384,9 @@ type BetterAuthInstance = ReturnType<
 
 export class Auth extends ServiceMap.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {
-    const services = yield* Effect.services<D1 | Stripe>();
+    const services = yield* Effect.services<D1 | KV | Stripe>();
     const runEffectBase = Effect.runPromiseWith(services);
-    const runEffect = <A, E>(effect: Effect.Effect<A, E, D1 | Stripe>) =>
+    const runEffect = <A, E>(effect: Effect.Effect<A, E, D1 | KV | Stripe>) =>
       runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
     const stripe = yield* Stripe;
     const authConfig = yield* Config.all({
@@ -397,14 +395,13 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
       transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
       stripeWebhookSecret: Config.redacted("STRIPE_WEBHOOK_SECRET"),
     });
-    const { KV, D1: db } = yield* CloudflareEnv;
+    const { D1: db } = yield* CloudflareEnv;
 
     const auth: BetterAuthInstance = betterAuth(
       createBetterAuthOptions({
         db,
         stripeClient: stripe.stripe,
         runEffect,
-        kv: KV,
         betterAuthUrl: authConfig.betterAuthUrl,
         betterAuthSecret: authConfig.betterAuthSecret,
         transactionalEmail: authConfig.transactionalEmail,

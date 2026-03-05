@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as StripeClient from "stripe";
 import { planData, Plan as PlanSchema } from "@/lib/Domain";
-import { CloudflareEnv } from "@/lib/CloudflareEnv";
+import { KV } from "@/lib/KV";
 
 type Price = StripeTypes.Price;
 type PriceWithLookupKey = Price & { lookup_key: string };
@@ -45,7 +45,7 @@ const requirePriceWithLookupKey = (price: Price) =>
 export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
   make: Effect.gen(function* () {
     const stripeSecretKey = yield* Config.redacted("STRIPE_SECRET_KEY");
-    const { KV } = yield* CloudflareEnv;
+    const kv = yield* KV;
     const stripe = new StripeClient.Stripe(Redacted.value(stripeSecretKey), {
       apiVersion: "2025-10-29.clover",
     });
@@ -110,9 +110,7 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
 
     const getPlans = Effect.fn("Stripe.getPlans")(function* () {
         const key = "stripe:plans";
-        const cachedPlans = yield* tryStripe("KV.get(stripe:plans)", () =>
-          KV.get(key, { type: "json" }),
-        );
+        const cachedPlans = yield* kv.getJson(key);
         if (cachedPlans) {
           const parseResult = Schema.decodeUnknownOption(Schema.Array(PlanSchema))(
             cachedPlans,
@@ -167,18 +165,13 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
             }),
           ),
         );
-        yield* tryStripe("KV.put(stripe:plans)", () =>
-          KV.put(key, JSON.stringify(plans)),
-        );
+        yield* kv.put(key, JSON.stringify(plans));
         return plans as readonly Plan[];
       });
 
     const ensureBillingPortalConfiguration = Effect.fn("Stripe.ensureBillingPortalConfiguration")(function* () {
         const key = "stripe:isBillingPortalConfigured";
-        const isConfigured = yield* tryStripe(
-          "KV.get(stripe:isBillingPortalConfigured)",
-          () => KV.get(key),
-        );
+        const isConfigured = yield* kv.get(key);
         if (isConfigured === "true") return;
         const configurations = yield* tryStripe(
           "Stripe.billingPortal.configurations.list",
@@ -250,9 +243,7 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
               { count: configurations.data.length },
             );
           }
-          yield* tryStripe("KV.put(stripe:isBillingPortalConfigured)", () =>
-            KV.put(key, "true"),
-          );
+          yield* kv.put(key, "true");
         }
       });
 

@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Auth } from "@/lib/Auth";
-import { CloudflareEnv } from "@/lib/CloudflareEnv";
+import { KV } from "@/lib/KV";
 
 export const Route = createFileRoute("/login")({
   loader: () => getLoaderData(),
@@ -52,7 +52,6 @@ export const login = createServerFn({
       Effect.gen(function* () {
         const auth = yield* Auth;
         const demoMode = yield* Config.boolean("DEMO_MODE");
-        const { KV } = yield* CloudflareEnv;
 
         const result = yield* Effect.tryPromise(() =>
           auth.api.signInMagicLink({
@@ -66,8 +65,7 @@ export const login = createServerFn({
           );
         }
         const magicLink = demoMode
-          ? ((yield* Effect.tryPromise(() => KV.get(`demo:magicLink`))) ??
-            undefined)
+          ? ((yield* (yield* KV).get("demo:magicLink")) ?? undefined)
           : undefined;
         yield* Effect.logInfo("auth.magicLink.generated", { magicLink });
         return { success: true as const, magicLink };

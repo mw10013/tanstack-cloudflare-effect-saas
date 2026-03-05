@@ -15,6 +15,7 @@ import { Auth } from "@/lib/Auth";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { D1 } from "@/lib/D1";
 import { createD1SessionService } from "@/lib/d1-session-service";
+import { KV } from "@/lib/KV";
 import { Repository } from "@/lib/Repository";
 import { Stripe } from "@/lib/Stripe";
 
@@ -58,8 +59,10 @@ const makeRunEffect = (env: Env) => {
     ),
   );
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
+  const kvLayer = Layer.provideMerge(KV.layer, envLayer);
   const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
-  const stripeLayer = Layer.provideMerge(Stripe.layer, repositoryLayer);
+  const d1KvLayer = Layer.merge(d1Layer, kvLayer);
+  const stripeLayer = Layer.provideMerge(Stripe.layer, Layer.merge(repositoryLayer, d1KvLayer));
   const appLayer = Layer.provideMerge(Auth.layer, stripeLayer);
   const loggerLayer = Layer.merge(
     Logger.layer(
