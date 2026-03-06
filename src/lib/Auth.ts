@@ -19,6 +19,50 @@ import { KV } from "./KV";
 import { Repository } from "./Repository";
 import { Stripe } from "./Stripe";
 
+export type AuthInstance = ReturnType<typeof makeAuth>;
+
+export class Auth extends ServiceMap.Service<Auth>()("Auth", {
+  make: Effect.gen(function* () {
+    const services = yield* Effect.services<KV | Stripe | Repository>();
+    const runEffectBase = Effect.runPromiseWith(services);
+    const runEffect = <A, E>(
+      effect: Effect.Effect<A, E, KV | Stripe | Repository>,
+    ) => runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
+    const stripe = yield* Stripe;
+    const authConfig = yield* Config.all({
+      betterAuthUrl: Config.nonEmptyString("BETTER_AUTH_URL"),
+      betterAuthSecret: Config.redacted("BETTER_AUTH_SECRET"),
+      transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
+      stripeWebhookSecret: Config.redacted("STRIPE_WEBHOOK_SECRET"),
+    });
+    const { D1: database } = yield* CloudflareEnv;
+
+    const auth = makeAuth({
+      database,
+      stripeClient: stripe.stripe,
+      runEffect,
+      ...authConfig,
+    });
+    const handler = Effect.fn("auth.handler")(function* (request: Request) {
+      return yield* Effect.tryPromise(() => auth.handler(request));
+    });
+    const getSession = Effect.fn("auth.getSession")(function* (
+      headers: Headers,
+    ) {
+      return yield* Effect.tryPromise(() => auth.api.getSession({ headers }));
+    });
+
+    return {
+      auth,
+      api: auth.api,
+      handler,
+      getSession,
+    };
+  }),
+}) {
+  static layer = Layer.effect(this, this.make);
+}
+
 const makeAuth = ({
   database,
   stripeClient,
@@ -403,50 +447,6 @@ const makeAuth = ({
   organizationApiCreate = auth.api.createOrganization;
   return auth;
 };
-
-export type AuthInstance = ReturnType<typeof makeAuth>;
-
-export class Auth extends ServiceMap.Service<Auth>()("Auth", {
-  make: Effect.gen(function* () {
-    const services = yield* Effect.services<KV | Stripe | Repository>();
-    const runEffectBase = Effect.runPromiseWith(services);
-    const runEffect = <A, E>(
-      effect: Effect.Effect<A, E, KV | Stripe | Repository>,
-    ) => runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
-    const stripe = yield* Stripe;
-    const authConfig = yield* Config.all({
-      betterAuthUrl: Config.nonEmptyString("BETTER_AUTH_URL"),
-      betterAuthSecret: Config.redacted("BETTER_AUTH_SECRET"),
-      transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
-      stripeWebhookSecret: Config.redacted("STRIPE_WEBHOOK_SECRET"),
-    });
-    const { D1: database } = yield* CloudflareEnv;
-
-    const auth = makeAuth({
-      database,
-      stripeClient: stripe.stripe,
-      runEffect,
-      ...authConfig,
-    });
-    const handler = Effect.fn("auth.handler")(function* (request: Request) {
-      return yield* Effect.tryPromise(() => auth.handler(request));
-    });
-    const getSession = Effect.fn("auth.getSession")(function* (
-      headers: Headers,
-    ) {
-      return yield* Effect.tryPromise(() => auth.api.getSession({ headers }));
-    });
-
-    return {
-      auth,
-      api: auth.api,
-      handler,
-      getSession,
-    };
-  }),
-}) {
-  static layer = Layer.effect(this, this.make);
-}
 
 export const signOutServerFn = createServerFn({ method: "POST" }).handler(
   ({ context: { runEffect, request } }) =>
