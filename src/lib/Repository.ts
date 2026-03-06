@@ -75,6 +75,7 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
                 "update Session set activeOrganizationId = ?1 where userId = ?2 and activeOrganizationId is null",
               )
               .bind(organizationId, userId),
+            { idempotentWrite: true },
           );
         },
       ),
@@ -548,14 +549,20 @@ select json_object(
           d1
             .prepare("update Invitation set role = ?1 where id = ?2")
             .bind(role, invitationId),
+          { idempotentWrite: true },
         ),
 
-      deleteExpiredSessions: () =>
-        d1
+      deleteExpiredSessions: () => {
+        const cutoff = new Date().toISOString();
+        return d1
           .run(
-            d1.prepare("delete from Session where expiresAt < datetime('now')"),
+            d1
+              .prepare("delete from Session where expiresAt < ?1")
+              .bind(cutoff),
+            { idempotentWrite: true },
           )
-          .pipe(Effect.map((result) => result.meta.changes)),
+          .pipe(Effect.map((result) => result.meta.changes));
+      },
     };
   }),
 }) {

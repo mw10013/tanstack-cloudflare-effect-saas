@@ -67,6 +67,7 @@ delete from Organization where id in (
                   user.id,
                 ),
               ],
+              { idempotentWrite: true },
             );
 
             const message = `Deleted user ${email}, deletedOrganizationCount: ${String(deleteOrganizationResult.results.length)} deletedUserCount: ${String(deleteUserResult.results.length)})`;
