@@ -1,4 +1,4 @@
-import type { AuthTypes } from "@/lib/Auth";
+import type { AuthInstance } from "@/lib/Auth";
 import {
   createFileRoute,
   Link,
@@ -109,8 +109,8 @@ function AppSidebar({
   organizations,
   user,
 }: {
-  organization: AuthTypes["$Infer"]["Organization"];
-  organizations: AuthTypes["$Infer"]["Organization"][];
+  organization: AuthInstance["$Infer"]["Organization"];
+  organizations: AuthInstance["$Infer"]["Organization"][];
   user: { email: string };
 }) {
   const matchRoute = useMatchRoute();
@@ -212,8 +212,8 @@ function OrganizationSwitcher({
   organizations,
   organization,
 }: {
-  organizations: AuthTypes["$Infer"]["Organization"][];
-  organization: AuthTypes["$Infer"]["Organization"];
+  organizations: AuthInstance["$Infer"]["Organization"][];
+  organization: AuthInstance["$Infer"]["Organization"];
 }) {
   const navigate = useNavigate();
   const switchOrganizationFn = useServerFn(switchOrganizationServerFn);

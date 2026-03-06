@@ -404,7 +404,7 @@ const makeAuth = ({
   return auth;
 };
 
-export type AuthTypes = ReturnType<typeof makeAuth>;
+export type AuthInstance = ReturnType<typeof makeAuth>;
 
 export class Auth extends ServiceMap.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {

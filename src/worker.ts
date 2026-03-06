@@ -1,4 +1,4 @@
-import type { AuthTypes } from "@/lib/Auth";
+import type { AuthInstance } from "@/lib/Auth";
 import { isNotFound, isRedirect } from "@tanstack/react-router";
 import serverEntry from "@tanstack/react-start/server-entry";
 import {
@@ -121,7 +121,7 @@ export interface ServerContext {
   env: Env;
   runEffect: ReturnType<typeof makeRunEffect>;
   request: Request;
-  session?: AuthTypes["$Infer"]["Session"];
+  session?: AuthInstance["$Infer"]["Session"];
 }
 
 declare module "@tanstack/react-start" {
