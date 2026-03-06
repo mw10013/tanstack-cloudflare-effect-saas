@@ -1,4 +1,4 @@
-import type { BetterAuthOptions } from "better-auth";
+import type { Auth as BetterAuth, BetterAuthOptions } from "better-auth";
 import type { Stripe as StripeTypes } from "stripe";
 import type { Subscription as StripeSubscription } from "@better-auth/stripe";
 import { stripe as stripePlugin } from "@better-auth/stripe";
@@ -6,6 +6,10 @@ import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
+import type {
+  DefaultOrganizationPlugin,
+  OrganizationOptions,
+} from "better-auth/plugins";
 import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
@@ -16,7 +20,15 @@ import { KV } from "./KV";
 import { Repository } from "./Repository";
 import { Stripe } from "./Stripe";
 
-interface CreateBetterAuthOptions {
+const makeAuth = ({
+  db,
+  stripeClient,
+  runEffect,
+  betterAuthUrl,
+  betterAuthSecret,
+  transactionalEmail,
+  stripeWebhookSecret,
+}: {
   db: D1Database;
   stripeClient: StripeTypes;
   runEffect: <A, E>(
@@ -26,30 +38,18 @@ interface CreateBetterAuthOptions {
   betterAuthSecret: Redacted.Redacted;
   transactionalEmail: string;
   stripeWebhookSecret: Redacted.Redacted;
-  databaseHookUserCreateAfter?: NonNullable<
-    NonNullable<
-      NonNullable<BetterAuthOptions["databaseHooks"]>["user"]
-    >["create"]
-  >["after"];
-  databaseHookSessionCreateBefore?: NonNullable<
-    NonNullable<
-      NonNullable<BetterAuthOptions["databaseHooks"]>["session"]
-    >["create"]
-  >["before"];
-}
-
-const createBetterAuthOptions = ({
-  db,
-  stripeClient,
-  runEffect,
-  betterAuthUrl,
-  betterAuthSecret,
-  transactionalEmail,
-  stripeWebhookSecret,
-  databaseHookUserCreateAfter,
-  databaseHookSessionCreateBefore,
-}: CreateBetterAuthOptions) =>
-  ({
+}) => {
+  // This is a late-bound Better Auth API reference used only inside the auth
+  // options object. `auth` is created from `options`, so closing over `auth`
+  // directly here creates a type cycle and causes Better Auth plugin inference
+  // to collapse. Typing only the organization plugin's `createOrganization`
+  // API keeps the reference narrow and breaks that cycle.
+  let organizationApiCreate = null as unknown as BetterAuth<
+    BetterAuthOptions & {
+      plugins: [DefaultOrganizationPlugin<OrganizationOptions>];
+    }
+  >["api"]["createOrganization"];
+  const options = {
     baseURL: betterAuthUrl,
     secret: Redacted.value(betterAuthSecret),
     telemetry: { enabled: false },
@@ -70,35 +70,73 @@ const createBetterAuthOptions = ({
     databaseHooks: {
       user: {
         create: {
-          after:
-            databaseHookUserCreateAfter ??
-            ((user) =>
-              runEffect(
-                Effect.logDebug("databaseHooks.user.create.after", {
+          after: (user) =>
+            runEffect(
+              Effect.gen(function* () {
+                if (user.role !== "user") return;
+                yield* Effect.logInfo("databaseHooks.user.create.after", {
                   userId: user.id,
-                }).pipe(
-                  Effect.annotateLogs({
-                    hook: "databaseHooks.user.create.after",
+                  role: user.role,
+                });
+                const repository = yield* Repository;
+                const org = yield* Effect.tryPromise(() =>
+                  organizationApiCreate({
+                    body: {
+                      name: `${user.email.charAt(0).toUpperCase() + user.email.slice(1)}'s Organization`,
+                      slug: user.email.replace(/[^a-z0-9]/g, "-").toLowerCase(),
+                      userId: user.id,
+                    },
                   }),
-                ),
-              )),
+                );
+                yield* Effect.logInfo("auth.organization.created", {
+                  userId: user.id,
+                  organizationId: org.id,
+                });
+                yield* repository.initializeActiveOrganizationForUserSessions({
+                  organizationId: org.id,
+                  userId: user.id,
+                });
+              }).pipe(
+                Effect.withLogSpan("auth.user.create.after"),
+                Effect.annotateLogs({
+                  hook: "databaseHooks.user.create.after",
+                  userId: user.id,
+                }),
+              ),
+            ),
         },
       },
       session: {
         create: {
-          before:
-            databaseHookSessionCreateBefore ??
-            ((session) =>
-              runEffect(
-                Effect.logDebug("databaseHooks.session.create.before", {
+          before: (session) =>
+            runEffect(
+              Effect.gen(function* () {
+                yield* Effect.logDebug("databaseHooks.session.create.before", {
                   sessionId: session.id,
                   userId: session.userId,
-                }).pipe(
-                  Effect.annotateLogs({
-                    hook: "databaseHooks.session.create.before",
-                  }),
-                ),
-              )),
+                });
+                const repository = yield* Repository;
+                const activeOrganization = yield* repository.getOwnerOrganizationByUserId(
+                  session.userId,
+                );
+                return {
+                  data: {
+                    ...session,
+                    activeOrganizationId: Option.map(
+                      activeOrganization,
+                      (organization) => organization.id,
+                    ).pipe(Option.getOrUndefined),
+                  },
+                };
+              }).pipe(
+                Effect.withLogSpan("auth.session.create"),
+                Effect.annotateLogs({
+                  hook: "databaseHooks.session.create.before",
+                  sessionId: session.id,
+                  userId: session.userId,
+                }),
+              ),
+            ),
         },
       },
     },
@@ -359,11 +397,13 @@ const createBetterAuthOptions = ({
       }),
       tanstackStartCookies(),
     ],
-  }) satisfies BetterAuthOptions;
+  } satisfies BetterAuthOptions;
+  const auth = betterAuth(options);
+  organizationApiCreate = auth.api.createOrganization;
+  return auth;
+};
 
-type BetterAuthInstance = ReturnType<
-  typeof betterAuth<ReturnType<typeof createBetterAuthOptions>>
->;
+export type AuthTypes = ReturnType<typeof makeAuth>;
 
 export class Auth extends ServiceMap.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {
@@ -380,80 +420,15 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
     });
     const { D1: db } = yield* CloudflareEnv;
 
-    const auth: BetterAuthInstance = betterAuth(
-      createBetterAuthOptions({
-        db,
-        stripeClient: stripe.stripe,
-        runEffect,
-        betterAuthUrl: authConfig.betterAuthUrl,
-        betterAuthSecret: authConfig.betterAuthSecret,
-        transactionalEmail: authConfig.transactionalEmail,
-        stripeWebhookSecret: authConfig.stripeWebhookSecret,
-        databaseHookUserCreateAfter: (user) =>
-          runEffect(
-            Effect.gen(function* () {
-              if (user.role !== "user") return;
-              yield* Effect.logInfo("databaseHooks.user.create.after", {
-                userId: user.id,
-                role: user.role,
-              });
-              const repository = yield* Repository;
-              const org = yield* Effect.tryPromise(() =>
-                auth.api.createOrganization({
-                  body: {
-                    name: `${user.email.charAt(0).toUpperCase() + user.email.slice(1)}'s Organization`,
-                    slug: user.email.replace(/[^a-z0-9]/g, "-").toLowerCase(),
-                    userId: user.id,
-                  },
-                }),
-              );
-              yield* Effect.logInfo("auth.organization.created", {
-                userId: user.id,
-                organizationId: org.id,
-              });
-              yield* repository.initializeActiveOrganizationForUserSessions({
-                organizationId: org.id,
-                userId: user.id,
-              });
-            }).pipe(
-              Effect.withLogSpan("auth.user.create.after"),
-              Effect.annotateLogs({
-                hook: "databaseHooks.user.create.after",
-                userId: user.id,
-              }),
-            ),
-          ),
-        databaseHookSessionCreateBefore: (session) =>
-          runEffect(
-            Effect.gen(function* () {
-              yield* Effect.logDebug("databaseHooks.session.create.before", {
-                sessionId: session.id,
-                userId: session.userId,
-              });
-              const repository = yield* Repository;
-              const activeOrganization = yield* repository.getOwnerOrganizationByUserId(
-                session.userId,
-              );
-              return {
-                data: {
-                  ...session,
-                  activeOrganizationId: Option.map(
-                    activeOrganization,
-                    (organization) => organization.id,
-                  ).pipe(Option.getOrUndefined),
-                },
-              };
-            }).pipe(
-              Effect.withLogSpan("auth.session.create"),
-              Effect.annotateLogs({
-                hook: "databaseHooks.session.create.before",
-                sessionId: session.id,
-                userId: session.userId,
-              }),
-            ),
-          ),
-      }),
-    );
+    const auth = makeAuth({
+      db,
+      stripeClient: stripe.stripe,
+      runEffect,
+      betterAuthUrl: authConfig.betterAuthUrl,
+      betterAuthSecret: authConfig.betterAuthSecret,
+      transactionalEmail: authConfig.transactionalEmail,
+      stripeWebhookSecret: authConfig.stripeWebhookSecret,
+    });
     const handler = Effect.fn("auth.handler")(function* (request: Request) {
       return yield* Effect.tryPromise(() => auth.handler(request));
     });
@@ -473,11 +448,6 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
 }) {
   static layer = Layer.effect(this, this.make);
 }
-
-export type AuthTypes = ReturnType<
-  typeof betterAuth<ReturnType<typeof createBetterAuthOptions>>
->;
-
 
 export const signOutServerFn = createServerFn({ method: "POST" }).handler(
   ({ context: { runEffect, request } }) =>
