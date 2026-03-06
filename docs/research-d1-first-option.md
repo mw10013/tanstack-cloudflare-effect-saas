@@ -251,7 +251,9 @@ return yield* Effect.fromOption(result).pipe(
 
 The change is minimal: `Effect.fromNullishOr(result)` → `Effect.fromOption(result)`. Both produce `Effect<A, NoSuchElementError>`, so the rest of the pipeline (`flatMap` decode, `catchNoSuchElement`) stays the same.
 
-What happened to the Option.map version? Show that one too. Does it require decodeUnknownSync? If so, explain why and disqualify this approach.
+**Why not `Option.map` here?** `Option.map(result, f)` requires `f` to be a pure function `A → B`. `Schema.decodeUnknownEffect` returns an `Effect`, not a plain value — so it can't be used with `Option.map`. You'd need `Schema.decodeUnknownSync` which throws on decode failure (untyped defect, not idiomatic). Disqualified for the same reason as `getOrThrow` — effectful decode should stay in the Effect error channel.
+
+Ok, makes sense. You can remove this.
 
 **Aggregate callers** (6 sites: `getUsers`, `getAppDashboardData`, etc.) add a simple unwrap:
 
@@ -272,11 +274,20 @@ return yield* Schema.decodeUnknownEffect(DataFromResult(...))(result);
 
 So `yield* (yield* d1.first(...))` = "run D1, then unwrap the Option". The parens are needed because the inner yield runs the effect, the outer yield unwraps the Option.
 
-The nested yield is too awkward I think and would requirement. Can something alone the lines of this work?
+**Avoiding the double yield** — use `Effect.flatMap` to unwrap the Option inside the effect pipeline:
 
-const result = yield\* d1.first(...));
-// Now we need to decode result, which is an Option, effectfully. How?
+Remove the double yield and just present this as the way.
 
-**Why not `Option.getOrThrow`?** — `getOrThrow` throws a JS exception, which is not idiomatic in Effect. Yielding the Option keeps everything in the Effect error channel (`NoSuchElementError`), which can be caught/handled with `Effect.catchNoSuchElement` or surfaced in traces. Thrown exceptions become defects (untyped).
+```ts
+// After — flatMap with Effect.fromOption to unwrap, then decode
+const result = yield* d1.first(...);
+return yield* Effect.fromOption(result).pipe(
+  Effect.flatMap((row) => Schema.decodeUnknownEffect(DataFromResult(...))(row)),
+);
+```
 
-Ok, we agree on no throw so can remove this.
+This mirrors the "find" pattern. `Effect.fromOption` unwraps `Some → succeed(value)` / `None → fail(NoSuchElementError)`. The `NoSuchElementError` on `None` is fine here — aggregate queries never return null, so it acts as an assertion within the Effect error channel.
+
+Alternatively, if we want to keep aggregate callers simple and not deal with `Option` at all, this reinforces the case for **Option C (hybrid)** — keep `first` returning `T | null` for aggregate callers, and add `firstOption` for find-style callers.
+
+We don't want option C so remove this.
