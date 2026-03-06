@@ -538,23 +538,24 @@ select json_object(
           )(result);
         }),
 
-      updateInvitationRole: ({
+      updateInvitationRole: Effect.fn("Repository.updateInvitationRole")(function* ({
         invitationId,
         role,
       }: {
         invitationId: string;
         role: string;
-      }) =>
-        d1.run(
+      }) {
+        return yield* d1.run(
           d1
             .prepare("update Invitation set role = ?1 where id = ?2")
             .bind(role, invitationId),
           { idempotentWrite: true },
-        ),
+        );
+      }),
 
-      deleteExpiredSessions: () => {
+      deleteExpiredSessions: Effect.fn("Repository.deleteExpiredSessions")(function* () {
         const cutoff = new Date().toISOString();
-        return d1
+        return yield* d1
           .run(
             d1
               .prepare("delete from Session where expiresAt < ?1")
@@ -562,7 +563,7 @@ select json_object(
             { idempotentWrite: true },
           )
           .pipe(Effect.map((result) => result.meta.changes));
-      },
+      }),
     };
   }),
 }) {
