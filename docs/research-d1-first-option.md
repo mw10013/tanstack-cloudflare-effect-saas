@@ -19,12 +19,15 @@ Every call site wraps the null with `Effect.fromNullishOr` + `Effect.catchNoSuch
 
 ```ts
 // src/lib/Repository.ts L12-19
-const result = yield* d1.first(
-  d1.prepare(`select * from User where email = ?1`).bind(email),
-);
-return yield* Effect.fromNullishOr(result).pipe(
-  Effect.flatMap(Schema.decodeUnknownEffect(Domain.User)),
-  Effect.catchNoSuchElement,
+const result =
+  yield *
+  d1.first(d1.prepare(`select * from User where email = ?1`).bind(email));
+return (
+  yield *
+  Effect.fromNullishOr(result).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Domain.User)),
+    Effect.catchNoSuchElement,
+  )
 );
 ```
 
@@ -37,6 +40,7 @@ Some callers (e.g. `getUsers`, `getAppDashboardData`) pass the nullable result s
 ### What is `Option`
 
 Discriminated union: `None | Some<A>`. Type-safe replacement for `null`/`undefined`.
+
 - `None` = absence (singleton, `{ _tag: 'None' }`)
 - `Some<A>` = presence (value accessed via `.value`, `{ _tag: 'Some', value: A }`)
 
@@ -44,12 +48,12 @@ Source: `node_modules/effect/src/Option.ts` L1-13
 
 ### Constructors
 
-| Function | Input | Output |
-|---|---|---|
-| `Option.some(value)` | `A` | `Some<A>` |
-| `Option.none()` | — | `None` |
+| Function                  | Input                    | Output                   |
+| ------------------------- | ------------------------ | ------------------------ |
+| `Option.some(value)`      | `A`                      | `Some<A>`                |
+| `Option.none()`           | —                        | `None`                   |
 | `Option.fromNullishOr(a)` | `A \| null \| undefined` | `Option<NonNullable<A>>` |
-| `Option.fromIterable(xs)` | `Iterable<A>` | `Option<A>` (head) |
+| `Option.fromIterable(xs)` | `Iterable<A>`            | `Option<A>` (head)       |
 
 Source: `Option.ts` L301, L334, L1184, L626
 
@@ -66,11 +70,11 @@ Source: `Option.ts` L400, L430, L465
 ### Getters (Unwrapping)
 
 ```ts
-Option.getOrElse(opt, () => fallback)    // lazy fallback
-Option.getOrNull(opt)                     // → A | null
-Option.getOrUndefined(opt)               // → A | undefined
-Option.getOrThrow(opt)                    // throws on None
-Option.getOrThrowWith(opt, () => error)  // throws custom error
+Option.getOrElse(opt, () => fallback); // lazy fallback
+Option.getOrNull(opt); // → A | null
+Option.getOrUndefined(opt); // → A | undefined
+Option.getOrThrow(opt); // throws on None
+Option.getOrThrowWith(opt, () => error); // throws custom error
 ```
 
 Source: `Option.ts` L728, L1369, L1444
@@ -78,11 +82,11 @@ Source: `Option.ts` L728, L1369, L1444
 ### Transformations
 
 ```ts
-Option.map(opt, f)       // Some(a) → Some(f(a)), None → None
-Option.flatMap(opt, f)   // Some(a) → f(a): Option<B>, None → None
-Option.filter(opt, p)    // Some(a) if p(a), else None
-Option.orElse(opt, () => fallbackOpt)
-Option.orElseSome(opt, () => fallbackValue)
+Option.map(opt, f); // Some(a) → Some(f(a)), None → None
+Option.flatMap(opt, f); // Some(a) → f(a): Option<B>, None → None
+Option.filter(opt, p); // Some(a) if p(a), else None
+Option.orElse(opt, () => fallbackOpt);
+Option.orElseSome(opt, () => fallbackValue);
 ```
 
 ### Option is Yieldable in `Effect.gen`
@@ -98,15 +102,15 @@ This is the bridge between `Option` and `Effect` — you can yield an Option to 
 ### Effect ↔ Option Bridge
 
 ```ts
-Effect.fromNullishOr(value)  // null/undefined → Effect fails with NoSuchElementError
-                             // otherwise → Effect succeeds with NonNullable<A>
+Effect.fromNullishOr(value); // null/undefined → Effect fails with NoSuchElementError
+// otherwise → Effect succeeds with NonNullable<A>
 
-Effect.fromOption(opt)       // None → Effect fails with NoSuchElementError
-                             // Some(a) → Effect succeeds with a
+Effect.fromOption(opt); // None → Effect fails with NoSuchElementError
+// Some(a) → Effect succeeds with a
 
-Effect.catchNoSuchElement    // Catches NoSuchElementError, converts:
-                             // success A → Option.some(A)
-                             // NoSuchElementError → Option.none()
+Effect.catchNoSuchElement; // Catches NoSuchElementError, converts:
+// success A → Option.some(A)
+// NoSuchElementError → Option.none()
 ```
 
 Source: `Effect.ts` L2455, L2427, L5629
@@ -115,8 +119,8 @@ Source: `Effect.ts` L2455, L2427, L5629
 
 ```ts
 // Effect.ts L5613-5614 — official example
-const some = Effect.fromNullishOr(1).pipe(Effect.catchNoSuchElement)
-const none = Effect.fromNullishOr(null).pipe(Effect.catchNoSuchElement)
+const some = Effect.fromNullishOr(1).pipe(Effect.catchNoSuchElement);
+const none = Effect.fromNullishOr(null).pipe(Effect.catchNoSuchElement);
 ```
 
 ### Idiomatic v4 Pattern: Service returning `Option`
@@ -170,6 +174,7 @@ const first = Effect.fn("D1.first")(function* <T>(
 ```
 
 **Pros:**
+
 - Aligns with Effect v4 idiom — the official `UserRepository.findById` example returns `Option`
 - Eliminates repeated `Effect.fromNullishOr(result)` at every "find" call site
 - Absence is encoded in the type system — callers must handle `None` explicitly
@@ -177,17 +182,20 @@ const first = Effect.fn("D1.first")(function* <T>(
 - Consistent with `Array.head`, `Stream.runHead`, `Stream.runLast` — all return `Option`
 
 **Cons:**
+
 - Callers that know the result is never null (aggregate JSON queries) must now unwrap an `Option` that is always `Some` — adds friction. E.g. `getUsers`, `getAppDashboardData`, `getAdminDashboardData` etc.
 - Introduces a wrapper object allocation on every call (minor perf, negligible in practice)
 
 ### Option B: Keep `T | null` at D1, handle at Repository
 
 **Pros:**
+
 - D1 stays a thin wrapper around the Cloudflare API — mirrors the platform exactly
 - Callers that know the result is non-null can use it directly without unwrapping
 - Current pattern (`fromNullishOr → flatMap → catchNoSuchElement`) already works
 
 **Cons:**
+
 - Null handling is not in the type-safe Effect/Option world at the D1 layer
 - Every "find" consumer repeats the same 3-line conversion boilerplate
 
@@ -212,7 +220,10 @@ Callers that need `Option` use `firstOption`; callers that know the row exists u
 
 **Option A: Change `D1.first` to return `Effect<Option<T>, D1Error>`.**
 
+We go with this option.
+
 Rationale:
+
 1. **Idiomatic** — Effect v4 models "maybe absent" as `Option`, not `T | null`. The canonical `UserRepository.findById` example in Effect v4 docs returns `Option.Option<...>`.
 2. **Eliminates boilerplate** — The 3-line `fromNullishOr → flatMap → catchNoSuchElement` pattern in Repository is duplicated 3 times and will grow.
 3. **Type safety** — `Option` forces callers to handle absence. `T | null` is easy to forget.
@@ -221,6 +232,7 @@ Rationale:
 Impact on existing callers in Repository.ts:
 
 **"Find" callers** (3 sites: `getUser`, `getMemberByUserAndOrg`, `getOwnerOrganizationByUserId`) simplify:
+
 ```ts
 // Before
 const result = yield* d1.first(...);
@@ -229,31 +241,39 @@ return yield* Effect.fromNullishOr(result).pipe(
   Effect.catchNoSuchElement,
 );
 
-// After
-const result = yield* d1.first(...);
-return yield* Effect.fromOption(result).pipe(
+// After (one-liner with Effect.fromOption)
+return yield* Effect.fromOption(yield* d1.first(...)).pipe(
   Effect.flatMap(Schema.decodeUnknownEffect(Domain.User)),
   Effect.catchNoSuchElement,
 );
+
+// After (one-liner with Option.map — sync decode, returns Option<User>)
+return Option.map(yield* d1.first(...), Schema.decodeUnknownSync(Domain.User));
 ```
 
-Alternatively, with `Option.map`:
-```ts
-const result = yield* d1.first(...);
-return Option.map(result, Schema.decodeUnknownSync(Domain.User));
-```
+The `Option.map` variant is cleanest — one expression, no intermediate variable. Uses sync decode which throws on schema mismatch (acceptable for trusted DB rows). The `Effect.fromOption` variant keeps effectful decode for schema errors in the `Effect` error channel.
+
+I don't like the one-liners for these two so revert them back.
+I don't understand why sync is used. Also, what is this bullshit about a trusted DB row?
+
 
 **Aggregate callers** (6 sites: `getUsers`, `getAppDashboardData`, etc.) add a simple unwrap:
+
 ```ts
 // Before
 const result = yield* d1.first(...);
 return yield* Schema.decodeUnknownEffect(DataFromResult(...))(result);
 
-// After — yield Option in Effect.gen to unwrap (NoSuchElementError if None, which won't happen)
-const result = yield* (yield* d1.first(...));
-return yield* Schema.decodeUnknownEffect(DataFromResult(...))(result);
+// After (one-liner — yield Option unwraps Some, nested yield is unavoidable but reads left-to-right)
+return yield* Schema.decodeUnknownEffect(DataFromResult(...))(yield* (yield* d1.first(...)));
 
-// Or explicitly:
-const result = yield* d1.first(...);
-return yield* Schema.decodeUnknownEffect(DataFromResult(...))(Option.getOrThrow(result));
+This one-liner is not so great so revert it back. And I don't understand the nested yields. Break that down.
+
+// After (one-liner — getOrThrow, slightly more explicit intent)
+return yield* Schema.decodeUnknownEffect(DataFromResult(...))(Option.getOrThrow(yield* d1.first(...)));
+
+I don't like this one-liner so revert. Throw in an effect is not idiomatic?
+
 ```
+
+The `yield* (yield* d1.first(...))` double-yield is a bit noisy. `Option.getOrThrow` reads more clearly — it signals "this should always be Some" at a glance. For aggregate queries that are guaranteed to return a row, `getOrThrow` is the better choice.
