@@ -241,21 +241,17 @@ return yield* Effect.fromNullishOr(result).pipe(
   Effect.catchNoSuchElement,
 );
 
-// After (one-liner with Effect.fromOption)
-return yield* Effect.fromOption(yield* d1.first(...)).pipe(
+// After
+const result = yield* d1.first(...);
+return yield* Effect.fromOption(result).pipe(
   Effect.flatMap(Schema.decodeUnknownEffect(Domain.User)),
   Effect.catchNoSuchElement,
 );
-
-// After (one-liner with Option.map — sync decode, returns Option<User>)
-return Option.map(yield* d1.first(...), Schema.decodeUnknownSync(Domain.User));
 ```
 
-The `Option.map` variant is cleanest — one expression, no intermediate variable. Uses sync decode which throws on schema mismatch (acceptable for trusted DB rows). The `Effect.fromOption` variant keeps effectful decode for schema errors in the `Effect` error channel.
+The change is minimal: `Effect.fromNullishOr(result)` → `Effect.fromOption(result)`. Both produce `Effect<A, NoSuchElementError>`, so the rest of the pipeline (`flatMap` decode, `catchNoSuchElement`) stays the same.
 
-I don't like the one-liners for these two so revert them back.
-I don't understand why sync is used. Also, what is this bullshit about a trusted DB row?
-
+What happened to the Option.map version? Show that one too. Does it require decodeUnknownSync? If so, explain why and disqualify this approach.
 
 **Aggregate callers** (6 sites: `getUsers`, `getAppDashboardData`, etc.) add a simple unwrap:
 
@@ -264,16 +260,23 @@ I don't understand why sync is used. Also, what is this bullshit about a trusted
 const result = yield* d1.first(...);
 return yield* Schema.decodeUnknownEffect(DataFromResult(...))(result);
 
-// After (one-liner — yield Option unwraps Some, nested yield is unavoidable but reads left-to-right)
-return yield* Schema.decodeUnknownEffect(DataFromResult(...))(yield* (yield* d1.first(...)));
-
-This one-liner is not so great so revert it back. And I don't understand the nested yields. Break that down.
-
-// After (one-liner — getOrThrow, slightly more explicit intent)
-return yield* Schema.decodeUnknownEffect(DataFromResult(...))(Option.getOrThrow(yield* d1.first(...)));
-
-I don't like this one-liner so revert. Throw in an effect is not idiomatic?
-
+// After — yield the Option to unwrap Some → value (None → NoSuchElementError)
+const result = yield* (yield* d1.first(...));
+return yield* Schema.decodeUnknownEffect(DataFromResult(...))(result);
 ```
 
-The `yield* (yield* d1.first(...))` double-yield is a bit noisy. `Option.getOrThrow` reads more clearly — it signals "this should always be Some" at a glance. For aggregate queries that are guaranteed to return a row, `getOrThrow` is the better choice.
+**Breaking down the double yield:**
+
+1. `yield* d1.first(...)` — runs the D1 effect, produces `Option<T>`
+2. `yield* optionValue` — Option is yieldable in `Effect.gen`; unwraps `Some` to its value, or short-circuits with `NoSuchElementError` on `None`
+
+So `yield* (yield* d1.first(...))` = "run D1, then unwrap the Option". The parens are needed because the inner yield runs the effect, the outer yield unwraps the Option.
+
+The nested yield is too awkward I think and would requirement. Can something alone the lines of this work?
+
+const result = yield\* d1.first(...));
+// Now we need to decode result, which is an Option, effectfully. How?
+
+**Why not `Option.getOrThrow`?** — `getOrThrow` throws a JS exception, which is not idiomatic in Effect. Yielding the Option keeps everything in the Effect error channel (`NoSuchElementError`), which can be caught/handled with `Effect.catchNoSuchElement` or surfaced in traces. Thrown exceptions become defects (untyped).
+
+Ok, we agree on no throw so can remove this.
