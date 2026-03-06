@@ -4,38 +4,47 @@ import { CloudflareEnv } from "@/lib/CloudflareEnv";
 export class D1 extends ServiceMap.Service<D1>()("D1", {
   make: Effect.gen(function* () {
     const { D1: d1 } = yield* CloudflareEnv;
+    const prepare = (query: string) => d1.prepare(query);
+    const batch = Effect.fn("D1.batch")(function* <T = Record<string, unknown>>(
+      statements: D1PreparedStatement[],
+      options?: {
+        readonly idempotentWrite?: boolean;
+      },
+    ) {
+      return yield* tryD1(() => d1.batch<T>(statements)).pipe(
+        retryIfIdempotentWrite(options?.idempotentWrite),
+      );
+    });
+    const run = Effect.fn("D1.run")(function* <T = Record<string, unknown>>(
+      statement: D1PreparedStatement,
+      options?: {
+        readonly idempotentWrite?: boolean;
+      },
+    ) {
+      return yield* tryD1(() => statement.run<T>()).pipe(
+        retryIfIdempotentWrite(options?.idempotentWrite),
+      );
+    });
+    const first = Effect.fn("D1.first")(function* <T>(
+      statement: D1PreparedStatement,
+    ) {
+      return yield* tryD1(() => statement.first<T>());
+    });
     return {
-      prepare: (query: string) => d1.prepare(query),
+      prepare,
       /**
        * Executes a transactional batch of prepared statements.
        * Set `idempotentWrite` to `true` to enable application-level retries
        * for transient D1 errors.
        */
-      batch: <T = Record<string, unknown>>(
-        statements: D1PreparedStatement[],
-        options?: {
-          readonly idempotentWrite?: boolean;
-        },
-      ) =>
-        tryD1(() => d1.batch<T>(statements)).pipe(
-          retryIfIdempotentWrite(options?.idempotentWrite),
-        ),
+      batch,
       /**
        * Executes a prepared statement and returns a D1 result object.
        * Set `idempotentWrite` to `true` to enable application-level retries
        * for transient D1 errors.
        */
-      run: <T = Record<string, unknown>>(
-        statement: D1PreparedStatement,
-        options?: {
-          readonly idempotentWrite?: boolean;
-        },
-      ) =>
-        tryD1(() => statement.run<T>()).pipe(
-          retryIfIdempotentWrite(options?.idempotentWrite),
-        ),
-      first: <T>(statement: D1PreparedStatement) =>
-        tryD1(() => statement.first<T>()),
+      run,
+      first,
     };
   }),
 }) {
