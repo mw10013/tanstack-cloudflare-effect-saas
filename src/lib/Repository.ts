@@ -6,94 +6,94 @@ import { DataFromResult } from "./SchemaEx";
 export class Repository extends ServiceMap.Service<Repository>()("Repository", {
   make: Effect.gen(function* () {
     const d1 = yield* D1;
-    return {
-      getUser: Effect.fn("Repository.getUser")(function* (email: Domain.User["email"]) {
-          const result = yield* d1.first(
-            d1.prepare(`select * from User where email = ?1`).bind(email),
-          );
-          // Nullish row becomes Option.none; present row decodes to Option.some(user); decode failures still fail.
-          return yield* Effect.fromNullishOr(result).pipe(
-            Effect.flatMap(Schema.decodeUnknownEffect(Domain.User)),
-            Effect.catchNoSuchElement,
-          );
-        }),
-
-      getMemberByUserAndOrg: Effect.fn("Repository.getMemberByUserAndOrg")(function* ({
+    const getUser = Effect.fn("Repository.getUser")(function* (
+      email: Domain.User["email"],
+    ) {
+      const result = yield* d1.first(
+        d1.prepare(`select * from User where email = ?1`).bind(email),
+      );
+      // Nullish row becomes Option.none; present row decodes to Option.some(user); decode failures still fail.
+      return yield* Effect.fromNullishOr(result).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Domain.User)),
+        Effect.catchNoSuchElement,
+      );
+    });
+    const getMemberByUserAndOrg = Effect.fn("Repository.getMemberByUserAndOrg")(
+      function* ({
         userId,
         organizationId,
       }: {
         userId: string;
         organizationId: string;
       }) {
-          const result = yield* d1.first(
-            d1
-              .prepare("select * from Member where userId = ?1 and organizationId = ?2")
-              .bind(userId, organizationId),
-          );
-          return yield* Effect.fromNullishOr(result).pipe(
-            Effect.flatMap(Schema.decodeUnknownEffect(Domain.Member)),
-            Effect.catchNoSuchElement,
-          );
-        }),
+        const result = yield* d1.first(
+          d1
+            .prepare("select * from Member where userId = ?1 and organizationId = ?2")
+            .bind(userId, organizationId),
+        );
+        return yield* Effect.fromNullishOr(result).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(Domain.Member)),
+          Effect.catchNoSuchElement,
+        );
+      },
+    );
+    const getOwnerOrganizationByUserId = Effect.fn(
+      "Repository.getOwnerOrganizationByUserId",
+    )(function* (userId: string) {
+      const result = yield* d1.first(
+        d1
+          .prepare(
+            "select o.* from Organization o where o.id in (select organizationId from Member where userId = ?1 and role = 'owner')",
+          )
+          .bind(userId),
+      );
+      return yield* Effect.fromNullishOr(result).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Domain.Organization)),
+        Effect.catchNoSuchElement,
+      );
+    });
 
-      getOwnerOrganizationByUserId: Effect.fn("Repository.getOwnerOrganizationByUserId")(
-        function* (userId: string) {
-          const result = yield* d1.first(
-            d1
-              .prepare(
-                "select o.* from Organization o where o.id in (select organizationId from Member where userId = ?1 and role = 'owner')",
-              )
-              .bind(userId),
-          );
-          return yield* Effect.fromNullishOr(result).pipe(
-            Effect.flatMap(Schema.decodeUnknownEffect(Domain.Organization)),
-            Effect.catchNoSuchElement,
-          );
-        },
-      ),
-
-      /**
-       * Backfills active organization only for sessions that do not have one yet.
-       *
-       * Better Auth runs `user.create.after` after the transaction that creates the user
-       * and initial session, so this should initialize unset sessions rather than
-       * overwrite already-selected organizations on existing sessions.
-       */
-      initializeActiveOrganizationForUserSessions: Effect.fn(
-        "Repository.initializeActiveOrganizationForUserSessions",
-      )(
-        function* ({
-          organizationId,
-          userId,
-        }: {
-          organizationId: string;
-          userId: string;
-        }) {
-          return yield* d1.run(
-            d1
-              .prepare(
-                "update Session set activeOrganizationId = ?1 where userId = ?2 and activeOrganizationId is null",
-              )
-              .bind(organizationId, userId),
-            { idempotentWrite: true },
-          );
-        },
-      ),
-
-      getUsers: Effect.fn("Repository.getUsers")(function* ({
-        limit,
-        offset,
-        searchValue,
+    /**
+     * Updates only sessions whose `activeOrganizationId` is still `null`.
+     *
+     * Better Auth runs `user.create.after` after the transaction that creates the user
+     * and initial session, so this implementation backfills unset sessions without
+     * overwriting already-selected organizations on existing sessions.
+     */
+    const initializeActiveOrganizationForUserSessions = Effect.fn(
+      "Repository.initializeActiveOrganizationForUserSessions",
+    )(
+      function* ({
+        organizationId,
+        userId,
       }: {
-        limit: number;
-        offset: number;
-        searchValue?: string;
+        organizationId: string;
+        userId: string;
       }) {
-          const searchPattern = searchValue ? `%${searchValue}%` : "%";
-          const result = yield* d1.first(
-            d1
-              .prepare(
-                `
+        return yield* d1.run(
+          d1
+            .prepare(
+              "update Session set activeOrganizationId = ?1 where userId = ?2 and activeOrganizationId is null",
+            )
+            .bind(organizationId, userId),
+          { idempotentWrite: true },
+        );
+      },
+    );
+    const getUsers = Effect.fn("Repository.getUsers")(function* ({
+      limit,
+      offset,
+      searchValue,
+    }: {
+      limit: number;
+      offset: number;
+      searchValue?: string;
+    }) {
+      const searchPattern = searchValue ? `%${searchValue}%` : "%";
+      const result = yield* d1.first(
+        d1
+          .prepare(
+            `
 select json_object(
   'users', coalesce((
     select json_group_array(
@@ -124,33 +124,33 @@ select json_object(
   'limit', ?2,
   'offset', ?3
 ) as data
-                `,
-              )
-              .bind(searchPattern, limit, offset),
-          );
-          return yield* Schema.decodeUnknownEffect(
-            DataFromResult(
-              Schema.Struct({
-                users: Schema.Array(Domain.User),
-                count: Schema.Number,
-                limit: Schema.Number,
-                offset: Schema.Number,
-              }),
-            ),
-          )(result);
-        }),
-
-      getAppDashboardData: Effect.fn("Repository.getAppDashboardData")(function* ({
+            `,
+          )
+          .bind(searchPattern, limit, offset),
+      );
+      return yield* Schema.decodeUnknownEffect(
+        DataFromResult(
+          Schema.Struct({
+            users: Schema.Array(Domain.User),
+            count: Schema.Number,
+            limit: Schema.Number,
+            offset: Schema.Number,
+          }),
+        ),
+      )(result);
+    });
+    const getAppDashboardData = Effect.fn("Repository.getAppDashboardData")(
+      function* ({
         userEmail,
         organizationId,
       }: {
         userEmail: string;
         organizationId: string;
       }) {
-          const result = yield* d1.first(
-            d1
-              .prepare(
-                `
+        const result = yield* d1.first(
+          d1
+            .prepare(
+              `
 select json_object(
   'userInvitations', (
     select json_group_array(
@@ -198,27 +198,28 @@ select json_object(
     select count(*) from Invitation where organizationId = ?2 and status = 'pending'
   )
 ) as data
-                `,
-              )
-              .bind(userEmail, organizationId),
-          );
-          return yield* Schema.decodeUnknownEffect(
-            DataFromResult(
-              Schema.Struct({
-                userInvitations: Schema.Array(
-                  Domain.InvitationWithOrganizationAndInviter,
-                ),
-                memberCount: Schema.Number,
-                pendingInvitationCount: Schema.Number,
-              }),
-            ),
-          )(result);
-        }),
-
-      getAdminDashboardData: Effect.fn("Repository.getAdminDashboardData")(function* () {
-          const result = yield* d1.first(
-            d1.prepare(
-              `
+              `,
+            )
+            .bind(userEmail, organizationId),
+        );
+        return yield* Schema.decodeUnknownEffect(
+          DataFromResult(
+            Schema.Struct({
+              userInvitations: Schema.Array(
+                Domain.InvitationWithOrganizationAndInviter,
+              ),
+              memberCount: Schema.Number,
+              pendingInvitationCount: Schema.Number,
+            }),
+          ),
+        )(result);
+      },
+    );
+    const getAdminDashboardData = Effect.fn("Repository.getAdminDashboardData")(
+      function* () {
+        const result = yield* d1.first(
+          d1.prepare(
+            `
 select json_object(
   'customerCount', (
     select count(*) from User where role = 'user'
@@ -230,34 +231,34 @@ select json_object(
     select count(*) from Subscription where status = 'trialing'
   )
 ) as data
-              `,
-            ),
-          );
-          return yield* Schema.decodeUnknownEffect(
-            DataFromResult(
-              Schema.Struct({
-                customerCount: Schema.Number,
-                activeSubscriptionCount: Schema.Number,
-                trialingSubscriptionCount: Schema.Number,
-              }),
-            ),
-          )(result);
-        }),
-
-      getCustomers: Effect.fn("Repository.getCustomers")(function* ({
-        limit,
-        offset,
-        searchValue,
-      }: {
-        limit: number;
-        offset: number;
-        searchValue?: string;
-      }) {
-          const searchPattern = searchValue ? `%${searchValue}%` : "%";
-          const result = yield* d1.first(
-            d1
-              .prepare(
-                `
+            `,
+          ),
+        );
+        return yield* Schema.decodeUnknownEffect(
+          DataFromResult(
+            Schema.Struct({
+              customerCount: Schema.Number,
+              activeSubscriptionCount: Schema.Number,
+              trialingSubscriptionCount: Schema.Number,
+            }),
+          ),
+        )(result);
+      },
+    );
+    const getCustomers = Effect.fn("Repository.getCustomers")(function* ({
+      limit,
+      offset,
+      searchValue,
+    }: {
+      limit: number;
+      offset: number;
+      searchValue?: string;
+    }) {
+      const searchPattern = searchValue ? `%${searchValue}%` : "%";
+      const result = yield* d1.first(
+        d1
+          .prepare(
+            `
 select json_object(
   'customers', coalesce((
     select json_group_array(
@@ -310,36 +311,35 @@ select json_object(
   'limit', ?2,
   'offset', ?3
 ) as data
-                `,
-              )
-              .bind(searchPattern, limit, offset),
-          );
-          return yield* Schema.decodeUnknownEffect(
-            DataFromResult(
-              Schema.Struct({
-                customers: Schema.Array(Domain.UserWithSubscription),
-                count: Schema.Number,
-                limit: Schema.Number,
-                offset: Schema.Number,
-              }),
-            ),
-          )(result);
-        }),
-
-      getSubscriptions: Effect.fn("Repository.getSubscriptions")(function* ({
-        limit,
-        offset,
-        searchValue,
-      }: {
-        limit: number;
-        offset: number;
-        searchValue?: string;
-      }) {
-          const searchPattern = searchValue ? `%${searchValue}%` : "%";
-          const result = yield* d1.first(
-            d1
-              .prepare(
-                `
+            `,
+          )
+          .bind(searchPattern, limit, offset),
+      );
+      return yield* Schema.decodeUnknownEffect(
+        DataFromResult(
+          Schema.Struct({
+            customers: Schema.Array(Domain.UserWithSubscription),
+            count: Schema.Number,
+            limit: Schema.Number,
+            offset: Schema.Number,
+          }),
+        ),
+      )(result);
+    });
+    const getSubscriptions = Effect.fn("Repository.getSubscriptions")(function* ({
+      limit,
+      offset,
+      searchValue,
+    }: {
+      limit: number;
+      offset: number;
+      searchValue?: string;
+    }) {
+      const searchPattern = searchValue ? `%${searchValue}%` : "%";
+      const result = yield* d1.first(
+        d1
+          .prepare(
+            `
 select json_object(
   'subscriptions', coalesce((
     select json_group_array(
@@ -423,36 +423,35 @@ select json_object(
   'limit', ?2,
   'offset', ?3
 ) as data
-                `,
-              )
-              .bind(searchPattern, limit, offset),
-          );
-          return yield* Schema.decodeUnknownEffect(
-            DataFromResult(
-              Schema.Struct({
-                subscriptions: Schema.Array(Domain.SubscriptionWithUser),
-                count: Schema.Number,
-                limit: Schema.Number,
-                offset: Schema.Number,
-              }),
-            ),
-          )(result);
-        }),
-
-      getSessions: Effect.fn("Repository.getSessions")(function* ({
-        limit,
-        offset,
-        searchValue,
-      }: {
-        limit: number;
-        offset: number;
-        searchValue?: string;
-      }) {
-          const searchPattern = searchValue ? `%${searchValue}%` : "%";
-          const result = yield* d1.first(
-            d1
-              .prepare(
-                `
+            `,
+          )
+          .bind(searchPattern, limit, offset),
+      );
+      return yield* Schema.decodeUnknownEffect(
+        DataFromResult(
+          Schema.Struct({
+            subscriptions: Schema.Array(Domain.SubscriptionWithUser),
+            count: Schema.Number,
+            limit: Schema.Number,
+            offset: Schema.Number,
+          }),
+        ),
+      )(result);
+    });
+    const getSessions = Effect.fn("Repository.getSessions")(function* ({
+      limit,
+      offset,
+      searchValue,
+    }: {
+      limit: number;
+      offset: number;
+      searchValue?: string;
+    }) {
+      const searchPattern = searchValue ? `%${searchValue}%` : "%";
+      const result = yield* d1.first(
+        d1
+          .prepare(
+            `
 select json_object(
   'sessions', coalesce((
     select json_group_array(
@@ -522,23 +521,23 @@ select json_object(
   'limit', ?2,
   'offset', ?3
 ) as data
-                `,
-              )
-              .bind(searchPattern, limit, offset),
-          );
-          return yield* Schema.decodeUnknownEffect(
-            DataFromResult(
-              Schema.Struct({
-                sessions: Schema.Array(Domain.SessionWithUser),
-                count: Schema.Number,
-                limit: Schema.Number,
-                offset: Schema.Number,
-              }),
-            ),
-          )(result);
-        }),
-
-      updateInvitationRole: Effect.fn("Repository.updateInvitationRole")(function* ({
+            `,
+          )
+          .bind(searchPattern, limit, offset),
+      );
+      return yield* Schema.decodeUnknownEffect(
+        DataFromResult(
+          Schema.Struct({
+            sessions: Schema.Array(Domain.SessionWithUser),
+            count: Schema.Number,
+            limit: Schema.Number,
+            offset: Schema.Number,
+          }),
+        ),
+      )(result);
+    });
+    const updateInvitationRole = Effect.fn("Repository.updateInvitationRole")(
+      function* ({
         invitationId,
         role,
       }: {
@@ -551,19 +550,37 @@ select json_object(
             .bind(role, invitationId),
           { idempotentWrite: true },
         );
-      }),
-
-      deleteExpiredSessions: Effect.fn("Repository.deleteExpiredSessions")(function* () {
-        const cutoff = new Date().toISOString();
-        return yield* d1
-          .run(
-            d1
-              .prepare("delete from Session where expiresAt < ?1")
-              .bind(cutoff),
-            { idempotentWrite: true },
-          )
-          .pipe(Effect.map((result) => result.meta.changes));
-      }),
+      },
+    );
+    const deleteExpiredSessions = Effect.fn(
+      "Repository.deleteExpiredSessions",
+    )(function* () {
+      const cutoff = new Date().toISOString();
+      return yield* d1
+        .run(
+          d1
+            .prepare("delete from Session where expiresAt < ?1")
+            .bind(cutoff),
+          { idempotentWrite: true },
+        )
+        .pipe(Effect.map((result) => result.meta.changes));
+    });
+    return {
+      getUser,
+      getMemberByUserAndOrg,
+      getOwnerOrganizationByUserId,
+      /**
+       * Backfills active organization only for sessions that do not have one yet.
+       */
+      initializeActiveOrganizationForUserSessions,
+      getUsers,
+      getAppDashboardData,
+      getAdminDashboardData,
+      getCustomers,
+      getSubscriptions,
+      getSessions,
+      updateInvitationRole,
+      deleteExpiredSessions,
     };
   }),
 }) {

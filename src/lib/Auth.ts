@@ -454,18 +454,20 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
           ),
       }),
     );
+    const handler = Effect.fn("auth.handler")(function* (request: Request) {
+      return yield* Effect.tryPromise(() => auth.handler(request));
+    });
+    const getSession = Effect.fn("auth.getSession")(function* (headers: Headers) {
+      return yield* Effect.tryPromise(() =>
+        auth.api.getSession({ headers }),
+      );
+    });
 
     return {
       auth,
       api: auth.api,
-      handler: Effect.fn("auth.handler")(function* (request: Request) {
-        return yield* Effect.tryPromise(() => auth.handler(request));
-      }),
-      getSession: Effect.fn("auth.getSession")(function* (headers: Headers) {
-        return yield* Effect.tryPromise(() =>
-          auth.api.getSession({ headers }),
-        );
-      }),
+      handler,
+      getSession,
     };
   }),
 }) {
