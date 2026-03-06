@@ -9,17 +9,18 @@ import { createAuthMiddleware } from "better-auth/api";
 import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
+import * as Option from "effect/Option";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
-import { D1 } from "./D1";
 import { KV } from "./KV";
+import { Repository } from "./Repository";
 import { Stripe } from "./Stripe";
 
 interface CreateBetterAuthOptions {
   db: D1Database;
   stripeClient: StripeTypes;
   runEffect: <A, E>(
-    effect: Effect.Effect<A, E, D1 | KV | Stripe>,
+    effect: Effect.Effect<A, E, KV | Stripe | Repository>,
   ) => Promise<A>;
   betterAuthUrl: string;
   betterAuthSecret: Redacted.Redacted;
@@ -249,16 +250,12 @@ const createBetterAuthOptions = ({
           authorizeReference: ({ user, referenceId, action }) =>
             runEffect(
               Effect.gen(function* () {
-                const d1 = yield* D1;
-                const result = Boolean(
-                  yield* d1.first(
-                    d1
-                      .prepare(
-                        "select 1 from Member where userId = ? and organizationId = ? and role = 'owner'",
-                      )
-                      .bind(user.id, referenceId),
-                  ),
-                );
+                const repository = yield* Repository;
+                const member = yield* repository.getMemberByUserAndOrg({
+                  userId: user.id,
+                  organizationId: referenceId,
+                });
+                const result = Option.isSome(member) && member.value.role === "owner";
                 yield* Effect.logDebug(
                   "stripe.subscription.authorizeReference",
                   {
@@ -370,9 +367,9 @@ type BetterAuthInstance = ReturnType<
 
 export class Auth extends ServiceMap.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {
-    const services = yield* Effect.services<D1 | KV | Stripe>();
+    const services = yield* Effect.services<KV | Stripe | Repository>();
     const runEffectBase = Effect.runPromiseWith(services);
-    const runEffect = <A, E>(effect: Effect.Effect<A, E, D1 | KV | Stripe>) =>
+    const runEffect = <A, E>(effect: Effect.Effect<A, E, KV | Stripe | Repository>) =>
       runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
     const stripe = yield* Stripe;
     const authConfig = yield* Config.all({
@@ -400,7 +397,7 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
                 userId: user.id,
                 role: user.role,
               });
-              const d1 = yield* D1;
+              const repository = yield* Repository;
               const org = yield* Effect.tryPromise(() =>
                 auth.api.createOrganization({
                   body: {
@@ -414,13 +411,10 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
                 userId: user.id,
                 organizationId: org.id,
               });
-              yield* d1.run(
-                d1
-                  .prepare(
-                    "update Session set activeOrganizationId = ? where userId = ? and activeOrganizationId is null",
-                  )
-                  .bind(org.id, user.id),
-              );
+              yield* repository.initializeActiveOrganizationForUserSessions({
+                organizationId: org.id,
+                userId: user.id,
+              });
             }).pipe(
               Effect.withLogSpan("auth.user.create.after"),
               Effect.annotateLogs({
@@ -436,18 +430,17 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
                 sessionId: session.id,
                 userId: session.userId,
               });
-              const d1 = yield* D1;
-              const activeOrganization = yield* d1.first<{ id: string }>(
-                d1
-                  .prepare(
-                    "select id from Organization where id in (select organizationId from Member where userId = ? and role = 'owner')",
-                  )
-                  .bind(session.userId),
+              const repository = yield* Repository;
+              const activeOrganization = yield* repository.getOwnerOrganizationByUserId(
+                session.userId,
               );
               return {
                 data: {
                   ...session,
-                  activeOrganizationId: activeOrganization?.id ?? undefined,
+                  activeOrganizationId: Option.map(
+                    activeOrganization,
+                    (organization) => organization.id,
+                  ).pipe(Option.getOrUndefined),
                 },
               };
             }).pipe(

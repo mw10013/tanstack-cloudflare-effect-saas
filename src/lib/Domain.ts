@@ -111,6 +111,15 @@ export const Session = Schema.Struct({
 });
 export type Session = typeof Session.Type;
 
+export const Member = Schema.Struct({
+  id: Schema.String,
+  userId: Schema.String,
+  organizationId: Schema.String,
+  role: MemberRole,
+  createdAt: isoDatetimeToDate,
+});
+export type Member = typeof Member.Type;
+
 export const Organization = Schema.Struct({
   id: Schema.String,
   name: Schema.NonEmptyString,

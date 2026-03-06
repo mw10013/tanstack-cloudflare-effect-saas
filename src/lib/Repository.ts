@@ -18,6 +18,67 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
           );
         }),
 
+      getMemberByUserAndOrg: Effect.fn("Repository.getMemberByUserAndOrg")(function* ({
+        userId,
+        organizationId,
+      }: {
+        userId: string;
+        organizationId: string;
+      }) {
+          const result = yield* d1.first(
+            d1
+              .prepare("select * from Member where userId = ?1 and organizationId = ?2")
+              .bind(userId, organizationId),
+          );
+          return yield* Effect.fromNullishOr(result).pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(Domain.Member)),
+            Effect.catchNoSuchElement,
+          );
+        }),
+
+      getOwnerOrganizationByUserId: Effect.fn("Repository.getOwnerOrganizationByUserId")(
+        function* (userId: string) {
+          const result = yield* d1.first(
+            d1
+              .prepare(
+                "select o.* from Organization o where o.id in (select organizationId from Member where userId = ?1 and role = 'owner')",
+              )
+              .bind(userId),
+          );
+          return yield* Effect.fromNullishOr(result).pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(Domain.Organization)),
+            Effect.catchNoSuchElement,
+          );
+        },
+      ),
+
+      /**
+       * Backfills active organization only for sessions that do not have one yet.
+       *
+       * Better Auth runs `user.create.after` after the transaction that creates the user
+       * and initial session, so this should initialize unset sessions rather than
+       * overwrite already-selected organizations on existing sessions.
+       */
+      initializeActiveOrganizationForUserSessions: Effect.fn(
+        "Repository.initializeActiveOrganizationForUserSessions",
+      )(
+        function* ({
+          organizationId,
+          userId,
+        }: {
+          organizationId: string;
+          userId: string;
+        }) {
+          return yield* d1.run(
+            d1
+              .prepare(
+                "update Session set activeOrganizationId = ?1 where userId = ?2 and activeOrganizationId is null",
+              )
+              .bind(organizationId, userId),
+          );
+        },
+      ),
+
       getUsers: Effect.fn("Repository.getUsers")(function* ({
         limit,
         offset,
