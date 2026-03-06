@@ -143,11 +143,11 @@ envLayer
 ├── D1.layer
 ├── KV.layer
 ├── Repository.layer ← D1
-├── Stripe.layer ← D1, KV, Repository (if Stripe needs domain objects later)
-└── Auth.layer ← D1, KV, Stripe, Repository
+├── Stripe.layer ← KV, Repository (if Stripe needs domain objects later)
+└── Auth.layer ← KV, Stripe, Repository
 ```
 
-Why would D1 need to be a dependency of Auth.layer? It would need CloudflareEnv to get the D1 binding to pass to better-auth, but I don't think it needs the D1 serverice, right?
+Auth.layer needs `CloudflareEnv` (for the raw `D1Database` binding to pass to better-auth's `database` option) but does **not** need the `D1` Effect service. Currently Auth.make includes D1 in `Effect.services<D1 | KV | Stripe>()` and the hooks do `yield* D1` inside `runEffect` — but after this refactor, all D1 access goes through Repository. Auth's direct D1 service dependency can be dropped.
 
 **No circular dependency risk.** Repository depends only on D1. Auth and Stripe both depend on Repository — this is a clean DAG.
 
@@ -155,29 +155,25 @@ worker.ts change: `stripeLayer` already merges `repositoryLayer` into its provid
 
 ### Auth.ts Changes
 
-Auth.make needs `yield* Repository` alongside existing `yield* D1` usage:
+The hooks currently do `yield* D1` inside `runEffect` to access D1 as a service dependency — not captured in a closure. The same pattern applies to Repository: hooks will do `yield* Repository` inside `runEffect`.
+
+`runEffect` type signature needs to widen from `D1 | KV | Stripe` to `KV | Stripe | Repository` (D1 dropped since all D1 access now goes through Repository):
 
 ```ts
-// In Auth.make Effect.gen:
-const repository = yield* Repository;
+// Auth.make:
+const services = yield* Effect.services<KV | Stripe | Repository>();
+const runEffectBase = Effect.runPromiseWith(services);
+const runEffect = <A, E>(effect: Effect.Effect<A, E, KV | Stripe | Repository>) =>
+  runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
 ```
 
-Why do we need to do this in make. I think the pattern we're using is we yield in the runEffect/
-
-Then replace the 3 direct D1 calls with repository calls.
-
-**Auth.ts `runEffect` type signature** currently requires `D1 | KV | Stripe`. Since Repository is available through the same layer graph, the `runEffect` calls from better-auth hooks can use Repository directly — it's already provided. The `CreateBetterAuthOptions` interface and `createBetterAuthOptions` function don't use `runEffect` for these queries (they use `d1` directly in the closures). The repository calls would go through `runEffect` which needs its type widened:
+`CreateBetterAuthOptions.runEffect` type updates to match:
 
 ```ts
-// CreateBetterAuthOptions.runEffect type:
 runEffect: <A, E>(
-  effect: Effect.Effect<A, E, D1 | KV | Stripe | Repository>,
+  effect: Effect.Effect<A, E, KV | Stripe | Repository>,
 ) => Promise<A>;
 ```
-
-Or better: since the repository instance is captured in the closure (like `d1` is currently), the hooks can call repository methods directly without going through `runEffect`.
-
-Why do you think we should capture the repository instance in the closure? I'm not sure that is good pattern here. Also, we shouldn't need a dependency on D1 service here, right?
 
 ## Auth.ts Refactored Hooks (Sketch)
 
@@ -187,6 +183,7 @@ Why do you think we should capture the repository instance in the closure? I'm n
 authorizeReference: ({ user, referenceId, action }) =>
   runEffect(
     Effect.gen(function* () {
+      const repository = yield* Repository;
       const member = yield* repository.getMemberByUserAndOrg({
         userId: user.id,
         organizationId: referenceId,
@@ -202,14 +199,13 @@ authorizeReference: ({ user, referenceId, action }) =>
   ),
 ```
 
-Wait — `repository.getMemberByUserAndOrg` returns `Effect<Option<Member>, ..., never>` (dependencies already resolved at service creation). But it's called inside `runEffect` which provides `D1 | KV | Stripe`. The repository methods are already bound to the D1 instance at construction time, so they have no unsatisfied dependencies — the Effect returned is `Effect<Option<Member>, ParseError, never>`. This works inside `runEffect` without needing to widen its type.
-
 ### databaseHookSessionCreateBefore
 
 ```ts
 databaseHookSessionCreateBefore: (session) =>
   runEffect(
     Effect.gen(function* () {
+      const repository = yield* Repository;
       const org = yield* repository.getOwnerOrganizationByUserId(session.userId);
       return {
         data: {
@@ -227,6 +223,7 @@ databaseHookSessionCreateBefore: (session) =>
 
 ```ts
 // Inside the existing Effect.gen:
+const repository = yield* Repository;
 yield* repository.setActiveOrganizationForUser({
   organizationId: org.id,
   userId: user.id,
@@ -240,6 +237,7 @@ yield* repository.setActiveOrganizationForUser({
 | Domain alignment | ✅ Queries return domain objects (`Member`, `Organization`) instead of raw SQL primitives |
 | Layer graph | ✅ No changes to worker.ts — Repository already in Auth's transitive deps |
 | Circular deps | ✅ None — Repository → D1, Auth → Repository is a clean DAG |
-| `runEffect` type | ✅ No change needed — repository methods are pre-bound, return `Effect<..., never>` |
+| Auth D1 dep | ✅ Dropped — Auth no longer needs `D1` service; `runEffect` type becomes `KV \| Stripe \| Repository` |
+| Access pattern | ✅ `yield* Repository` inside `runEffect` — consistent with existing `yield* D1` pattern |
 | New Domain schema | `Member` struct needed in Domain.ts |
 | New Repository fns | `getMemberByUserAndOrg`, `getOwnerOrganizationByUserId`, `setActiveOrganizationForUser` |
