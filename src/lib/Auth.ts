@@ -1,27 +1,26 @@
-import type { Auth as BetterAuth, BetterAuthOptions } from "better-auth";
-import type { Stripe as StripeTypes } from "stripe";
 import type { Subscription as StripeSubscription } from "@better-auth/stripe";
+import type { Auth as BetterAuth, BetterAuthOptions } from "better-auth";
+import type {
+  DefaultOrganizationPlugin,
+  OrganizationOptions,
+} from "better-auth/plugins";
+import type { Stripe as StripeTypes } from "stripe";
 import { stripe as stripePlugin } from "@better-auth/stripe";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
-import type {
-  DefaultOrganizationPlugin,
-  OrganizationOptions,
-} from "better-auth/plugins";
 import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
 import * as Option from "effect/Option";
-
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { KV } from "./KV";
 import { Repository } from "./Repository";
 import { Stripe } from "./Stripe";
 
 const makeAuth = ({
-  db,
+  database,
   stripeClient,
   runEffect,
   betterAuthUrl,
@@ -29,7 +28,7 @@ const makeAuth = ({
   transactionalEmail,
   stripeWebhookSecret,
 }: {
-  db: D1Database;
+  database: D1Database;
   stripeClient: StripeTypes;
   runEffect: <A, E>(
     effect: Effect.Effect<A, E, KV | Stripe | Repository>,
@@ -54,7 +53,7 @@ const makeAuth = ({
     secret: Redacted.value(betterAuthSecret),
     telemetry: { enabled: false },
     rateLimit: { enabled: false },
-    database: db,
+    database,
     user: { modelName: "User" },
     session: { modelName: "Session", storeSessionInDatabase: true },
     account: {
@@ -116,9 +115,10 @@ const makeAuth = ({
                   userId: session.userId,
                 });
                 const repository = yield* Repository;
-                const activeOrganization = yield* repository.getOwnerOrganizationByUserId(
-                  session.userId,
-                );
+                const activeOrganization =
+                  yield* repository.getOwnerOrganizationByUserId(
+                    session.userId,
+                  );
                 return {
                   data: {
                     ...session,
@@ -293,7 +293,8 @@ const makeAuth = ({
                   userId: user.id,
                   organizationId: referenceId,
                 });
-                const result = Option.isSome(member) && member.value.role === "owner";
+                const result =
+                  Option.isSome(member) && member.value.role === "owner";
                 yield* Effect.logDebug(
                   "stripe.subscription.authorizeReference",
                   {
@@ -409,8 +410,9 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {
     const services = yield* Effect.services<KV | Stripe | Repository>();
     const runEffectBase = Effect.runPromiseWith(services);
-    const runEffect = <A, E>(effect: Effect.Effect<A, E, KV | Stripe | Repository>) =>
-      runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
+    const runEffect = <A, E>(
+      effect: Effect.Effect<A, E, KV | Stripe | Repository>,
+    ) => runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
     const stripe = yield* Stripe;
     const authConfig = yield* Config.all({
       betterAuthUrl: Config.nonEmptyString("BETTER_AUTH_URL"),
@@ -418,24 +420,21 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
       transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
       stripeWebhookSecret: Config.redacted("STRIPE_WEBHOOK_SECRET"),
     });
-    const { D1: db } = yield* CloudflareEnv;
+    const { D1: database } = yield* CloudflareEnv;
 
     const auth = makeAuth({
-      db,
+      database,
       stripeClient: stripe.stripe,
       runEffect,
-      betterAuthUrl: authConfig.betterAuthUrl,
-      betterAuthSecret: authConfig.betterAuthSecret,
-      transactionalEmail: authConfig.transactionalEmail,
-      stripeWebhookSecret: authConfig.stripeWebhookSecret,
+      ...authConfig,
     });
     const handler = Effect.fn("auth.handler")(function* (request: Request) {
       return yield* Effect.tryPromise(() => auth.handler(request));
     });
-    const getSession = Effect.fn("auth.getSession")(function* (headers: Headers) {
-      return yield* Effect.tryPromise(() =>
-        auth.api.getSession({ headers }),
-      );
+    const getSession = Effect.fn("auth.getSession")(function* (
+      headers: Headers,
+    ) {
+      return yield* Effect.tryPromise(() => auth.api.getSession({ headers }));
     });
 
     return {
