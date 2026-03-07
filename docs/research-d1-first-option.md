@@ -265,6 +265,9 @@ return yield* Effect.fromOption(result).pipe(
 );
 ```
 
-Why are we not using Effect.catchNoSuchElement as in the find callers? Is it because we want to return an empty array if there is nothing in the aggregation? Or has more to do with we never want to return an Option? I'm a little hazy on all this.
+**Why no `catchNoSuchElement` here?** The two caller types have different semantics:
 
-Same pattern as find callers: `Effect.fromOption` unwraps `Some → succeed(value)` / `None → fail(NoSuchElementError)`, then `flatMap` decodes. Aggregate queries never return null, so the `NoSuchElementError` path acts as an assertion within the Effect error channel.
+- **Find callers** return `Option<User>` — the row legitimately may not exist. `catchNoSuchElement` converts `NoSuchElementError` → `Option.none()`, making absence a normal success value.
+- **Aggregate callers** return a decoded struct (e.g. `{ users: User[], count: number }`). The row is always present because `json_object(...)` always produces a result. `None` should never happen — if it does, it's a bug, so we *want* the `NoSuchElementError` to propagate as a failure rather than silently swallowing it into an `Option.none()`.
+
+In short: find callers use `catchNoSuchElement` because absence is expected. Aggregate callers omit it because absence is a defect.
