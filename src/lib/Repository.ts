@@ -12,8 +12,7 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
       const result = yield* d1.first(
         d1.prepare(`select * from User where email = ?1`).bind(email),
       );
-      // Nullish row becomes Option.none; present row decodes to Option.some(user); decode failures still fail.
-      return yield* Effect.fromNullishOr(result).pipe(
+      return yield* Effect.fromOption(result).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Domain.User)),
         Effect.catchNoSuchElement,
       );
@@ -31,7 +30,7 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
             .prepare("select * from Member where userId = ?1 and organizationId = ?2")
             .bind(userId, organizationId),
         );
-        return yield* Effect.fromNullishOr(result).pipe(
+        return yield* Effect.fromOption(result).pipe(
           Effect.flatMap(Schema.decodeUnknownEffect(Domain.Member)),
           Effect.catchNoSuchElement,
         );
@@ -47,7 +46,7 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
           )
           .bind(userId),
       );
-      return yield* Effect.fromNullishOr(result).pipe(
+      return yield* Effect.fromOption(result).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Domain.Organization)),
         Effect.catchNoSuchElement,
       );
@@ -128,16 +127,20 @@ select json_object(
           )
           .bind(searchPattern, limit, offset),
       );
-      return yield* Schema.decodeUnknownEffect(
-        DataFromResult(
-          Schema.Struct({
-            users: Schema.Array(Domain.User),
-            count: Schema.Number,
-            limit: Schema.Number,
-            offset: Schema.Number,
-          }),
+      return yield* Effect.fromOption(result).pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            DataFromResult(
+              Schema.Struct({
+                users: Schema.Array(Domain.User),
+                count: Schema.Number,
+                limit: Schema.Number,
+                offset: Schema.Number,
+              }),
+            ),
+          ),
         ),
-      )(result);
+      );
     });
     const getAppDashboardData = Effect.fn("Repository.getAppDashboardData")(
       function* ({
@@ -202,17 +205,21 @@ select json_object(
             )
             .bind(userEmail, organizationId),
         );
-        return yield* Schema.decodeUnknownEffect(
-          DataFromResult(
-            Schema.Struct({
-              userInvitations: Schema.Array(
-                Domain.InvitationWithOrganizationAndInviter,
+        return yield* Effect.fromOption(result).pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(
+              DataFromResult(
+                Schema.Struct({
+                  userInvitations: Schema.Array(
+                    Domain.InvitationWithOrganizationAndInviter,
+                  ),
+                  memberCount: Schema.Number,
+                  pendingInvitationCount: Schema.Number,
+                }),
               ),
-              memberCount: Schema.Number,
-              pendingInvitationCount: Schema.Number,
-            }),
+            ),
           ),
-        )(result);
+        );
       },
     );
     const getAdminDashboardData = Effect.fn("Repository.getAdminDashboardData")(
@@ -234,15 +241,19 @@ select json_object(
             `,
           ),
         );
-        return yield* Schema.decodeUnknownEffect(
-          DataFromResult(
-            Schema.Struct({
-              customerCount: Schema.Number,
-              activeSubscriptionCount: Schema.Number,
-              trialingSubscriptionCount: Schema.Number,
-            }),
+        return yield* Effect.fromOption(result).pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(
+              DataFromResult(
+                Schema.Struct({
+                  customerCount: Schema.Number,
+                  activeSubscriptionCount: Schema.Number,
+                  trialingSubscriptionCount: Schema.Number,
+                }),
+              ),
+            ),
           ),
-        )(result);
+        );
       },
     );
     const getCustomers = Effect.fn("Repository.getCustomers")(function* ({
@@ -315,16 +326,20 @@ select json_object(
           )
           .bind(searchPattern, limit, offset),
       );
-      return yield* Schema.decodeUnknownEffect(
-        DataFromResult(
-          Schema.Struct({
-            customers: Schema.Array(Domain.UserWithSubscription),
-            count: Schema.Number,
-            limit: Schema.Number,
-            offset: Schema.Number,
-          }),
+      return yield* Effect.fromOption(result).pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            DataFromResult(
+              Schema.Struct({
+                customers: Schema.Array(Domain.UserWithSubscription),
+                count: Schema.Number,
+                limit: Schema.Number,
+                offset: Schema.Number,
+              }),
+            ),
+          ),
         ),
-      )(result);
+      );
     });
     const getSubscriptions = Effect.fn("Repository.getSubscriptions")(function* ({
       limit,
@@ -427,16 +442,20 @@ select json_object(
           )
           .bind(searchPattern, limit, offset),
       );
-      return yield* Schema.decodeUnknownEffect(
-        DataFromResult(
-          Schema.Struct({
-            subscriptions: Schema.Array(Domain.SubscriptionWithUser),
-            count: Schema.Number,
-            limit: Schema.Number,
-            offset: Schema.Number,
-          }),
+      return yield* Effect.fromOption(result).pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            DataFromResult(
+              Schema.Struct({
+                subscriptions: Schema.Array(Domain.SubscriptionWithUser),
+                count: Schema.Number,
+                limit: Schema.Number,
+                offset: Schema.Number,
+              }),
+            ),
+          ),
         ),
-      )(result);
+      );
     });
     const getSessions = Effect.fn("Repository.getSessions")(function* ({
       limit,
@@ -525,16 +544,20 @@ select json_object(
           )
           .bind(searchPattern, limit, offset),
       );
-      return yield* Schema.decodeUnknownEffect(
-        DataFromResult(
-          Schema.Struct({
-            sessions: Schema.Array(Domain.SessionWithUser),
-            count: Schema.Number,
-            limit: Schema.Number,
-            offset: Schema.Number,
-          }),
+      return yield* Effect.fromOption(result).pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            DataFromResult(
+              Schema.Struct({
+                sessions: Schema.Array(Domain.SessionWithUser),
+                count: Schema.Number,
+                limit: Schema.Number,
+                offset: Schema.Number,
+              }),
+            ),
+          ),
         ),
-      )(result);
+      );
     });
     const updateInvitationRole = Effect.fn("Repository.updateInvitationRole")(
       function* ({

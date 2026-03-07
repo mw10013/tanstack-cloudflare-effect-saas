@@ -1,4 +1,4 @@
-import { Effect, Layer, Schedule, Schema, ServiceMap } from "effect";
+import { Effect, Layer, Option, Schedule, Schema, ServiceMap } from "effect";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
 export class D1 extends ServiceMap.Service<D1>()("D1", {
@@ -28,7 +28,9 @@ export class D1 extends ServiceMap.Service<D1>()("D1", {
     const first = Effect.fn("D1.first")(function* <T>(
       statement: D1PreparedStatement,
     ) {
-      return yield* tryD1(() => statement.first<T>());
+      return yield* tryD1(() => statement.first<T>()).pipe(
+        Effect.map(Option.fromNullishOr),
+      );
     });
     return {
       prepare,
