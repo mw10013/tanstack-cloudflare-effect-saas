@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createMiddleware } from "@tanstack/react-start";
 import { Effect } from "effect";
 import { Auth } from "@/lib/Auth";
+import { Request } from "@/lib/Request";
 
 const authAllowlistMiddleware = createMiddleware().server(
   ({ next, request }) =>
@@ -19,16 +20,18 @@ export const Route = createFileRoute("/api/auth/$")({
   server: {
     middleware: [authAllowlistMiddleware],
     handlers: {
-      GET: async ({ request, context: { runEffect } }) =>
+      GET: async ({ context: { runEffect } }) =>
         runEffect(
           Effect.gen(function* () {
+            const request = yield* Request;
             const auth = yield* Auth;
             return yield* auth.handler(request);
           }),
         ),
-      POST: async ({ request, context: { runEffect } }) =>
+      POST: async ({ context: { runEffect } }) =>
         runEffect(
           Effect.gen(function* () {
+            const request = yield* Request;
             const auth = yield* Auth;
             return yield* auth.handler(request);
           }),

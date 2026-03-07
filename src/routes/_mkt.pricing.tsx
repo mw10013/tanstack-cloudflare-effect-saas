@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Auth } from "@/lib/Auth";
 import { Switch } from "@/components/ui/switch";
 import { Stripe } from "@/lib/Stripe";
+import { Request } from "@/lib/Request";
 
 export const Route = createFileRoute("/_mkt/pricing")({
   loader: async () => {
@@ -44,7 +45,7 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
     ),
   )
   .handler(
-    ({ data: { intent }, context: { runEffect, request, session } }) =>
+    ({ data: { intent }, context: { runEffect, session } }) =>
       runEffect(
         Effect.gen(function* () {
           if (!session) {
@@ -53,6 +54,7 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
           if (session.user.role !== "user") {
             return yield* Effect.fail(new Error("Forbidden"));
           }
+          const request = yield* Request;
           const stripe = yield* Stripe;
           const auth = yield* Auth;
           const plans = yield* stripe.getPlans();

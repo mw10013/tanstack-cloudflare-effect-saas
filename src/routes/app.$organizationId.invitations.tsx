@@ -43,6 +43,7 @@ import {
 import { Auth } from "@/lib/Auth";
 import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
+import { Request } from "@/lib/Request";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -59,9 +60,10 @@ export const Route = createFileRoute("/app/$organizationId/invitations")({
 
 const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator((data: { organizationId: string }) => data)
-  .handler(({ data, context: { runEffect, request } }) =>
+  .handler(({ data, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         const { success: canManageInvitations } = yield* Effect.tryPromise(() =>
           auth.api.hasPermission({
@@ -153,9 +155,10 @@ const invitationIdSchema = Schema.Struct({ invitationId: Schema.String });
  */
 const invite = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(inviteSchema))
-  .handler(({ data: { organizationId, emails, role }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId, emails, role }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         const repository = yield* Repository;
         for (const email of emails) {
@@ -321,9 +324,10 @@ function InviteForm({ organizationId }: { organizationId: string }) {
  */
 const cancelInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(invitationIdSchema))
-  .handler(({ data: { invitationId }, context: { runEffect, request } }) =>
+  .handler(({ data: { invitationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.cancelInvitation({

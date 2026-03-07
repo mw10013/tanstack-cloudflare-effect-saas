@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Auth } from "@/lib/Auth";
+import { Request } from "@/lib/Request";
 
 const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
 
@@ -35,9 +36,10 @@ export const Route = createFileRoute("/app/$organizationId/billing")({
 
 const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
-  .handler(({ data: { organizationId }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         const subscriptions = yield* Effect.tryPromise(() =>
           auth.api.listActiveSubscriptions({
@@ -258,9 +260,10 @@ function NoSubscriptionCard() {
  */
 const manageBilling = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
-  .handler(({ data: { organizationId }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         return yield* Effect.tryPromise(() =>
           auth.api.createBillingPortal({
@@ -281,9 +284,10 @@ const manageBilling = createServerFn({ method: "POST" })
  */
 const cancelSubscription = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(subscriptionActionSchema))
-  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         return yield* Effect.tryPromise(() =>
           auth.api.cancelSubscription({
@@ -305,9 +309,10 @@ const cancelSubscription = createServerFn({ method: "POST" })
  */
 const restoreSubscription = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(subscriptionActionSchema))
-  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.restoreSubscription({

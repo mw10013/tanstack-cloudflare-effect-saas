@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Auth } from "@/lib/Auth";
 import * as Domain from "@/lib/Domain";
+import { Request } from "@/lib/Request";
 
 const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
 
@@ -48,9 +49,10 @@ export const Route = createFileRoute("/app/$organizationId/members")({
 
 const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
-  .handler(({ data: { organizationId }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         const session = yield* Effect.fromNullishOr(
           yield* Effect.tryPromise(() =>
@@ -92,9 +94,10 @@ const getLoaderData = createServerFn({ method: "GET" })
  */
 const removeMember = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(removeMemberSchema))
-  .handler(({ data: { organizationId, memberId }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId, memberId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.removeMember({
@@ -111,9 +114,10 @@ const removeMember = createServerFn({ method: "POST" })
  */
 const leaveOrganization = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
-  .handler(({ data: { organizationId }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.leaveOrganization({
@@ -130,9 +134,10 @@ const leaveOrganization = createServerFn({ method: "POST" })
  */
 const updateMemberRole = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(updateMemberRoleSchema))
-  .handler(({ data: { organizationId, memberId, role }, context: { runEffect, request } }) =>
+  .handler(({ data: { organizationId, memberId, role }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.updateMemberRole({

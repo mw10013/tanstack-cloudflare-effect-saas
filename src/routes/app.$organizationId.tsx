@@ -35,12 +35,14 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Auth, signOutServerFn } from "@/lib/Auth";
+import { Request } from "@/lib/Request";
 
 const switchOrganizationServerFn = createServerFn({ method: "POST" })
   .inputValidator((organizationId: string) => organizationId)
-  .handler(({ data: organizationId, context: { runEffect, request } }) =>
+  .handler(({ data: organizationId, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.setActiveOrganization({
@@ -54,7 +56,7 @@ const switchOrganizationServerFn = createServerFn({ method: "POST" })
 
 const beforeLoadServerFn = createServerFn({ method: "GET" })
   .inputValidator((organizationId: string) => organizationId)
-  .handler(({ context: { runEffect, request, session }, data: organizationId }) =>
+  .handler(({ context: { runEffect, session }, data: organizationId }) =>
     runEffect(
       Effect.gen(function* () {
         const validSession = yield* Effect.fromNullishOr(session).pipe(
@@ -63,6 +65,7 @@ const beforeLoadServerFn = createServerFn({ method: "GET" })
             () => new Cause.NoSuchElementError(),
           ),
         );
+        const request = yield* Request;
         const auth = yield* Auth;
         const organizations = yield* Effect.tryPromise(() =>
           auth.api.listOrganizations({ headers: request.headers }),

@@ -61,6 +61,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Auth } from "@/lib/Auth";
+import { Request } from "@/lib/Request";
 import { Repository } from "@/lib/Repository";
 
 const LIMIT = 5;
@@ -115,9 +116,10 @@ export const Route = createFileRoute("/admin/users")({
 
 export const unbanUser = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(userIdSchema))
-  .handler(({ data, context: { runEffect, request } }) =>
+  .handler(({ data, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.unbanUser({
@@ -132,9 +134,10 @@ export const unbanUser = createServerFn({ method: "POST" })
 
 export const impersonateUser = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(userIdSchema))
-  .handler(({ data, context: { runEffect, request } }) =>
+  .handler(({ data, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.impersonateUser({
@@ -364,9 +367,10 @@ const banUserSchema = Schema.Struct({
 
 export const banUser = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(banUserSchema))
-  .handler(({ data, context: { runEffect, request } }) =>
+  .handler(({ data, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.banUser({

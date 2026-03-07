@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Auth } from "@/lib/Auth";
 import { KV } from "@/lib/KV";
+import { Request } from "@/lib/Request";
 
 export const Route = createFileRoute("/login")({
   loader: () => getLoaderData(),
@@ -47,9 +48,10 @@ export const login = createServerFn({
   method: "POST",
 })
   .inputValidator(Schema.toStandardSchemaV1(loginSchema))
-  .handler(({ data, context: { runEffect, request } }) =>
+  .handler(({ data, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         const demoMode = yield* Config.boolean("DEMO_MODE").pipe(Config.withDefault(false));
 

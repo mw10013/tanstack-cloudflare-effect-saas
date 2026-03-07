@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/item";
 import { Auth } from "@/lib/Auth";
 import { Repository } from "@/lib/Repository";
+import { Request } from "@/lib/Request";
 
 const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
 
@@ -63,9 +64,10 @@ const getLoaderData = createServerFn({ method: "GET" })
 
 const acceptInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(acceptInvitationSchema))
-  .handler(({ data: { invitationId, organizationId }, context: { runEffect, request } }) =>
+  .handler(({ data: { invitationId, organizationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.acceptInvitation({
@@ -88,9 +90,10 @@ const acceptInvitation = createServerFn({ method: "POST" })
 
 const rejectInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(invitationIdSchema))
-  .handler(({ data: { invitationId }, context: { runEffect, request } }) =>
+  .handler(({ data: { invitationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.rejectInvitation({

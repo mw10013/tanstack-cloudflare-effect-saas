@@ -14,16 +14,55 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { Auth } from "@/lib/Auth";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
-import * as Domain from "@/lib/Domain";
 import { D1 } from "@/lib/D1";
 import { createD1SessionService } from "@/lib/d1-session-service";
+import * as Domain from "@/lib/Domain";
 import { KV } from "@/lib/KV";
 import { Repository } from "@/lib/Repository";
+import { Request as AppRequest } from "@/lib/Request";
 import { Stripe } from "@/lib/Stripe";
 
+const makeEnvLayer = (env: Env) =>
+  Layer.succeedServices(
+    ServiceMap.make(CloudflareEnv, env).pipe(
+      ServiceMap.add(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromUnknown(env),
+      ),
+    ),
+  );
+
+const makeLoggerLayer = (env: Env) => {
+  const environment = Schema.decodeUnknownSync(Domain.Environment)(
+    env.ENVIRONMENT,
+  );
+  return Layer.merge(
+    Logger.layer(
+      environment === "production"
+        ? [Logger.consoleJson, Logger.tracerLogger]
+        : [Logger.consolePretty(), Logger.tracerLogger],
+      { mergeWithExisting: false },
+    ),
+    Layer.succeed(
+      References.MinimumLogLevel,
+      environment === "production" ? "Info" : "Debug",
+    ),
+  );
+};
+
+const makeScheduledRunEffect = (env: Env) => {
+  const envLayer = makeEnvLayer(env);
+  const d1Layer = Layer.provideMerge(D1.layer, envLayer);
+  const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
+  const runtimeLayer = Layer.merge(repositoryLayer, makeLoggerLayer(env));
+  return <A, E>(
+    effect: Effect.Effect<A, E, Layer.Success<typeof runtimeLayer>>,
+  ) => Effect.runPromise(Effect.provide(effect, runtimeLayer));
+};
+
 /**
- * Runs an Effect within the app layer, converting failures to throwable values
- * compatible with TanStack Start's server function error serialization.
+ * Runs an HTTP Effect within the app layer, converting failures to throwable
+ * values compatible with TanStack Start's server function error serialization.
  *
  * Uses `runPromiseExit` instead of `runPromise` to inspect the `Exit` and
  * ensure the thrown value is always an `Error` instance (which TanStack Start
@@ -51,37 +90,26 @@ import { Stripe } from "@/lib/Stripe";
  * server context that would otherwise be lost after `ShallowErrorPlugin`
  * strips everything except `.message`.
  */
-const makeRunEffect = (env: Env) => {
-  const environment = Schema.decodeUnknownSync(Domain.Environment)(env.ENVIRONMENT);
-  const envLayer = Layer.succeedServices(
-    ServiceMap.make(CloudflareEnv, env).pipe(
-      ServiceMap.add(
-        ConfigProvider.ConfigProvider,
-        ConfigProvider.fromUnknown(env),
-      ),
-    ),
-  );
+const makeHttpRunEffect = (env: Env, request: Request) => {
+  const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
   const kvLayer = Layer.provideMerge(KV.layer, envLayer);
   const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
   const d1KvLayer = Layer.merge(d1Layer, kvLayer);
-  const stripeLayer = Layer.provideMerge(Stripe.layer, Layer.merge(repositoryLayer, d1KvLayer));
-  const appLayer = Layer.provideMerge(Auth.layer, stripeLayer);
-  const loggerLayer = Layer.merge(
-    Logger.layer(
-      environment === "production"
-        ? [Logger.consoleJson, Logger.tracerLogger]
-        : [Logger.consolePretty(), Logger.tracerLogger],
-      { mergeWithExisting: false },
-    ),
-    Layer.succeed(
-      References.MinimumLogLevel,
-      environment === "production" ? "Info" : "Debug",
-    ),
+  const stripeLayer = Layer.provideMerge(
+    Stripe.layer,
+    Layer.merge(repositoryLayer, d1KvLayer),
   );
-  const runtimeLayer = Layer.merge(appLayer, loggerLayer);
+  const authLayer = Layer.provideMerge(Auth.layer, stripeLayer);
+  const requestLayer = Layer.succeedServices(
+    ServiceMap.make(AppRequest, request),
+  );
+  const runtimeLayer = Layer.merge(
+    Layer.merge(authLayer, requestLayer),
+    makeLoggerLayer(env),
+  );
   return async <A, E>(
-    effect: Effect.Effect<A, E, Layer.Success<typeof appLayer>>,
+    effect: Effect.Effect<A, E, Layer.Success<typeof runtimeLayer>>,
   ): Promise<A> => {
     const exit = await Effect.runPromiseExit(
       Effect.provide(effect, runtimeLayer),
@@ -104,8 +132,8 @@ const makeRunEffect = (env: Env) => {
  * `Register.server.requestContext`.
  *
  * Server functions consume this through `context` in handlers
- * (`createServerFn(...).handler(({ context }) => ...)`), so request-bound
- * data (especially `request`) is available without importing
+ * (`createServerFn(...).handler(({ context }) => ...)`), so per-request
+ * runtime data is available without importing
  * `@tanstack/react-start/server`.
  *
  * Why avoid that import in route modules: `@tanstack/react-start/server` is a
@@ -122,8 +150,7 @@ const makeRunEffect = (env: Env) => {
  */
 export interface ServerContext {
   env: Env;
-  runEffect: ReturnType<typeof makeRunEffect>;
-  request: Request;
+  runEffect: ReturnType<typeof makeHttpRunEffect>;
   session?: AuthInstance["$Infer"]["Session"];
 }
 
@@ -154,7 +181,7 @@ export default {
         ? "first-primary"
         : undefined,
     });
-    const runEffect = makeRunEffect(env);
+    const runEffect = makeHttpRunEffect(env, request);
 
     const session = await runEffect(
       Effect.gen(function* () {
@@ -166,7 +193,6 @@ export default {
       context: {
         env,
         runEffect,
-        request,
         session: session ?? undefined,
       },
     });
@@ -175,7 +201,7 @@ export default {
   },
 
   async scheduled(scheduledEvent, env, _ctx) {
-    const runEffect = makeRunEffect(env);
+    const runEffect = makeScheduledRunEffect(env);
     switch (scheduledEvent.cron) {
       case "0 0 * * *":
         await runEffect(

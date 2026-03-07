@@ -134,7 +134,7 @@ Use a smaller runtime for scheduled execution:
 
 ```ts
 const makeScheduledRunEffect = (env: Env) => {
-  // env + logger + only scheduled dependencies
+  // build only scheduled runtime here
 };
 ```
 
@@ -144,7 +144,7 @@ Use a separate HTTP runtime that adds request-scoped services and HTTP-only app 
 
 ```ts
 const makeHttpRunEffect = (env: Env, request: Request) => {
-  // http runtime + Request layer
+  // build only HTTP runtime here
 };
 ```
 
@@ -152,6 +152,7 @@ The exact type aliases need to match the actual `appLayer` shape in `src/worker.
 
 - provide `Request` in the final effect execution path
 - keep scheduled and HTTP dependency graphs separate
+- do not build both runtimes in one helper just to select one immediately after
 
 This matters because today `envLayer` is only an intermediate construction layer in `src/worker.ts:56-69`; `runtimeLayer` is what `Effect.provide` receives in `src/worker.ts:86-88`.
 
@@ -183,13 +184,79 @@ It does not currently need:
 - `KV`
 - `Request`
 
-So the runners should not be modeled as "scheduled is the base runtime, HTTP adds more" if that forces scheduled code to pay for HTTP-oriented dependencies. Better shape:
+So the runners should not be modeled as "scheduled is the base runtime, HTTP adds more" if that forces scheduled code to pay for HTTP-oriented dependencies. They also should not be modeled as one helper that eagerly constructs both runtimes per invocation. Better shape:
 
-1. extract shared infra layers: env/config + logger
-2. build a scheduled runtime from shared infra + repository/d1
-3. build an HTTP runtime from shared infra + full HTTP app layer + `Request`
+1. extract small shared layer builders/helpers only where they are actually reused
+2. `makeScheduledRunEffect(env)` builds scheduled runtime from env/config + logger + repository/d1
+3. `makeHttpRunEffect(env, request)` builds HTTP runtime from env/config + logger + full HTTP app layer + `Request`
 
 This keeps the runtime names aligned to execution environment and also keeps dependency provisioning honest.
+
+## Runner Error Semantics
+
+The HTTP runner and scheduled runner should use different execution semantics.
+
+### What Effect itself does
+
+`Effect.runPromise` is implemented in terms of `runPromiseExit` plus `causeSquash`:
+
+```ts
+return runPromiseExit(effect, options).then((exit) => {
+  if (exit._tag === "Failure") {
+    throw causeSquash(exit.cause);
+  }
+  return exit.value;
+});
+```
+
+Source: `refs/effect4/packages/effect/src/internal/effect.ts:5066-5079`
+
+And `Cause.squash` is explicitly lossy:
+
+```ts
+ * This is the function used by `Effect.runPromise` and `Effect.runSync` to
+ * decide what to throw. It is lossy
+```
+
+Source: `refs/effect4/packages/effect/src/Cause.ts:704-706`
+
+So plain `Effect.runPromise` is the right default for scheduled work.
+
+### What HTTP needs
+
+HTTP is special because `src/worker.ts` is adapting Effect failures into TanStack Start expectations.
+
+Current behavior that matters on the HTTP path:
+
+- preserve TanStack control-flow objects thrown via `Effect.die`, especially `redirect()` and `notFound()`
+- normalize non-`Error` / empty-message failures into a thrown `Error` with a usable `.message`
+
+That is why the HTTP runner still needs `runPromiseExit`, cause inspection, `isRedirect`, `isNotFound`, and `Cause.pretty`-based normalization.
+
+### What scheduled needs
+
+The scheduled path is different:
+
+- it does not run inside TanStack Start
+- it does not need redirect/notFound preservation
+- it does not need error-shape massaging for TanStack serialization
+
+So the scheduled runner should be simpler and use plain `Effect.runPromise(Effect.provide(effect, scheduledRuntimeLayer))`. The current HTTP-specific exit/squash/pretty logic should not be shared with scheduled.
+
+## Updated Recommendation
+
+Use this shape in `src/worker.ts`:
+
+- `makeHttpRunEffect(env, request)`
+  - builds only HTTP runtime
+  - provides `Request`
+  - uses `runPromiseExit`
+  - preserves `redirect` / `notFound`
+  - normalizes thrown errors for TanStack Start
+- `makeScheduledRunEffect(env)`
+  - builds only scheduled runtime
+  - does not provide `Request`
+  - uses plain `Effect.runPromise`
 
 ## Worker Changes
 
@@ -227,13 +294,7 @@ async scheduled(scheduledEvent, env, _ctx) {
 }
 ```
 
-There is no HTTP `Request` in this path. That means request service provisioning must satisfy one of these constraints:
-
-1. `scheduled()` uses a runner that does not provide `Request`
-2. `Request` is a `ServiceMap.Reference` with a default, and scheduled-safe effects never touch it
-3. a synthetic request is fabricated for scheduled jobs
-
-Recommendation: use option 1.
+There is no HTTP `Request` in this path. So `scheduled()` should use a runner that does not provide `Request`.
 
 Why:
 

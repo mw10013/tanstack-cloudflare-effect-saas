@@ -17,6 +17,7 @@ import * as Option from "effect/Option";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { KV } from "./KV";
 import { Repository } from "./Repository";
+import { Request } from "./Request";
 import { Stripe } from "./Stripe";
 
 export type AuthInstance = ReturnType<typeof makeAuth>;
@@ -359,9 +360,10 @@ const makeAuth = ({
 };
 
 export const signOutServerFn = createServerFn({ method: "POST" }).handler(
-  ({ context: { runEffect, request } }) =>
+  ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const request = yield* Request;
         const auth = yield* Auth;
         yield* Effect.tryPromise(() =>
           auth.api.signOut({ headers: request.headers }),
