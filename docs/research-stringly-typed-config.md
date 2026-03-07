@@ -83,8 +83,6 @@ const environment = Domain.parseEnvironment(env.ENVIRONMENT);
 **Pros:** One-liner at call site. Reusable.
 **Cons:** Extra export — but it's just `Schema.decodeUnknownSync(Environment)`.
 
-## Recommendation
+## Decision
 
-**Approach 1** — define `EnvironmentValues` / `Environment` schema in `Domain.ts` (consistent with `UserRoleValues`/`UserRole` etc.), validate with `Schema.decodeUnknownSync` at the top of `makeRunEffect`. If we later need it inside an Effect pipeline, `Config.schema(Domain.Environment, "ENVIRONMENT")` is ready to use.
-
-Go with approach 2.
+**Approach 2** — Domain schema + `Schema.decodeUnknownSync` at entry point for direct access, `Config.schema` for Effect pipelines.

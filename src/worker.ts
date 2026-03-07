@@ -11,8 +11,10 @@ import {
   ServiceMap,
 } from "effect";
 import * as Exit from "effect/Exit";
+import * as Schema from "effect/Schema";
 import { Auth } from "@/lib/Auth";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
+import * as Domain from "@/lib/Domain";
 import { D1 } from "@/lib/D1";
 import { createD1SessionService } from "@/lib/d1-session-service";
 import { KV } from "@/lib/KV";
@@ -50,6 +52,7 @@ import { Stripe } from "@/lib/Stripe";
  * strips everything except `.message`.
  */
 const makeRunEffect = (env: Env) => {
+  const environment = Schema.decodeUnknownSync(Domain.Environment)(env.ENVIRONMENT);
   const envLayer = Layer.succeedServices(
     ServiceMap.make(CloudflareEnv, env).pipe(
       ServiceMap.add(
@@ -66,14 +69,14 @@ const makeRunEffect = (env: Env) => {
   const appLayer = Layer.provideMerge(Auth.layer, stripeLayer);
   const loggerLayer = Layer.merge(
     Logger.layer(
-      env.ENVIRONMENT === "production"
+      environment === "production"
         ? [Logger.consoleJson, Logger.tracerLogger]
         : [Logger.consolePretty(), Logger.tracerLogger],
       { mergeWithExisting: false },
     ),
     Layer.succeed(
       References.MinimumLogLevel,
-      env.ENVIRONMENT === "production" ? "Info" : "Debug",
+      environment === "production" ? "Info" : "Debug",
     ),
   );
   const runtimeLayer = Layer.merge(appLayer, loggerLayer);

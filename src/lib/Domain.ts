@@ -36,6 +36,10 @@ const emailSchema = Schema.String.check(
   Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
 );
 
+export const EnvironmentValues = ["production", "local"] as const;
+export const Environment = Schema.Literals(EnvironmentValues);
+export type Environment = typeof Environment.Type;
+
 export const UserRoleValues = ["user", "admin"] as const;
 export const UserRole = Schema.Literals(UserRoleValues);
 export type UserRole = typeof UserRole.Type;
