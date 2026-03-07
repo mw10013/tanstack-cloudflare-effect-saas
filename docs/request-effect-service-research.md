@@ -290,64 +290,49 @@ Why this version is lower risk than the earlier combined research:
 
 The only hard requirement is to ensure the request layer is provided in the final runtime path, not only in an intermediate construction layer.
 
-## Single `makeRunEffect(env, request?)`
+## Runner Naming
 
-Yes, one constructor can work.
+Given the scheduled constraint, keep two runners.
 
-Sketch:
+The remaining question is naming.
 
-```ts
-function makeRunEffect(
-  env: Env,
-): <A, E>(
-  effect: Effect.Effect<A, E, Layer.Success<typeof appLayer>>,
-) => Promise<A>;
-function makeRunEffect(
-  env: Env,
-  request: Request,
-): <A, E>(
-  effect: Effect.Effect<
-    A,
-    E,
-    Layer.Success<typeof appLayer> | globalThis.Request
-  >,
-) => Promise<A>;
-function makeRunEffect(env: Env, request?: Request) {
-  const runtimeLayer = request
-    ? Layer.merge(
-        runtimeBaseLayer,
-        Layer.succeedServices(ServiceMap.make(Request, request)),
-      )
-    : runtimeBaseLayer;
+### Options
 
-  return <A, E>(effect: Effect.Effect<A, E, never>) =>
-    Effect.runPromiseExit(Effect.provide(effect, runtimeLayer));
-}
-```
-
-This fits the current worker shape because `src/worker.ts:157` and `src/worker.ts:178` already call the same factory in both HTTP and scheduled paths; the only difference is whether a real `Request` exists.
+- `makeRunEffect` + `makeRequestRunEffect`
+- `makeRequestRunEffect` + `makeScheduledRunEffect`
+- `makeFetchRunEffect` + `makeScheduledRunEffect`
+- `makeHttpRunEffect` + `makeScheduledRunEffect`
 
 ### Trade-offs
 
-- `pro`: one place to build env/app/logger layers; avoids a thin `makeRequestRunEffect` wrapper
-- `pro`: caller ergonomics are simple in `fetch()` - `makeRunEffect(env, request)`
-- `con`: with a plain optional parameter, the returned runner type is easy to widen too far, and then scheduled code can accidentally compile while depending on `Request`
-- `con`: to preserve the strong boundary, you usually need overloads or a conditional generic, which makes the single-function version more subtle than it first appears
-- `con`: implementation gets slightly denser because runtime construction and typing now branch in the same function
+- `makeRunEffect` + `makeRequestRunEffect`
+  - `pro`: smallest diff from `src/worker.ts:54` and current call sites
+  - `pro`: treats request-scoped execution as the special case layered on top
+  - `con`: the base name is a little vague once there are now two concrete execution modes
+- `makeRequestRunEffect` + `makeScheduledRunEffect`
+  - `pro`: symmetric, explicit, and maps to the real runtime distinction: request-backed vs scheduled
+  - `pro`: easiest to understand when scanning `src/worker.ts:137` and `src/worker.ts:177`
+  - `con`: slightly longer; `Request` names the available service, not the outer platform entrypoint
+- `makeFetchRunEffect` + `makeScheduledRunEffect`
+  - `pro`: mirrors Cloudflare handler names exactly
+  - `con`: `fetch` describes the entrypoint, not the semantic capability the effect gains
+  - `con`: a reader may read it as "does network fetches" rather than "runs inside the HTTP request path"
+- `makeHttpRunEffect` + `makeScheduledRunEffect`
+  - `pro`: semantically closer than `fetch`; describes protocol/runtime shape
+  - `con`: less grounded in actual app terminology than `Request`
+  - `con`: slightly more abstract than the service being introduced
 
 ### Recommendation
 
-If optimizing for clarity, keep two entrypoints:
+Recommend `makeRequestRunEffect` + `makeScheduledRunEffect`.
 
-- `makeRunEffect(env)` for request-free execution
-- `makeRequestRunEffect(env, request)` for HTTP execution
+Why:
 
-Reason: the code has a real domain split, not just an incidental parameter split. `src/worker.ts:177` is genuinely non-HTTP, and keeping a separate request-aware wrapper makes that boundary obvious in both runtime behavior and types.
+- names the actual boundary that matters to the Effect runtime: whether `Request` is available
+- keeps the pair symmetric, so neither path reads as the "default" by accident
+- avoids the ambiguity of `fetch`, which is a worker handler name but not the capability being modeled
+- avoids the vagueness of a single generic `makeRunEffect` once there are two distinct runtimes
 
-If you strongly prefer one symbol, use one `makeRunEffect` with overloads, not just `request?: Request` plus a single broad return type. That preserves the main benefit of the two-function design: scheduled effects still fail at compile time if they try to `yield* Request`.
+If minimizing churn matters more than naming symmetry, `makeRunEffect` + `makeRequestRunEffect` is still reasonable. But for long-term readability, the explicit pair is better.
 
-So the recommendation is:
-
-1. best readability/safety: two functions
-2. acceptable compromise: one overloaded `makeRunEffect(env, request?)`
-3. not recommended: one loosely typed optional-argument runner
+Ok, one makeRunEffect looks like not a good idea. Remove all discussion about one makeRunEffect. We are going with two. We need naming that reflects where the effect runs. Perhaps fetch vs scheduled? Characterizing it as fetch is a little confusing though since overloaded. Scheduled is very clear and not overloaded. These both run in a workers function so while it's tempting to use workers instead of fetch, it's not really accurate. Thoughts, trade-offs, recommendation?
