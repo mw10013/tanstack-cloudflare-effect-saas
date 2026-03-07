@@ -24,10 +24,7 @@ export type AuthInstance = ReturnType<typeof makeAuth>;
 export class Auth extends ServiceMap.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {
     const services = yield* Effect.services<KV | Stripe | Repository>();
-    const runEffectBase = Effect.runPromiseWith(services);
-    const runEffect = <A, E>(
-      effect: Effect.Effect<A, E, KV | Stripe | Repository>,
-    ) => runEffectBase(effect.pipe(Effect.annotateLogs({ service: "Auth" })));
+    const runEffect = Effect.runPromiseWith(services);
     const stripe = yield* Stripe;
     const authConfig = yield* Config.all({
       betterAuthUrl: Config.nonEmptyString("BETTER_AUTH_URL"),
@@ -139,13 +136,7 @@ const makeAuth = ({
                   organizationId: org.id,
                   userId: user.id,
                 });
-              }).pipe(
-                Effect.withLogSpan("auth.user.create.after"),
-                Effect.annotateLogs({
-                  hook: "databaseHooks.user.create.after",
-                  userId: user.id,
-                }),
-              ),
+              }),
             ),
         },
       },
@@ -172,14 +163,7 @@ const makeAuth = ({
                     ).pipe(Option.getOrUndefined),
                   },
                 };
-              }).pipe(
-                Effect.withLogSpan("auth.session.create"),
-                Effect.annotateLogs({
-                  hook: "databaseHooks.session.create.before",
-                  sessionId: session.id,
-                  userId: session.userId,
-                }),
-              ),
+              }),
             ),
         },
       },
@@ -202,12 +186,7 @@ const makeAuth = ({
               const stripe = yield* Stripe;
               yield* stripe.ensureBillingPortalConfiguration();
             }
-          }).pipe(
-            Effect.annotateLogs({
-              hook: "hooks.before",
-              path: ctx.path,
-            }),
-          ),
+          }),
         ),
       ),
     },
@@ -230,12 +209,7 @@ const makeAuth = ({
                 subject: "Your Magic Link",
                 from: transactionalEmail,
               });
-            }).pipe(
-              Effect.annotateLogs({
-                hook: "magicLink.sendMagicLink",
-                email: data.email,
-              }),
-            ),
+            }),
           ),
       }),
       admin(),
@@ -255,12 +229,7 @@ const makeAuth = ({
               from: transactionalEmail,
               subject: "You're invited!",
               url: `${betterAuthUrl}/accept-invitation/${data.id}`,
-            }).pipe(
-              Effect.annotateLogs({
-                hook: "organization.sendInvitationEmail",
-                invitationId: data.id,
-              }),
-            ),
+            }),
           ),
       }),
       stripePlugin({
@@ -285,13 +254,7 @@ const makeAuth = ({
                         Effect.logInfo("stripe.subscription.onTrialStart", {
                           planName: plan.name,
                           subscriptionId: subscription.id,
-                        }).pipe(
-                          Effect.annotateLogs({
-                            hook: "stripe.subscription.onTrialStart",
-                            planName: plan.name,
-                            subscriptionId: subscription.id,
-                          }),
-                        ),
+                        }),
                       ),
                     onTrialEnd: ({
                       subscription,
@@ -302,32 +265,18 @@ const makeAuth = ({
                         Effect.logInfo("stripe.subscription.onTrialEnd", {
                           planName: plan.name,
                           subscriptionId: subscription.id,
-                        }).pipe(
-                          Effect.annotateLogs({
-                            hook: "stripe.subscription.onTrialEnd",
-                            planName: plan.name,
-                            subscriptionId: subscription.id,
-                          }),
-                        ),
+                        }),
                       ),
                     onTrialExpired: (subscription: StripeSubscription) =>
                       runEffect(
                         Effect.logInfo("stripe.subscription.onTrialExpired", {
                           planName: plan.name,
                           subscriptionId: subscription.id,
-                        }).pipe(
-                          Effect.annotateLogs({
-                            hook: "stripe.subscription.onTrialExpired",
-                            planName: plan.name,
-                            subscriptionId: subscription.id,
-                          }),
-                        ),
+                        }),
                       ),
                   },
                 }));
-              }).pipe(
-                Effect.annotateLogs({ hook: "stripe.subscription.plans" }),
-              ),
+              }),
             ),
           authorizeReference: ({ user, referenceId, action }) =>
             runEffect(
@@ -349,60 +298,32 @@ const makeAuth = ({
                   },
                 );
                 return result;
-              }).pipe(
-                Effect.annotateLogs({
-                  hook: "stripe.subscription.authorizeReference",
-                  userId: user.id,
-                  referenceId,
-                  action,
-                }),
-              ),
+              }),
             ),
           onSubscriptionComplete: ({ subscription, plan }) =>
             runEffect(
               Effect.logInfo("stripe.subscription.onSubscriptionComplete", {
                 subscriptionId: subscription.id,
                 planName: plan.name,
-              }).pipe(
-                Effect.annotateLogs({
-                  hook: "stripe.subscription.onSubscriptionComplete",
-                  subscriptionId: subscription.id,
-                  planName: plan.name,
-                }),
-              ),
+              }),
             ),
           onSubscriptionUpdate: ({ subscription }) =>
             runEffect(
               Effect.logInfo("stripe.subscription.onSubscriptionUpdate", {
                 subscriptionId: subscription.id,
-              }).pipe(
-                Effect.annotateLogs({
-                  hook: "stripe.subscription.onSubscriptionUpdate",
-                  subscriptionId: subscription.id,
-                }),
-              ),
+              }),
             ),
           onSubscriptionCancel: ({ subscription }) =>
             runEffect(
               Effect.logInfo("stripe.subscription.onSubscriptionCancel", {
                 subscriptionId: subscription.id,
-              }).pipe(
-                Effect.annotateLogs({
-                  hook: "stripe.subscription.onSubscriptionCancel",
-                  subscriptionId: subscription.id,
-                }),
-              ),
+              }),
             ),
           onSubscriptionDeleted: ({ subscription }) =>
             runEffect(
               Effect.logInfo("stripe.subscription.onSubscriptionDeleted", {
                 subscriptionId: subscription.id,
-              }).pipe(
-                Effect.annotateLogs({
-                  hook: "stripe.subscription.onSubscriptionDeleted",
-                  subscriptionId: subscription.id,
-                }),
-              ),
+              }),
             ),
         },
         organization: {
@@ -422,22 +343,11 @@ const makeAuth = ({
             Effect.logInfo("stripe.onCustomerCreate", {
               stripeCustomerId: stripeCustomer.id,
               userEmail: user.email,
-            }).pipe(
-              Effect.annotateLogs({
-                hook: "stripe.onCustomerCreate",
-                stripeCustomerId: stripeCustomer.id,
-                userEmail: user.email,
-              }),
-            ),
+            }),
           ),
         onEvent: (event) =>
           runEffect(
-            Effect.logInfo("stripe.onEvent", { type: event.type }).pipe(
-              Effect.annotateLogs({
-                hook: "stripe.onEvent",
-                eventType: event.type,
-              }),
-            ),
+            Effect.logInfo("stripe.onEvent", { type: event.type }),
           ),
       }),
       tanstackStartCookies(),
