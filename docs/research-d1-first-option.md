@@ -265,4 +265,6 @@ return yield* Effect.fromOption(result).pipe(
 );
 ```
 
+Why are we not using Effect.catchNoSuchElement as in the find callers? Is it because we want to return an empty array if there is nothing in the aggregation? Or has more to do with we never want to return an Option? I'm a little hazy on all this.
+
 Same pattern as find callers: `Effect.fromOption` unwraps `Some → succeed(value)` / `None → fail(NoSuchElementError)`, then `flatMap` decodes. Aggregate queries never return null, so the `NoSuchElementError` path acts as an assertion within the Effect error channel.
