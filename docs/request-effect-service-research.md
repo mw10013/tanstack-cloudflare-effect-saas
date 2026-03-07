@@ -126,25 +126,25 @@ export const Request = ServiceMap.Service<globalThis.Request>("app/Request");
 
 ## Recommended Wiring
 
-Use two runner constructors, not one overloaded runner.
+Use two runner constructors.
 
-### Base runner for non-HTTP entrypoints
+### `makeScheduledRunEffect`
 
-Keep a request-free runner for `scheduled()` and any future non-request code:
+Use one runner for non-HTTP execution:
 
 ```ts
-const makeRunEffect = (env: Env) => {
+const makeScheduledRunEffect = (env: Env) => {
   // existing env + app + logger layers
 };
 ```
 
-### Request runner for HTTP fetch path
+### `makeHttpRunEffect`
 
-Add a small wrapper that merges a request layer into the final runtime actually provided to each effect:
+Use a second runner for the HTTP path that extends the base runtime with request-scoped services:
 
 ```ts
-const makeRequestRunEffect = (env: Env, request: Request) => {
-  const runEffect = makeRunEffect(env);
+const makeHttpRunEffect = (env: Env, request: Request) => {
+  const runEffect = makeScheduledRunEffect(env);
   const requestLayer = Layer.succeedServices(ServiceMap.make(Request, request));
 
   return <A, E>(
@@ -166,11 +166,11 @@ This matters because today `envLayer` is only an intermediate construction layer
 
 ## Worker Changes
 
-`fetch()` becomes request-aware, `scheduled()` stays request-free.
+`fetch()` uses the HTTP runner, `scheduled()` uses the scheduled runner.
 
 ```ts
 async fetch(request, env, _ctx) {
-  const runEffect = makeRequestRunEffect(env, request);
+  const runEffect = makeHttpRunEffect(env, request);
   const response = await serverEntry.fetch(request, {
     context: {
       env,
@@ -182,7 +182,7 @@ async fetch(request, env, _ctx) {
 }
 
 async scheduled(scheduledEvent, env, _ctx) {
-  const runEffect = makeRunEffect(env);
+  const runEffect = makeScheduledRunEffect(env);
   // unchanged
 }
 ```
@@ -195,7 +195,7 @@ This is the main design constraint for the request migration.
 
 ```ts
 async scheduled(scheduledEvent, env, _ctx) {
-  const runEffect = makeRunEffect(env);
+  const runEffect = makeScheduledRunEffect(env);
   // ... cleanup effects
 }
 ```
@@ -270,69 +270,32 @@ The allowlist middleware still receives TanStack's `request` argument directly. 
 ## Implementation Checklist
 
 1. Add `src/lib/Request.ts`
-2. Add `makeRequestRunEffect(env, request)` in `src/worker.ts`
-3. Keep `makeRunEffect(env)` for `scheduled()`
+2. Add `makeHttpRunEffect(env, request)` in `src/worker.ts`
+3. Add `makeScheduledRunEffect(env)` in `src/worker.ts`
 4. Remove `request` from `ServerContext`
 5. Migrate `createServerFn` handlers and `signOutServerFn` to `yield* Request`
 6. Optionally migrate `api/auth/$` inner effects to `yield* Request`
 7. Run `pnpm typecheck` and `pnpm lint`
 
-## Recommendation
-
-This change is sound and implementation-ready.
-
-Why this version is lower risk than the earlier combined research:
-
-- no lazy fetch behavior to reason about
-- no memoization dependency across multiple `runEffect` calls
-- no semantic change to session fetching
-- `scheduled()` has a clear separation point
-
-The only hard requirement is to ensure the request layer is provided in the final runtime path, not only in an intermediate construction layer.
-
 ## Runner Naming
 
-Given the scheduled constraint, keep two runners.
+Keep the names aligned to execution environment, not to individual provided services.
 
-The remaining question is naming.
+Recommendation:
 
-### Options
+- `makeHttpRunEffect`
+- `makeScheduledRunEffect`   Let's go with these name. Remove any discussion about naming and just use these.
 
-- `makeRunEffect` + `makeRequestRunEffect`
-- `makeRequestRunEffect` + `makeScheduledRunEffect`
-- `makeFetchRunEffect` + `makeScheduledRunEffect`
-- `makeHttpRunEffect` + `makeScheduledRunEffect`
-
-### Trade-offs
-
-- `makeRunEffect` + `makeRequestRunEffect`
-  - `pro`: smallest diff from `src/worker.ts:54` and current call sites
-  - `pro`: treats request-scoped execution as the special case layered on top
-  - `con`: the base name is a little vague once there are now two concrete execution modes
-- `makeRequestRunEffect` + `makeScheduledRunEffect`
-  - `pro`: symmetric, explicit, and maps to the real runtime distinction: request-backed vs scheduled
-  - `pro`: easiest to understand when scanning `src/worker.ts:137` and `src/worker.ts:177`
-  - `con`: slightly longer; `Request` names the available service, not the outer platform entrypoint
-- `makeFetchRunEffect` + `makeScheduledRunEffect`
-  - `pro`: mirrors Cloudflare handler names exactly
-  - `con`: `fetch` describes the entrypoint, not the semantic capability the effect gains
-  - `con`: a reader may read it as "does network fetches" rather than "runs inside the HTTP request path"
-- `makeHttpRunEffect` + `makeScheduledRunEffect`
-  - `pro`: semantically closer than `fetch`; describes protocol/runtime shape
-  - `con`: less grounded in actual app terminology than `Request`
-  - `con`: slightly more abstract than the service being introduced
-
-### Recommendation
-
-Recommend `makeRequestRunEffect` + `makeScheduledRunEffect`.
 
 Why:
 
-- names the actual boundary that matters to the Effect runtime: whether `Request` is available
-- keeps the pair symmetric, so neither path reads as the "default" by accident
-- avoids the ambiguity of `fetch`, which is a worker handler name but not the capability being modeled
-- avoids the vagueness of a single generic `makeRunEffect` once there are two distinct runtimes
+- durable if the HTTP runtime later gains more request-scoped services like session, auth metadata, tracing context, or locale
+- names where the effect runs, not just one thing currently provided there
+- `http` is clearer than `fetch`: it describes the runtime boundary, not a specific handler method name
+- `scheduled` is already the right level of abstraction for cron/background execution
 
-If minimizing churn matters more than naming symmetry, `makeRunEffect` + `makeRequestRunEffect` is still reasonable. But for long-term readability, the explicit pair is better.
+Alternatives considered and rejected:
 
-Ok, one makeRunEffect looks like not a good idea. Remove all discussion about one makeRunEffect. We are going with two. We need naming that reflects where the effect runs. Perhaps fetch vs scheduled? Characterizing it as fetch is a little confusing though since overloaded. Scheduled is very clear and not overloaded. These both run in a workers function so while it's tempting to use workers instead of fetch, it's not really accurate. Thoughts, trade-offs, recommendation?
+- `makeRequestRunEffect`: too tied to one current dependency
+- `makeFetchRunEffect`: too coupled to Cloudflare's handler shape
+- `makeWorkerRunEffect`: too broad because both paths run inside a worker
