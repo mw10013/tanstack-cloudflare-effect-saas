@@ -294,6 +294,9 @@ GET: async ({ context: { runEffect } }) =>
 
 The allowlist middleware still receives TanStack's `request` argument directly. That middleware is outside the app Effect runtime and does not need to change.
 
+We need research on the allowlist middleware. Because it uses request, does that mean we would need to keep stuffing the tanstack context with request? We are trying to stop that. I think we want the middleware to use runEffect or some such. Research this.
+
+
 ## Implementation Checklist
 
 1. Add `src/lib/Request.ts`
