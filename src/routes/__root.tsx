@@ -9,18 +9,18 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect } from "effect";
+import { Config, Effect } from "effect";
 import { ThemeProvider } from "better-themes";
 import { DefaultCatchBoundary } from "@/components/default-catch-boundary";
 import { NotFound } from "@/components/not-found";
 import appCss from "../styles.css?url";
 
 const getAnalyticsToken = createServerFn({ method: "GET" }).handler(
-  ({ context: { runEffect, env } }) =>
+  ({ context: { runEffect } }) =>
     runEffect(
-      Effect.succeed({
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        analyticsToken: env.ANALYTICS_TOKEN ?? "",
+      Effect.gen(function* () {
+        const analyticsToken = yield* Config.string("ANALYTICS_TOKEN").pipe(Config.withDefault(""));
+        return { analyticsToken };
       }),
     ),
 );

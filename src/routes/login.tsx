@@ -33,7 +33,7 @@ const getLoaderData = createServerFn({ method: "GET" }).handler(
   ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const demoMode = yield* Config.boolean("DEMO_MODE");
+        const demoMode = yield* Config.boolean("DEMO_MODE").pipe(Config.withDefault(false));
         return { isDemoMode: demoMode };
       }),
     ),
@@ -51,7 +51,7 @@ export const login = createServerFn({
     runEffect(
       Effect.gen(function* () {
         const auth = yield* Auth;
-        const demoMode = yield* Config.boolean("DEMO_MODE");
+        const demoMode = yield* Config.boolean("DEMO_MODE").pipe(Config.withDefault(false));
 
         const result = yield* Effect.tryPromise(() =>
           auth.api.signInMagicLink({
