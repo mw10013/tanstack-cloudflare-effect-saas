@@ -130,39 +130,66 @@ Use two runner constructors.
 
 ### `makeScheduledRunEffect`
 
-Use one runner for non-HTTP execution:
+Use a smaller runtime for scheduled execution:
 
 ```ts
 const makeScheduledRunEffect = (env: Env) => {
-  // existing env + app + logger layers
+  // env + logger + only scheduled dependencies
 };
 ```
 
 ### `makeHttpRunEffect`
 
-Use a second runner for the HTTP path that extends the base runtime with request-scoped services:
+Use a separate HTTP runtime that adds request-scoped services and HTTP-only app services:
 
 ```ts
 const makeHttpRunEffect = (env: Env, request: Request) => {
-  const runEffect = makeScheduledRunEffect(env);
-  const requestLayer = Layer.succeedServices(ServiceMap.make(Request, request));
-
-  return <A, E>(
-    effect: Effect.Effect<
-      A,
-      E,
-      Layer.Success<typeof RequestLayer | typeof AppLayer>
-    >,
-  ) => runEffect(effect.pipe(Effect.provide(requestLayer)));
+  // http runtime + Request layer
 };
 ```
 
 The exact type aliases need to match the actual `appLayer` shape in `src/worker.ts`, but the key design point is this:
 
 - provide `Request` in the final effect execution path
-- do not only add it to `envLayer` unless `envLayer` is also part of the final provided runtime
+- keep scheduled and HTTP dependency graphs separate
 
 This matters because today `envLayer` is only an intermediate construction layer in `src/worker.ts:56-69`; `runtimeLayer` is what `Effect.provide` receives in `src/worker.ts:86-88`.
+
+## Runtime Split
+
+`makeScheduledRunEffect` should be smaller than `makeHttpRunEffect`.
+
+From `src/worker.ts:181-194`, the current scheduled path only does:
+
+```ts
+Effect.gen(function* () {
+  const repository = yield* Repository;
+  const deletedCount = yield* repository.deleteExpiredSessions();
+  yield* Effect.logInfo("session.cleanup.expired", { deletedCount });
+});
+```
+
+That means the current scheduled runtime needs:
+
+- `Repository`
+- `D1`
+- env/config services
+- logger services
+
+It does not currently need:
+
+- `Auth`
+- `Stripe`
+- `KV`
+- `Request`
+
+So the runners should not be modeled as "scheduled is the base runtime, HTTP adds more" if that forces scheduled code to pay for HTTP-oriented dependencies. Better shape:
+
+1. extract shared infra layers: env/config + logger
+2. build a scheduled runtime from shared infra + repository/d1
+3. build an HTTP runtime from shared infra + full HTTP app layer + `Request`
+
+This keeps the runtime names aligned to execution environment and also keeps dependency provisioning honest.
 
 ## Worker Changes
 
@@ -272,35 +299,8 @@ The allowlist middleware still receives TanStack's `request` argument directly. 
 1. Add `src/lib/Request.ts`
 2. Add `makeHttpRunEffect(env, request)` in `src/worker.ts`
 3. Add `makeScheduledRunEffect(env)` in `src/worker.ts`
-4. Remove `request` from `ServerContext`
-5. Migrate `createServerFn` handlers and `signOutServerFn` to `yield* Request`
-6. Optionally migrate `api/auth/$` inner effects to `yield* Request`
-7. Run `pnpm typecheck` and `pnpm lint`
-
-## Runner Naming
-
-Keep the names aligned to execution environment, not to individual provided services.
-
-Recommendation:
-
-- `makeHttpRunEffect`
-- `makeScheduledRunEffect` Let's go with these name. Remove any discussion about naming and just use these.
-
-Why:
-
-- durable if the HTTP runtime later gains more request-scoped services like session, auth metadata, tracing context, or locale
-- names where the effect runs, not just one thing currently provided there
-- `http` is clearer than `fetch`: it describes the runtime boundary, not a specific handler method name
-- `scheduled` is already the right level of abstraction for cron/background execution
-
-Alternatives considered and rejected:
-
-- `makeRequestRunEffect`: too tied to one current dependency
-- `makeFetchRunEffect`: too coupled to Cloudflare's handler shape
-- `makeWorkerRunEffect`: too broad because both paths run inside a worker
-
-
-
-
-
-makeScheduledRunEffect should be simpler than makeHttpRunEffect. Do the analysis, but it probably doesn't need, say, auth and stripe dependencies.
+4. Factor shared infra layers so scheduled and HTTP runtimes can diverge cleanly
+5. Remove `request` from `ServerContext`
+6. Migrate `createServerFn` handlers and `signOutServerFn` to `yield* Request`
+7. Optionally migrate `api/auth/$` inner effects to `yield* Request`
+8. Run `pnpm typecheck` and `pnpm lint`
