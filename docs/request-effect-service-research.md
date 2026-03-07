@@ -289,3 +289,65 @@ Why this version is lower risk than the earlier combined research:
 - `scheduled()` has a clear separation point
 
 The only hard requirement is to ensure the request layer is provided in the final runtime path, not only in an intermediate construction layer.
+
+## Single `makeRunEffect(env, request?)`
+
+Yes, one constructor can work.
+
+Sketch:
+
+```ts
+function makeRunEffect(
+  env: Env,
+): <A, E>(
+  effect: Effect.Effect<A, E, Layer.Success<typeof appLayer>>,
+) => Promise<A>;
+function makeRunEffect(
+  env: Env,
+  request: Request,
+): <A, E>(
+  effect: Effect.Effect<
+    A,
+    E,
+    Layer.Success<typeof appLayer> | globalThis.Request
+  >,
+) => Promise<A>;
+function makeRunEffect(env: Env, request?: Request) {
+  const runtimeLayer = request
+    ? Layer.merge(
+        runtimeBaseLayer,
+        Layer.succeedServices(ServiceMap.make(Request, request)),
+      )
+    : runtimeBaseLayer;
+
+  return <A, E>(effect: Effect.Effect<A, E, never>) =>
+    Effect.runPromiseExit(Effect.provide(effect, runtimeLayer));
+}
+```
+
+This fits the current worker shape because `src/worker.ts:157` and `src/worker.ts:178` already call the same factory in both HTTP and scheduled paths; the only difference is whether a real `Request` exists.
+
+### Trade-offs
+
+- `pro`: one place to build env/app/logger layers; avoids a thin `makeRequestRunEffect` wrapper
+- `pro`: caller ergonomics are simple in `fetch()` - `makeRunEffect(env, request)`
+- `con`: with a plain optional parameter, the returned runner type is easy to widen too far, and then scheduled code can accidentally compile while depending on `Request`
+- `con`: to preserve the strong boundary, you usually need overloads or a conditional generic, which makes the single-function version more subtle than it first appears
+- `con`: implementation gets slightly denser because runtime construction and typing now branch in the same function
+
+### Recommendation
+
+If optimizing for clarity, keep two entrypoints:
+
+- `makeRunEffect(env)` for request-free execution
+- `makeRequestRunEffect(env, request)` for HTTP execution
+
+Reason: the code has a real domain split, not just an incidental parameter split. `src/worker.ts:177` is genuinely non-HTTP, and keeping a separate request-aware wrapper makes that boundary obvious in both runtime behavior and types.
+
+If you strongly prefer one symbol, use one `makeRunEffect` with overloads, not just `request?: Request` plus a single broad return type. That preserves the main benefit of the two-function design: scheduled effects still fail at compile time if they try to `yield* Request`.
+
+So the recommendation is:
+
+1. best readability/safety: two functions
+2. acceptable compromise: one overloaded `makeRunEffect(env, request?)`
+3. not recommended: one loosely typed optional-argument runner
