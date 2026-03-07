@@ -292,10 +292,48 @@ GET: async ({ context: { runEffect } }) =>
   ),
 ```
 
-The allowlist middleware still receives TanStack's `request` argument directly. That middleware is outside the app Effect runtime and does not need to change.
+## Allowlist Middleware
 
-We need research on the allowlist middleware. Because it uses request, does that mean we would need to keep stuffing the tanstack context with request? We are trying to stop that. I think we want the middleware to use runEffect or some such. Research this.
+The allowlist middleware does not force `request` to stay in TanStack request context.
 
+Current code in `src/routes/api/auth/$.tsx:6` is:
+
+```ts
+const authAllowlistMiddleware = createMiddleware().server(
+  ({ next, request }) =>
+    new Set([...]).has(`${request.method} ${new URL(request.url).pathname}`)
+      ? next()
+      : new Response("Not Found", { status: 404 }),
+)
+```
+
+TanStack Start server middleware receives both `request` and `context` directly. Per docs:
+
+```ts
+createMiddleware().server(({ next, context, request }) => {
+  return next();
+});
+```
+
+And request context from the server entry point is "accessible throughout the server-side middleware chain. This includes ... server routes [and] server functions."
+
+Implications:
+
+- middleware `request` is a TanStack-provided server middleware argument, not `Register.server.requestContext.request`
+- removing `request` from `ServerContext` does not remove middleware access to the incoming request
+- if middleware ever needs app Effect services, it can use `context.runEffect` because request context is available in middleware too
+
+Recommendation:
+
+- remove `request` from `ServerContext`
+- keep the allowlist middleware using its direct `request` argument
+- only switch middleware to `context.runEffect(...)` if the middleware actually needs Effect services or shared app logic
+
+Why keep the allowlist check direct:
+
+- it is a cheap route gate on `request.method` and `request.url`
+- wrapping it in `runEffect` adds ceremony without improving the boundary
+- the migration goal is to remove mechanical request plumbing from app Effect code, not to ban TanStack middleware from using its own request API
 
 ## Implementation Checklist
 
