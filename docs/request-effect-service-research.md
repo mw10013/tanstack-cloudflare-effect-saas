@@ -284,8 +284,7 @@ Keep the names aligned to execution environment, not to individual provided serv
 Recommendation:
 
 - `makeHttpRunEffect`
-- `makeScheduledRunEffect`   Let's go with these name. Remove any discussion about naming and just use these.
-
+- `makeScheduledRunEffect` Let's go with these name. Remove any discussion about naming and just use these.
 
 Why:
 
@@ -299,3 +298,9 @@ Alternatives considered and rejected:
 - `makeRequestRunEffect`: too tied to one current dependency
 - `makeFetchRunEffect`: too coupled to Cloudflare's handler shape
 - `makeWorkerRunEffect`: too broad because both paths run inside a worker
+
+
+
+
+
+makeScheduledRunEffect should be simpler than makeHttpRunEffect. Do the analysis, but it probably doesn't need, say, auth and stripe dependencies.
