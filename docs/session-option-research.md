@@ -2,7 +2,10 @@
 
 ## Recommendation
 
-Change `src/lib/Session.ts` to return `Option.Option<AuthSession>` instead of `AuthSession | undefined`.
+Change both `Auth.getSession` and `Session` to return Effect v4 `Option`.
+
+- `src/lib/Auth.ts`: return `Effect<Option.Option<AuthSessionLike>, E, R>` from `getSession`
+- `src/lib/Session.ts`: return `Option.Option<AuthSessionLike>` from the service
 
 Preferred shape:
 
@@ -21,6 +24,19 @@ export class Session extends ServiceMap.Service<Session>()("Session", {
 }) {
   static layer = Layer.effect(this, this.make);
 }
+```
+
+And in `src/lib/Auth.ts`:
+
+```ts
+import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
+import * as Option from "effect/Option";
+
+const getSession = Effect.fn("auth.getSession")(function* (headers: Headers) {
+  return Option.fromNullishOr(
+    yield* Effect.tryPromise(() => auth.api.getSession({ headers })),
+  );
+});
 ```
 
 Current code in `src/lib/Session.ts:5`-`src/lib/Session.ts:12` returns nullable state:
@@ -59,6 +75,53 @@ export const fromNullishOr = <A>(a: A): Option<NonNullable<A>> =>
 ```
 
 That matters because `auth.getSession(...)` can return an absent value and `Option.fromNullishOr(...)` treats both `null` and `undefined` as `None`.
+
+## Why change `Auth.getSession` too
+
+You were right to call this out. If the app is moving to Effect-style optionality, the nullable value should be normalized at the closest boundary to Better Auth.
+
+Current code in `src/lib/Auth.ts:47`-`src/lib/Auth.ts:50` is still nullable:
+
+```ts
+const getSession = Effect.fn("auth.getSession")(function* (headers: Headers) {
+  return yield* Effect.tryPromise(() => auth.api.getSession({ headers }));
+});
+```
+
+Current usage search shows only one app caller:
+
+- `src/lib/Session.ts:9`
+
+So changing `Auth.getSession` to return `Option` has very small blast radius today.
+
+Recommended rewrite:
+
+```ts
+const getSession = Effect.fn("auth.getSession")(function* (headers: Headers) {
+  return Option.fromNullishOr(
+    yield* Effect.tryPromise(() => auth.api.getSession({ headers })),
+  );
+});
+```
+
+Then `src/lib/Session.ts` becomes a pass-through service instead of re-wrapping a nullable value:
+
+```ts
+export class Session extends ServiceMap.Service<Session>()("Session", {
+  make: Effect.gen(function* () {
+    const request = yield* Request;
+    const auth = yield* Auth;
+    return yield* auth.getSession(request.headers);
+  }),
+}) {
+  static layer = Layer.effect(this, this.make);
+}
+```
+
+This is cleaner for two reasons:
+
+- Better Auth nullability gets translated once, at the `Auth` boundary
+- every downstream caller sees a single consistent Effect-native type
 
 Pattern matching and fallback APIs are first-class:
 
@@ -120,6 +183,8 @@ There are 8 direct `yield* Session` call sites:
 - `src/routes/_mkt.tsx:16`
 
 All of them need changes, because current code treats `session` as nullable JS, not `Option`.
+
+If `Auth.getSession` changes to `Option` first, caller-site impact stays the same for route code. The extra direct impact is only `src/lib/Session.ts`.
 
 ## What changes at callers
 
@@ -279,16 +344,12 @@ Use these patterns consistently:
 
 That keeps `Option` at the boundary, then converts only where the route truly requires a session.
 
-## Questions
+## Updated conclusions
 
-- Should `Session` stay as `Option`, but `Auth.getSession` remain nullable? My recommendation: yes. `Auth` is wrapping Better Auth directly; `Session` is the app-facing boundary where Effect-style optionality is most useful.
+- `Auth.getSession` should also return `Option`; normalize nullable Better Auth output there
+- no helper abstraction needed for now; update route callers directly
+- no auth-flow change needed; only representation changes from nullable to `Option`
 
-Interesting. I wasn't aware of Auth.getSession. We need that to return an Option so you'll need to expand the research.
+## Remaining question
 
-- Do you want strict `Option` usage at every route, or a local helper like `requireSession` / `requireUserSession` to reduce repetition? Several auth-guard routes would get smaller with a helper.
-
-No helpers for now.
-
-- Should missing session continue to become redirect/not-found at route level, or do you want `Session` itself to fail for protected paths? My recommendation: keep `Session` as optional and let route `beforeLoad` decide policy.
-
-I'm confused by this question. Why would we want to change logic and flows?
+- Do you want `Auth.getSession` to return `Option` via inferred type only, or do you want an explicit exported session type alias added in `src/lib/Auth.ts` for readability at `Session`/caller boundaries?
