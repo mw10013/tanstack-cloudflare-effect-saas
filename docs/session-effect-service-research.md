@@ -35,15 +35,15 @@ export interface ServerContext {
 }
 ```
 
-So current behavior is still:
+So current behavior is:
 
-- one eager `auth.getSession(request.headers)` fetch per HTTP request
+- eager `auth.getSession(request.headers)` in the worker fetch path
 - `session` passed through TanStack request context
 - route/server-fn code reads `session` from context, not from an Effect service
 
 ## What Changed Since The Old Research
 
-The old draft assumed `request` was still in `ServerContext`. That is now stale.
+The old draft assumed `request` was still in `ServerContext`. That is stale.
 
 `src/lib/Request.ts:1`-`src/lib/Request.ts:3`:
 
@@ -65,7 +65,7 @@ const runtimeLayer = Layer.merge(
 );
 ```
 
-That matters for `Session`: a lazy session service can now depend on `Request` directly instead of taking headers from TanStack context.
+That means a lazy `Session` service can depend on `Request` directly.
 
 ## Usage Analysis
 
@@ -82,12 +82,12 @@ Current `context.session` reads in route modules are only 8 call sites:
 
 Representative patterns:
 
-- auth guard: `if (!session?.user) return yield* Effect.die(redirect({ to: "/login" }));` in `src/routes/app.tsx:9`
-- role guard: `if (session.user.role !== "admin")` in `src/routes/admin.tsx:43`
-- optional projection: `sessionUser: session?.user` in `src/routes/_mkt.tsx:14`
-- active org validation: `s.session.activeOrganizationId === organizationId` in `src/routes/app.$organizationId.tsx:64`
+- auth guard in `src/routes/app.tsx:9`: `if (!session?.user) return yield* Effect.die(redirect({ to: "/login" }));`
+- role guard in `src/routes/admin.tsx:43`: `if (session.user.role !== "admin")`
+- optional projection in `src/routes/_mkt.tsx:14`: `sessionUser: session?.user`
+- active org validation in `src/routes/app.$organizationId.tsx:64`: `s.session.activeOrganizationId === organizationId`
 
-This is structurally similar to the completed `Request` migration: route logic already reads `session` only inside `runEffect(...)` programs.
+This is structurally similar to the completed `Request` migration: route logic already reads `session` inside `runEffect(...)` programs.
 
 ## Effect v4 Grounding
 
@@ -147,52 +147,11 @@ export const Session = ServiceMap.Service<
 >("app/Session");
 ```
 
-`undefined` matches current semantics in `ServerContext`, where missing session is normal for public routes.
+`undefined` matches current semantics, where missing session is normal for public routes.
 
-## Provisioning Models
+## Preferred Direction: Lazy `Session`
 
-### Model A: eager worker fetch, then provide `Session`
-
-Preserve current semantics exactly.
-
-Sketch:
-
-```ts
-const runEffect = makeHttpRunEffect(env, request);
-
-const session = await runEffect(
-  Effect.gen(function* () {
-    const auth = yield* Auth;
-    return yield* auth.getSession(request.headers);
-  }),
-);
-
-const runRequestEffect = <A, E>(effect: Effect.Effect<A, E, Session | any>) =>
-  runEffect(effect.pipe(Effect.provideService(Session, session ?? undefined)));
-```
-
-Grounding: Effect exposes `Effect.provideService(...)` for this exact shape.
-
-`refs/effect4/packages/effect/src/Effect.ts:5832`-`refs/effect4/packages/effect/src/Effect.ts:5834`:
-
-```ts
-const result = Effect.provideService(program, Counter, { count: 0 });
-Effect.runPromise(result).then(console.log);
-```
-
-Pros:
-
-- preserves one session fetch per HTTP request
-- preserves current fetch timing before `serverEntry.fetch(...)`
-- removes `session` from `ServerContext` without changing auth behavior
-- keeps scheduled runtime free of fake session values
-
-Cons:
-
-- still keeps a worker prefetch phase before route execution
-- session is request-scoped but not constructed as a layer
-
-### Model B: lazy `Session` layer derived from `Request`
+The desired direction is lazy session access: if a route does not need session, it should not trigger `auth.getSession(...)`.
 
 Sketch:
 
@@ -209,7 +168,9 @@ const sessionLayer = Layer.effect(
 
 This is valid Effect code. `Layer.effect(...)` is the standard pattern for constructing a service from an effect; see `refs/effect4/LLMS.md:121`-`refs/effect4/LLMS.md:138` and `refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:23`-`refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:29`.
 
-But call-count semantics are still the hard part.
+## Important Caveat
+
+Lazy is the direction, but one behavior detail still needs to be made explicit: what call count is acceptable if multiple `runEffect(...)` executions happen during one page request.
 
 `refs/effect4/migration/layer-memoization.md:8`-`refs/effect4/migration/layer-memoization.md:11`:
 
@@ -218,7 +179,7 @@ In v4, the underlying `MemoMap` data structure which facilitates memoization of
 `Layer`s is shared between `Effect.provide` calls...
 ```
 
-And the managed runtime guide makes shared memo-map ownership explicit when you want reuse across framework boundaries.
+And the managed runtime docs make shared memo-map ownership explicit when you want controlled reuse across framework boundaries.
 
 `refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:60`-`refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:68`:
 
@@ -230,38 +191,13 @@ export const runtime = ManagedRuntime.make(TodoRepo.layer, {
 });
 ```
 
-In this repo, each `runEffect(...)` currently does a fresh top-level run:
+Current runner in `src/worker.ts:114`-`src/worker.ts:116`:
 
 ```ts
 const exit = await Effect.runPromiseExit(Effect.provide(effect, runtimeLayer));
 ```
 
-Source: `src/worker.ts:114`-`src/worker.ts:116`.
-
-So this research should not assume that a lazy `Session` layer yields exactly one `auth.getSession(...)` call across all server functions/loaders participating in one HTTP page request.
-
-Pros:
-
-- lines up cleanly with the new `Request` service
-- avoids eager worker fetch for routes that never touch session
-- makes `Session` a normal runtime dependency
-
-Cons:
-
-- may change call-count semantics from once-per-request to once-per-`runEffect`
-- needs explicit proof before claiming parity with current behavior
-
-## Scheduled Path
-
-Same conclusion as the request migration: `scheduled()` should not provide `Session`.
-
-Current scheduled path in `src/worker.ts:203`-`src/worker.ts:223` only does repository cleanup and logging. There is no HTTP request and no auth session.
-
-So:
-
-- `Session` should be HTTP-only
-- scheduled code that accidentally reaches for `Session` should fail loudly
-- do not widen the service to fake defaults for non-HTTP paths
+So this doc should not claim more than we know. The migration target is lazy session loading. The remaining question is whether repeated top-level `runEffect(...)` calls within one HTTP navigation may trigger repeated `auth.getSession(...)` calls, and whether that is acceptable.
 
 ## Route Migration Shape
 
@@ -290,45 +226,27 @@ After:
   );
 ```
 
-The route-level change is straightforward. The only real design choice is how `Session` gets provided.
+The route-level change is straightforward. The main open issue is runtime/provisioning shape, not route code.
 
 ## Recommendation
 
-The old "not implementation-ready" conclusion is stale.
-
 Updated recommendation:
 
-1. if the goal is only to remove `session` from `ServerContext`, use Model A first
-2. keep current eager worker fetch semantics unless the team explicitly wants to trade them away
-3. revisit Model B only if reducing unused session fetches matters enough to justify call-count verification work
+1. move `session` to an Effect service
+2. make it lazy via `Layer.effect(Session, ...)`
+3. keep `undefined` semantics for now
+4. do not introduce guard helper abstractions yet
 
-Model A is now the low-risk path because:
-
-- `Request` service plumbing is already in place
-- all current route reads are already inside `runEffect(...)`
-- current auth behavior is centered on one eager fetch in `src/worker.ts`
+This aligns with the current app direction better than preserving eager worker prefetch.
 
 ## Questions To Annotate
 
-1. Is preserving exactly one `auth.getSession(request.headers)` call per HTTP request a hard requirement, or is once-per-`runEffect` acceptable?
+1. If multiple top-level `runEffect(...)` executions happen during one HTTP navigation, is it acceptable for lazy `Session` to call `auth.getSession(...)` more than once?
 
-You keep getting tied up in knots about this. We want session to be lazy. Does that address your concerns?
+2. Do you want the implementation to accept that behavior as-is, or do you want additional runtime work to try to coalesce/memoize session reads across the whole HTTP request?
 
-2. Should the migration optimize for semantic parity first (Model A), or for deferred session fetching first (Model B)?
+3. We currently model public-route session as `AuthInstance["$Infer"]["Session"] | undefined`. Keep that exact shape for the new `Session` service, or change it?
 
-We want lazy. If a session is not needed then it should never be gotten.
+4. Do you want the final research doc to include a small implementation sketch in `src/worker.ts`, or keep it conceptual and route-focused?
 
-3. Do you want `Session` to keep current `undefined` semantics for public routes, or should missing-session access fail harder in some locations?
-
-Hmmm, maybe undefined for now. May consider Option in future
-
-4. If we keep Model A, do you want `src/worker.ts` to wrap `runEffect` with `Effect.provideService(Session, session ?? undefined)`, or do you want a session layer merged into the HTTP runtime after prefetch?
-
-Is this question still relevant? We want sessiont to be lazy
-
-5. After `Session` moves into Effect, do you want follow-up guard helpers (`requireUserSession`, `requireAdminSession`, etc.), or keep direct inline checks in routes?
-
-No guard helpers for now.
-
-
-Remove anything about scheduled. It's not relevant and just adds noise.
+5. After the lazy `Session` service lands, should we immediately remove all `context.session` usage in the same change, or stage it in two steps?
