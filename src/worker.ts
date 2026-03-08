@@ -19,7 +19,6 @@ import * as Domain from "@/lib/Domain";
 import { KV } from "@/lib/KV";
 import { Repository } from "@/lib/Repository";
 import { Request as AppRequest } from "@/lib/Request";
-import { Session } from "@/lib/Session";
 import { Stripe } from "@/lib/Stripe";
 
 const makeEnvLayer = (env: Env) =>
@@ -105,8 +104,7 @@ const makeHttpRunEffect = (env: Env, request: Request) => {
     ServiceMap.make(AppRequest, request),
   );
   const authRequestLayer = Layer.merge(authLayer, requestLayer);
-  const sessionLayer = Layer.provideMerge(Session.layer, authRequestLayer);
-  const runtimeLayer = Layer.merge(sessionLayer, makeLoggerLayer(env));
+  const runtimeLayer = Layer.merge(authRequestLayer, makeLoggerLayer(env));
   return async <A, E>(
     effect: Effect.Effect<A, E, Layer.Success<typeof runtimeLayer>>,
   ): Promise<A> => {

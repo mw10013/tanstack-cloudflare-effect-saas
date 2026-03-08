@@ -47,7 +47,9 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
     const getSession = Effect.fn("auth.getSession")(function* (
       headers: Headers,
     ) {
-      return yield* Effect.tryPromise(() => auth.api.getSession({ headers }));
+      return Option.fromNullishOr(
+        yield* Effect.tryPromise(() => auth.api.getSession({ headers })),
+      );
     });
 
     return {
@@ -347,9 +349,7 @@ const makeAuth = ({
             }),
           ),
         onEvent: (event) =>
-          runEffect(
-            Effect.logInfo("stripe.onEvent", { type: event.type }),
-          ),
+          runEffect(Effect.logInfo("stripe.onEvent", { type: event.type })),
       }),
       tanstackStartCookies(),
     ],

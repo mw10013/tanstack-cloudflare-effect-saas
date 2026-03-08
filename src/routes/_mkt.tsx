@@ -1,20 +1,27 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
+import * as Option from "effect/Option";
 import { siGithub } from "simple-icons";
 import { AppLogo } from "@/components/app-logo";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { signOutServerFn } from "@/lib/Auth";
-import { Session } from "@/lib/Session";
+import { Auth, signOutServerFn } from "@/lib/Auth";
+import { Request } from "@/lib/Request";
 
 const beforeLoadServerFn = createServerFn().handler(
   ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const session = yield* Session;
-        return { sessionUser: session?.user };
+        const request = yield* Request;
+        const auth = yield* Auth;
+        const session = yield* auth.getSession(request.headers);
+        return {
+          sessionUser: Option.map(session, (value) => value.user).pipe(
+            Option.getOrUndefined,
+          ),
+        };
       }),
     ),
 );

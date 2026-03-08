@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Auth } from "@/lib/Auth";
 import { Request } from "@/lib/Request";
-import { Session } from "@/lib/Session";
 import { Stripe } from "@/lib/Stripe";
 
 export const Route = createFileRoute("/_mkt/pricing")({
@@ -48,16 +48,16 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
   .handler(({ data: { intent }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const session = yield* Session;
-        if (!session) {
+        const request = yield* Request;
+        const auth = yield* Auth;
+        const session = yield* auth.getSession(request.headers);
+        if (Option.isNone(session)) {
           return yield* Effect.die(redirect({ to: "/login" }));
         }
-        if (session.user.role !== "user") {
+        if (session.value.user.role !== "user") {
           return yield* Effect.fail(new Error("Forbidden"));
         }
-        const request = yield* Request;
         const stripe = yield* Stripe;
-        const auth = yield* Auth;
         const plans = yield* stripe.getPlans();
         const plan = plans.find(
           (p) =>
@@ -68,7 +68,7 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
           return yield* Effect.die(notFound());
         }
         const activeOrganizationId = yield* Effect.fromNullishOr(
-          session.session.activeOrganizationId,
+          session.value.session.activeOrganizationId,
         );
         const subscriptions = yield* Effect.tryPromise(() =>
           auth.api.listActiveSubscriptions({

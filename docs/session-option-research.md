@@ -236,8 +236,6 @@ return {
 - update the 8 route call sites to use `Request` + `Auth` explicitly
 - keep auth flow exactly the same; only change representation from nullable to `Option`
 
-## Open question
+## Decision
 
-- Should `src/lib/Auth.ts` also export a named session type alias for readability, or just rely on inference at use sites?
-
-Rely on inference.
+- rely on inference; no extra exported session type alias needed

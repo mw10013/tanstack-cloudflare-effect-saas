@@ -25,7 +25,6 @@ import {
 import { Auth } from "@/lib/Auth";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
-import { Session } from "@/lib/Session";
 
 const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
 
@@ -46,8 +45,10 @@ const getLoaderData = createServerFn({ method: "GET" })
   .handler(async ({ data: { organizationId }, context: { runEffect } }) => {
     return runEffect(
       Effect.gen(function* () {
-        const session = yield* Session;
-        const validSession = yield* Effect.fromNullishOr(session).pipe(
+        const request = yield* Request;
+        const auth = yield* Auth;
+        const session = yield* auth.getSession(request.headers);
+        const validSession = yield* Effect.fromOption(session).pipe(
           Effect.filterOrFail(
             (s) => organizationId === s.session.activeOrganizationId,
             () => new Cause.NoSuchElementError(),

@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
+import * as Option from "effect/Option";
 import { ChevronsUpDown, LogOut } from "lucide-react";
 import { AppLogo } from "@/components/app-logo";
 import { Button } from "@/components/ui/button";
@@ -32,19 +33,21 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { signOutServerFn } from "@/lib/Auth";
-import { Session } from "@/lib/Session";
+import { Auth, signOutServerFn } from "@/lib/Auth";
+import { Request } from "@/lib/Request";
 
 const beforeLoadServerFn = createServerFn().handler(
   ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const session = yield* Session;
-        if (!session?.user)
+        const request = yield* Request;
+        const auth = yield* Auth;
+        const session = yield* auth.getSession(request.headers);
+        if (Option.isNone(session))
           return yield* Effect.die(redirect({ to: "/login" }));
-        if (session.user.role !== "admin")
+        if (session.value.user.role !== "admin")
           return yield* Effect.die(redirect({ to: "/" }));
-        return { sessionUser: session.user };
+        return { sessionUser: session.value.user };
       }),
     ),
 );
