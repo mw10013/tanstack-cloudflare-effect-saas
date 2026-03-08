@@ -1,7 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect, pipe } from "effect";
-import * as Option from "effect/Option";
+import { Effect } from "effect";
 import { Auth } from "@/lib/Auth";
 import { Request } from "@/lib/Request";
 
@@ -12,21 +11,19 @@ export const resolveMagicLinkRedirectFn = createServerFn({
     Effect.gen(function* () {
       const request = yield* Request;
       const auth = yield* Auth;
-      const session = yield* auth.getSession(request.headers);
-      const role = pipe(
-        session,
-        Option.map(({ user }) => user.role ?? "unknown"),
-        Option.getOrElse(() => "unknown"),
+      return yield* auth.getSession(request.headers).pipe(
+        Effect.flatMap(Effect.fromOption),
+        Effect.matchEffect({
+          onFailure: () =>
+            Effect.succeed({
+              error: "Magic link sign-in could not be completed.",
+            }),
+          onSuccess: ({ user }) =>
+            Effect.die(
+              redirect({ to: user.role === "admin" ? "/admin" : "/app" }),
+            ),
+        }),
       );
-
-      switch (role) {
-        case "admin":
-          return yield* Effect.die(redirect({ to: "/admin" }));
-        case "user":
-          return yield* Effect.die(redirect({ to: "/app" }));
-        default:
-          return { error: `Invalid role: ${role}` };
-      }
     }),
   ),
 );
