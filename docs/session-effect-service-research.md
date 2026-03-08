@@ -170,7 +170,17 @@ This is valid Effect code. `Layer.effect(...)` is the standard pattern for const
 
 ## Call Count Behavior
 
-The old uncertainty around repeated `runEffect(...)` calls can be tightened up from the Effect source.
+Clarification: there is one Cloudflare `fetch()` invocation and one per-request `runEffect` function value created in `src/worker.ts:184`.
+
+That same per-request function can still be invoked multiple times during the handling of that one request:
+
+- worker prefetch in `src/worker.ts:186`
+- route/server-fn handlers like `src/routes/app.tsx:7`
+- nested route/server-fn handlers like `src/routes/app.index.tsx:7`
+
+So the relevant boundary is not "how many `fetch()` calls?" It is "how many times does the per-request `runEffect` function execute an Effect program?"
+
+The important distinction is between reusing the `runtimeLayer` definition and reusing already-built services from that layer.
 
 `refs/effect4/migration/layer-memoization.md:8`-`refs/effect4/migration/layer-memoization.md:11`:
 
@@ -238,13 +248,11 @@ export const runPromiseExit = runPromiseExitWith(ServiceMap.empty());
 
 That means:
 
-- within a single top-level `runEffect(...)` call, a lazy `Session` layer should be memoized normally
-- across separate top-level `runEffect(...)` calls, the run starts from a fresh root service map, so there is no evidence here of automatic cross-call request-wide memoization
-- therefore repeated top-level `runEffect(...)` executions can trigger repeated `auth.getSession(...)` calls unless this app introduces an explicit shared runtime / shared memo map boundary
+- within a single invocation of the per-request `runEffect(...)` function, a lazy `Session` layer should be memoized normally
+- across separate invocations of that same per-request `runEffect(...)` function, the run starts from a fresh root service map, so there is no evidence here of automatic cross-invocation request-wide memoization
+- therefore repeated invocations of `runEffect(...)` during one Cloudflare request can trigger repeated `auth.getSession(...)` calls unless this app introduces an explicit shared runtime / shared memo map boundary
 
-So the key point is now clear: lazy `Session` is compatible with the current runner, but its natural memoization boundary is the individual top-level `runEffect(...)` execution, not automatically the whole HTTP request
-
-Are you fucking out of your mind? We are running in cloudflare workers function. When the fetch entrypoint gets called, we create 1 fucking runEffect and stuff that in the context. And when the fetch is done, the whole fucking things disappears. Where the fuck are you getting multiple top-level runEffect calls? What the fuck do you mean by that? Show me an example? We have no fucking top-level calls since everything runs from the fetch entrypoint. Jesus, this is cloudflare 101. Fucking scan refs/cloudflare-docs.
+For this repo, that caveat is acceptable for now. The current implementation shape should be treated as sufficient unless repeated session reads show up as an actual problem.
 
 ## Route Migration Shape
 
@@ -283,6 +291,7 @@ Updated recommendation:
 2. make it lazy via `Layer.effect(Session, ...)`
 3. keep `undefined` semantics for now
 4. do not introduce guard helper abstractions yet
+5. accept the current `runEffect` / `runtimeLayer` behavior for now rather than adding shared memo-map machinery up front
 
 This aligns with the current app direction better than preserving eager worker prefetch.
 
@@ -341,14 +350,10 @@ Route shape:
 
 With current route usage, the service shape should stay `AuthInstance["$Infer"]["Session"] | undefined`. That matches public-route access in `src/routes/_mkt.tsx:14` and the nullish checks already used throughout `src/routes/app.tsx:9`, `src/routes/admin.tsx:41`, and `src/routes/app.index.tsx:9`.
 
-## Questions To Annotate
+## Remaining Questions To Annotate
 
-1. Given the Effect source evidence above, are you OK with lazy `Session` being memoized per top-level `runEffect(...)` call, rather than guaranteed once per entire HTTP request?
+1. Keep `Session` as `AuthInstance["$Infer"]["Session"] | undefined`? Current route usage suggests yes, but annotate if you want a different shape.       Keep for now.
 
-2. If not, do you want follow-up research/design for a shared request-scoped memo map or managed runtime boundary, or is that out of scope for this migration?
+2. Is the implementation sketch detailed enough, or do you want the doc to include a more exact `src/worker.ts` diff shape?   Leave it
 
-3. Keep `Session` as `AuthInstance["$Infer"]["Session"] | undefined`? Current route usage suggests yes, but annotate if you want a different shape.
-
-4. Is the implementation sketch detailed enough, or do you want the doc to include a more exact `src/worker.ts` diff shape?
-
-5. Confirm migration scope: remove all `context.session` usage in one shot in the same change?
+3. Confirm migration scope: remove all `context.session` usage in one shot in the same change?  Confirmed.
