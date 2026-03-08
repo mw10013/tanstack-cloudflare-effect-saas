@@ -1,4 +1,3 @@
-import type { AuthInstance } from "@/lib/Auth";
 import { Effect, Layer, ServiceMap } from "effect";
 import { Auth } from "@/lib/Auth";
 import { Request } from "@/lib/Request";
@@ -12,5 +11,3 @@ export class Session extends ServiceMap.Service<Session>()("Session", {
 }) {
   static layer = Layer.effect(this, this.make);
 }
-
-export type SessionValue = AuthInstance["$Infer"]["Session"] | undefined;
