@@ -243,10 +243,20 @@ This aligns with the current app direction better than preserving eager worker p
 
 1. If multiple top-level `runEffect(...)` executions happen during one HTTP navigation, is it acceptable for lazy `Session` to call `auth.getSession(...)` more than once?
 
+Scan the fucking refs/effect4 and figure out the behavior. Why the fuck do you keep saying everything gets re-initialized with each call to runEffect. Show me fucking evidence.
+
 2. Do you want the implementation to accept that behavior as-is, or do you want additional runtime work to try to coalesce/memoize session reads across the whole HTTP request?
+
+Let's first understand what the fucking behavior is. Stop fucking around and do the research.
 
 3. We currently model public-route session as `AuthInstance["$Infer"]["Session"] | undefined`. Keep that exact shape for the new `Session` service, or change it?
 
+I need to see more context. I don't know what the fuck you are talking about.
+
 4. Do you want the final research doc to include a small implementation sketch in `src/worker.ts`, or keep it conceptual and route-focused?
 
+Let's see some implementation details.
+
 5. After the lazy `Session` service lands, should we immediately remove all `context.session` usage in the same change, or stage it in two steps?
+
+one shot.
