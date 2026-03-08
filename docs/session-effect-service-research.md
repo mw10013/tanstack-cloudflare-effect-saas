@@ -311,7 +311,24 @@ Model A is now the low-risk path because:
 ## Questions To Annotate
 
 1. Is preserving exactly one `auth.getSession(request.headers)` call per HTTP request a hard requirement, or is once-per-`runEffect` acceptable?
+
+You keep getting tied up in knots about this. We want session to be lazy. Does that address your concerns?
+
 2. Should the migration optimize for semantic parity first (Model A), or for deferred session fetching first (Model B)?
+
+We want lazy. If a session is not needed then it should never be gotten.
+
 3. Do you want `Session` to keep current `undefined` semantics for public routes, or should missing-session access fail harder in some locations?
+
+Hmmm, maybe undefined for now. May consider Option in future
+
 4. If we keep Model A, do you want `src/worker.ts` to wrap `runEffect` with `Effect.provideService(Session, session ?? undefined)`, or do you want a session layer merged into the HTTP runtime after prefetch?
+
+Is this question still relevant? We want sessiont to be lazy
+
 5. After `Session` moves into Effect, do you want follow-up guard helpers (`requireUserSession`, `requireAdminSession`, etc.), or keep direct inline checks in routes?
+
+No guard helpers for now.
+
+
+Remove anything about scheduled. It's not relevant and just adds noise.
