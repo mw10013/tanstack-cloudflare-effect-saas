@@ -19,6 +19,19 @@ So the v3 workshop pattern still holds conceptually, but in v4 the most idiomati
 3. wrap foreign boundaries with `Effect.try`, `Effect.tryPromise`, `Stream.fromAsyncIterable`, `Effect.acquireRelease`, etc.
 4. access services mostly with `yield*`, using `.use(...)` only when it is the clearest tool
 
+So the simplest accurate takeaway is:
+
+- the Effect v3 `use` pattern is not very relevant in the literal API sense for Effect v4
+- it is still relevant in the philosophical / architectural sense
+
+Literal v3 reading: expose a custom public `use` method like `openai.use((client) => ...)`.
+
+Idiomatic v4 reading: wrap foreign libraries in a service and normalize the boundary there, but usually expose focused domain methods and consume services with `yield*`.
+
+So if we are asking "should we port the workshop's public `use` API verbatim into v4?", the answer is usually no.
+
+If we are asking "should we keep the workshop's idea of one integration boundary that centralizes error mapping, cancellation, scoping, and stream translation?", the answer is yes.
+
 ## The Main v4 Docs Signal
 
 From `refs/effect4/migration/services.md:81`:
