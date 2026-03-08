@@ -7,12 +7,14 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { signOutServerFn } from "@/lib/Auth";
+import { Session } from "@/lib/Session";
 
 const beforeLoadServerFn = createServerFn().handler(
-  ({ context: { runEffect, session } }) =>
+  ({ context: { runEffect } }) =>
     runEffect(
-      Effect.succeed({
-        sessionUser: session?.user,
+      Effect.gen(function* () {
+        const session = yield* Session;
+        return { sessionUser: session?.user };
       }),
     ),
 );

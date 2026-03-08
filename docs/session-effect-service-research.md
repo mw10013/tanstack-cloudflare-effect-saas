@@ -350,10 +350,20 @@ Route shape:
 
 With current route usage, the service shape should stay `AuthInstance["$Infer"]["Session"] | undefined`. That matches public-route access in `src/routes/_mkt.tsx:14` and the nullish checks already used throughout `src/routes/app.tsx:9`, `src/routes/admin.tsx:41`, and `src/routes/app.index.tsx:9`.
 
-## Remaining Questions To Annotate
+## Resolution
 
-1. Keep `Session` as `AuthInstance["$Infer"]["Session"] | undefined`? Current route usage suggests yes, but annotate if you want a different shape.       Keep for now.
+Annotated decisions:
 
-2. Is the implementation sketch detailed enough, or do you want the doc to include a more exact `src/worker.ts` diff shape?   Leave it
+1. keep `Session` as `AuthInstance["$Infer"]["Session"] | undefined`
+2. keep the implementation sketch at the current level of detail
+3. remove all `context.session` usage in one shot
 
-3. Confirm migration scope: remove all `context.session` usage in one shot in the same change?  Confirmed.
+## Implementation
+
+Implemented:
+
+1. added `src/lib/Session.ts`
+2. updated `src/worker.ts` to provide lazy `Session` via `Layer.effect(Session, ...)`
+3. removed eager session prefetch from `src/worker.ts`
+4. removed `session` from `ServerContext`
+5. migrated all route/server-fn `context.session` reads to `yield* Session`

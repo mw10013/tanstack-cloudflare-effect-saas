@@ -1,11 +1,13 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
+import { Session } from "@/lib/Session";
 
 export const verifyMagicLinkFn = createServerFn({ method: "GET" }).handler(
-  ({ context: { runEffect, session } }) =>
+  ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const session = yield* Session;
         if (session?.user.role === "admin")
           return yield* Effect.die(redirect({ to: "/admin" }));
         if (session?.user.role === "user")

@@ -1,11 +1,13 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
+import { Session } from "@/lib/Session";
 
 const beforeLoadServerFn = createServerFn().handler(
-  ({ context: { runEffect, session } }) =>
+  ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const session = yield* Session;
         if (!session?.user)
           return yield* Effect.die(redirect({ to: "/login" }));
         if (session.user.role !== "user")

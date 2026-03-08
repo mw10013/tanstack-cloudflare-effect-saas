@@ -25,6 +25,7 @@ import {
 import { Auth } from "@/lib/Auth";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
+import { Session } from "@/lib/Session";
 
 const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
 
@@ -42,50 +43,50 @@ export const Route = createFileRoute("/app/$organizationId/")({
 
 const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
-  .handler(
-    async ({ data: { organizationId }, context: { runEffect, session } }) => {
-      return runEffect(
-        Effect.gen(function* () {
-          const validSession = yield* Effect.fromNullishOr(session).pipe(
-            Effect.filterOrFail(
-              (s) => organizationId === s.session.activeOrganizationId,
-              () => new Cause.NoSuchElementError(),
-            ),
-          );
-          const repository = yield* Repository;
-          return yield* repository.getAppDashboardData({
-            userEmail: validSession.user.email,
-            organizationId,
-          });
-        }),
-      );
-    },
-  );
+  .handler(async ({ data: { organizationId }, context: { runEffect } }) => {
+    return runEffect(
+      Effect.gen(function* () {
+        const session = yield* Session;
+        const validSession = yield* Effect.fromNullishOr(session).pipe(
+          Effect.filterOrFail(
+            (s) => organizationId === s.session.activeOrganizationId,
+            () => new Cause.NoSuchElementError(),
+          ),
+        );
+        const repository = yield* Repository;
+        return yield* repository.getAppDashboardData({
+          userEmail: validSession.user.email,
+          organizationId,
+        });
+      }),
+    );
+  });
 
 const acceptInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(acceptInvitationSchema))
-  .handler(({ data: { invitationId, organizationId }, context: { runEffect } }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const request = yield* Request;
-        const auth = yield* Auth;
-        yield* Effect.tryPromise(() =>
-          auth.api.acceptInvitation({
-            headers: request.headers,
-            body: { invitationId },
-          }),
-        );
-        // better-auth's acceptInvitation sets activeOrganizationId to the
-        // invited org as a side effect — restore it to the current org so
-        // accepting doesn't silently switch the user's context.
-        yield* Effect.tryPromise(() =>
-          auth.api.setActiveOrganization({
-            headers: request.headers,
-            body: { organizationId },
-          }),
-        );
-      }),
-    ),
+  .handler(
+    ({ data: { invitationId, organizationId }, context: { runEffect } }) =>
+      runEffect(
+        Effect.gen(function* () {
+          const request = yield* Request;
+          const auth = yield* Auth;
+          yield* Effect.tryPromise(() =>
+            auth.api.acceptInvitation({
+              headers: request.headers,
+              body: { invitationId },
+            }),
+          );
+          // better-auth's acceptInvitation sets activeOrganizationId to the
+          // invited org as a side effect — restore it to the current org so
+          // accepting doesn't silently switch the user's context.
+          yield* Effect.tryPromise(() =>
+            auth.api.setActiveOrganization({
+              headers: request.headers,
+              body: { organizationId },
+            }),
+          );
+        }),
+      ),
   );
 
 const rejectInvitation = createServerFn({ method: "POST" })

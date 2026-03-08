@@ -1,4 +1,3 @@
-import type { AuthInstance } from "@/lib/Auth";
 import { isNotFound, isRedirect } from "@tanstack/react-router";
 import serverEntry from "@tanstack/react-start/server-entry";
 import {
@@ -20,6 +19,7 @@ import * as Domain from "@/lib/Domain";
 import { KV } from "@/lib/KV";
 import { Repository } from "@/lib/Repository";
 import { Request as AppRequest } from "@/lib/Request";
+import { Session } from "@/lib/Session";
 import { Stripe } from "@/lib/Stripe";
 
 const makeEnvLayer = (env: Env) =>
@@ -104,10 +104,9 @@ const makeHttpRunEffect = (env: Env, request: Request) => {
   const requestLayer = Layer.succeedServices(
     ServiceMap.make(AppRequest, request),
   );
-  const runtimeLayer = Layer.merge(
-    Layer.merge(authLayer, requestLayer),
-    makeLoggerLayer(env),
-  );
+  const authRequestLayer = Layer.merge(authLayer, requestLayer);
+  const sessionLayer = Layer.provideMerge(Session.layer, authRequestLayer);
+  const runtimeLayer = Layer.merge(sessionLayer, makeLoggerLayer(env));
   return async <A, E>(
     effect: Effect.Effect<A, E, Layer.Success<typeof runtimeLayer>>,
   ): Promise<A> => {
@@ -151,7 +150,6 @@ const makeHttpRunEffect = (env: Env, request: Request) => {
 export interface ServerContext {
   env: Env;
   runEffect: ReturnType<typeof makeHttpRunEffect>;
-  session?: AuthInstance["$Infer"]["Session"];
 }
 
 declare module "@tanstack/react-start" {
@@ -182,18 +180,10 @@ export default {
         : undefined,
     });
     const runEffect = makeHttpRunEffect(env, request);
-
-    const session = await runEffect(
-      Effect.gen(function* () {
-        const auth = yield* Auth;
-        return yield* auth.getSession(request.headers);
-      }),
-    );
     const response = await serverEntry.fetch(request, {
       context: {
         env,
         runEffect,
-        session: session ?? undefined,
       },
     });
     d1SessionService.setSessionBookmarkCookie(response);

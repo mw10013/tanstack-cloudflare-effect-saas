@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Auth, signOutServerFn } from "@/lib/Auth";
 import { Request } from "@/lib/Request";
+import { Session } from "@/lib/Session";
 
 const switchOrganizationServerFn = createServerFn({ method: "POST" })
   .inputValidator((organizationId: string) => organizationId)
@@ -56,9 +57,10 @@ const switchOrganizationServerFn = createServerFn({ method: "POST" })
 
 const beforeLoadServerFn = createServerFn({ method: "GET" })
   .inputValidator((organizationId: string) => organizationId)
-  .handler(({ context: { runEffect, session }, data: organizationId }) =>
+  .handler(({ context: { runEffect }, data: organizationId }) =>
     runEffect(
       Effect.gen(function* () {
+        const session = yield* Session;
         const validSession = yield* Effect.fromNullishOr(session).pipe(
           Effect.filterOrFail(
             (s) => s.session.activeOrganizationId === organizationId,
