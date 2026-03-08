@@ -50,7 +50,7 @@ export class D1 extends ServiceMap.Service<D1>()("D1", {
     };
   }),
 }) {
-  static layer = Layer.effect(this, this.make);
+  static readonly layer = Layer.effect(this, this.make);
 }
 
 export class D1Error extends Schema.TaggedErrorClass<D1Error>()("D1Error", {

@@ -44,7 +44,7 @@ class but does not auto-generate a layer. Define layers explicitly using
 And `src/lib/D1.ts:53` does exactly that:
 
 ```ts
-static layer = Layer.effect(this, this.make);
+static readonly layer = Layer.effect(this, this.make);
 ```
 
 The foreign async boundary is also wrapped correctly.
@@ -114,6 +114,14 @@ It is also:
 
 That matters because it weakens the boundary.
 
+More concretely: my concern is not that `prepare` exists. D1 requires prepared statements, so someone obviously has to create them.
+
+The real design question is:
+
+- who creates the `D1PreparedStatement`
+- when it gets created
+- where that logic lives
+
 ## Why `prepare` Is The Main Tension
 
 From the v4 research, the strongest architectural direction is:
@@ -133,6 +141,13 @@ What leaks through today:
 
 So the service is only partially hiding the foreign API.
 
+Put concretely:
+
+- current design: `Repository` creates raw D1 statements, `D1` executes them
+- stricter boundary design: `D1` creates raw D1 statements and also executes them
+
+That is the actual trade-off I am pointing at.
+
 ## Is That Bad Enough To Refactor Now?
 
 Probably not.
@@ -147,6 +162,12 @@ Why I would not rush to refactor:
 
 So while `prepare` is philosophically less pure, the important correctness boundary is still mostly in one place.
 
+So to be explicit: I do not have strong animosity to `prepare` itself.
+
+I only mean that exposing it publicly makes repository code participate in the raw D1 API instead of having `D1` fully encapsulate that API.
+
+That can be a perfectly reasonable trade-off.
+
 ## What A More "Pure" v4 Shape Would Look Like
 
 If you wanted to move closer to the research, the direction would be:
@@ -160,9 +181,38 @@ Conceptually:
 ```ts
 first(sql, ...params)
 run(sql, ...params, options)
-all(sql, ...params)
 batch([...])
 ```
+
+In that shape, the answer to who / when / where is concrete:
+
+- who creates `D1PreparedStatement`: the `D1` service
+- when: inside `first`, `run`, `all`, or `batch`, right before execution
+- where: inside `src/lib/D1.ts`, not in `src/lib/Repository.ts`
+
+Example:
+
+```ts
+const first = Effect.fn("D1.first")(function* <T>(
+  sql: string,
+  ...params: ReadonlyArray<unknown>
+) {
+  return yield* tryD1(() =>
+    d1
+      .prepare(sql)
+      .bind(...params)
+      .first<T>(),
+  ).pipe(Effect.map(Option.fromNullishOr));
+});
+```
+
+And the repository call site would become:
+
+```ts
+const result = yield * d1.first("select * from User where email = ?1", email);
+```
+
+first looks pretty good. Show me run. Note that options are optional.
 
 That would better match the research principle:
 
@@ -171,6 +221,27 @@ That would better match the research principle:
 - one service boundary owns all D1 semantics
 
 But it also makes some call sites less flexible, especially if you want to compose statements before execution.
+
+For `batch`, there is then a second design choice:
+
+- still accept raw `D1PreparedStatement[]`
+- or accept your own data shape like `{ sql, params }[]` and build the prepared statements inside `D1`
+
+Example:
+
+```ts
+batch([
+  { sql: "insert into User (id, email) values (?1, ?2)", params: [id, email] },
+  {
+    sql: "insert into Member (userId, organizationId) values (?1, ?2)",
+    params: [id, orgId],
+  },
+]);
+```
+
+Then again, `D1` owns statement creation.
+
+first looked pretty good to me, but batch starts to look a little turgid. Do we really want to abstract over D1PreparedStatement. I'm still on the fence.
 
 ## Concrete Refactor Candidates
 
@@ -187,7 +258,6 @@ Reason:
 
 Reasonable tiny refactors:
 
-- make `static readonly layer = Layer.effect(this, this.make)` for consistency with v4 docs style
 - possibly add a `query` / `all` helper if repeated patterns show up
 
 This would improve style without changing the API shape much.
