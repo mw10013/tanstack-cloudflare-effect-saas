@@ -212,7 +212,47 @@ And the repository call site would become:
 const result = yield * d1.first("select * from User where email = ?1", email);
 ```
 
-first looks pretty good. Show me run. Note that options are optional.
+And `run` would look like:
+
+```ts
+const run = Effect.fn("D1.run")(function* <T = Record<string, unknown>>(
+  sql: string,
+  params: ReadonlyArray<unknown> = [],
+  options?: {
+    readonly idempotentWrite?: boolean;
+  },
+) {
+  return yield* tryD1(() =>
+    d1
+      .prepare(sql)
+      .bind(...params)
+      .run<T>(),
+  ).pipe(retryIfIdempotentWrite(options?.idempotentWrite));
+});
+```
+
+With call sites like:
+
+```ts
+yield *
+  d1.run(
+    "update Session set activeOrganizationId = ?1 where userId = ?2 and activeOrganizationId is null",
+    [organizationId, userId],
+    { idempotentWrite: true },
+  );
+
+yield * d1.run("delete from Session where expiresAt < ?1", [expiresAt]);
+```
+
+I switched to `params: ReadonlyArray<unknown> = []` here instead of `...params` because `options` is optional. That shape is a little less elegant than `first`.
+
+And this is where the SQL-first approach starts to degrade:
+
+- if there are no binds, `run(sql, [], options?)` feels clunky
+- if you try to make params optional, it collides with optional `options`
+- overloads can paper over that, but then the wrapper API starts getting more complicated than the raw D1 API
+
+So this is a real point in favor of keeping `prepare(...).bind(...)` in the public surface.
 
 That would better match the research principle:
 
@@ -241,7 +281,30 @@ batch([
 
 Then again, `D1` owns statement creation.
 
-first looked pretty good to me, but batch starts to look a little turgid. Do we really want to abstract over D1PreparedStatement. I'm still on the fence.
+This is where I think the distinction sharpens.
+
+`first(sql, ...params)` can be nicer than `prepare(...).bind(...)` because it removes D1 boilerplate from the common single-statement read case.
+
+But `batch` is different. Once we abstract batch as `{ sql, params }[]`, we are not just hiding D1 details - we are inventing our own mini prepared-statement DSL.
+
+That can be worth it, but it is much easier to argue for a `first` helper than for replacing raw `D1PreparedStatement[]` in `batch`.
+
+And `run` is also not a clear win. Compared to `first`, `run` has the extra optional write options parameter, which makes the SQL-first signature noticeably more awkward.
+
+So my more concrete position after your annotation is:
+
+- `first(sql, ...params)` still looks plausible as a convenience helper
+- `run(sql, params, options?)` already starts to feel worse than the raw prepared-statement path
+- I am not currently convinced we should abstract over `D1PreparedStatement[]` for `batch`
+- because of that, keeping public `prepare` may remain the right trade-off even if a small helper or two is added
+
+That leads to a hybrid design possibility:
+
+- keep `prepare` for advanced cases and batch composition
+- maybe add `first(sql, ...params)` for the common read path
+- be cautious about adding `run(sql, params?, options?)` unless it feels clearly better at call sites
+
+That is less "pure" than fully hiding D1 prepared statements, but probably more practical.
 
 ## Concrete Refactor Candidates
 
@@ -259,6 +322,7 @@ Reason:
 Reasonable tiny refactors:
 
 - possibly add a `query` / `all` helper if repeated patterns show up
+- possibly add direct `first(sql, ...params)` while still keeping `prepare`
 
 This would improve style without changing the API shape much.
 
@@ -299,8 +363,10 @@ Applied to `src/lib/D1.ts`:
 - no, it should not gain a custom `use` method
 - no, it does not need a major refactor
 - yes, it already follows the important v4 ideas
-- the only notable gap is that `prepare` leaks the raw D1 API, but that is currently a pragmatic trade-off more than a pressing design problem
+- `prepare` leaking the raw D1 API is not obviously wrong; it may be the right trade-off, especially for `batch`
+- trying to cram raw SQL directly into every API surface can get worse, not better, once optional params/options enter the picture
+- if we change anything later, the most plausible move is a very small hybrid API: keep `prepare`, maybe add a focused read helper like `first(sql, ...params)`
 
 If you want to tighten it later, the best direction is not `use`.
 
-It is replacing public `prepare` with more focused SQL helpers that keep raw D1 statements fully inside the service.
+It is probably a restrained hybrid approach: keep `prepare` as the core API, especially for writes and `batch`, and only add SQL-first helpers where they are genuinely cleaner than the raw prepared-statement path.
