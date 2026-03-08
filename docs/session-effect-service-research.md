@@ -168,9 +168,9 @@ const sessionLayer = Layer.effect(
 
 This is valid Effect code. `Layer.effect(...)` is the standard pattern for constructing a service from an effect; see `refs/effect4/LLMS.md:121`-`refs/effect4/LLMS.md:138` and `refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:23`-`refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:29`.
 
-## Important Caveat
+## Call Count Behavior
 
-Lazy is the direction, but one behavior detail still needs to be made explicit: what call count is acceptable if multiple `runEffect(...)` executions happen during one page request.
+The old uncertainty around repeated `runEffect(...)` calls can be tightened up from the Effect source.
 
 `refs/effect4/migration/layer-memoization.md:8`-`refs/effect4/migration/layer-memoization.md:11`:
 
@@ -197,7 +197,54 @@ Current runner in `src/worker.ts:114`-`src/worker.ts:116`:
 const exit = await Effect.runPromiseExit(Effect.provide(effect, runtimeLayer));
 ```
 
-So this doc should not claim more than we know. The migration target is lazy session loading. The remaining question is whether repeated top-level `runEffect(...)` calls within one HTTP navigation may trigger repeated `auth.getSession(...)` calls, and whether that is acceptable.
+`Effect.provide(layer)` uses `Layer.buildWithScope(...)` unless `{ local: true }` is set. Source: `refs/effect4/packages/effect/src/internal/layer.ts:15`-`refs/effect4/packages/effect/src/internal/layer.ts:20`:
+
+```ts
+effect.scopedWith((scope) =>
+  effect.flatMap(
+    options?.local
+      ? Layer.buildWithMemoMap(layer, Layer.makeMemoMapUnsafe(), scope)
+      : Layer.buildWithScope(layer, scope),
+    (context) => effect.provideServices(self, context),
+  ),
+);
+```
+
+`Layer.buildWithScope(...)` pulls the memo map from the current fiber services, creating one if absent. Source: `refs/effect4/packages/effect/src/Layer.ts:558`-`refs/effect4/packages/effect/src/Layer.ts:563` and `refs/effect4/packages/effect/src/Layer.ts:395`-`refs/effect4/packages/effect/src/Layer.ts:399`:
+
+```ts
+buildWithMemoMap(self, CurrentMemoMap.getOrCreate(fiber.services), scope);
+```
+
+```ts
+static getOrCreate: <Services>(self: ServiceMap.ServiceMap<Services>) => MemoMap = ServiceMap.getOrElse(
+  this,
+  makeMemoMapUnsafe
+)
+```
+
+And `Effect.runPromiseExit(...)` starts from `ServiceMap.empty()`. Source: `refs/effect4/packages/effect/src/internal/effect.ts:5049`-`refs/effect4/packages/effect/src/internal/effect.ts:5056` and `refs/effect4/packages/effect/src/internal/effect.ts:5063`:
+
+```ts
+export const runPromiseExitWith = <R>(services: ServiceMap.ServiceMap<R>) => {
+  const runFork = runForkWith(services)
+  return <A, E>(effect: Effect.Effect<A, E, R>, options?: Effect.RunOptions | undefined): Promise<Exit.Exit<A, E>> => {
+    const fiber = runFork(effect, options)
+```
+
+```ts
+export const runPromiseExit = runPromiseExitWith(ServiceMap.empty());
+```
+
+That means:
+
+- within a single top-level `runEffect(...)` call, a lazy `Session` layer should be memoized normally
+- across separate top-level `runEffect(...)` calls, the run starts from a fresh root service map, so there is no evidence here of automatic cross-call request-wide memoization
+- therefore repeated top-level `runEffect(...)` executions can trigger repeated `auth.getSession(...)` calls unless this app introduces an explicit shared runtime / shared memo map boundary
+
+So the key point is now clear: lazy `Session` is compatible with the current runner, but its natural memoization boundary is the individual top-level `runEffect(...)` execution, not automatically the whole HTTP request
+
+Are you fucking out of your mind? We are running in cloudflare workers function. When the fetch entrypoint gets called, we create 1 fucking runEffect and stuff that in the context. And when the fetch is done, the whole fucking things disappears. Where the fuck are you getting multiple top-level runEffect calls? What the fuck do you mean by that? Show me an example? We have no fucking top-level calls since everything runs from the fetch entrypoint. Jesus, this is cloudflare 101. Fucking scan refs/cloudflare-docs.
 
 ## Route Migration Shape
 
@@ -239,24 +286,69 @@ Updated recommendation:
 
 This aligns with the current app direction better than preserving eager worker prefetch.
 
+## Implementation Sketch
+
+Service:
+
+```ts
+import type { AuthInstance } from "@/lib/Auth";
+import { ServiceMap } from "effect";
+
+export const Session = ServiceMap.Service<
+  AuthInstance["$Infer"]["Session"] | undefined
+>("app/Session");
+```
+
+Worker runtime wiring sketch:
+
+```ts
+const sessionLayer = Layer.effect(
+  Session,
+  Effect.gen(function* () {
+    const request = yield* AppRequest;
+    const auth = yield* Auth;
+    return (yield* auth.getSession(request.headers)) ?? undefined;
+  }),
+);
+
+const httpAppLayer = sessionLayer.pipe(
+  Layer.provideMerge(Layer.merge(authLayer, requestLayer)),
+);
+
+const runtimeLayer = Layer.merge(httpAppLayer, makeLoggerLayer(env));
+```
+
+Cleaner composition shape:
+
+```ts
+const authRequestLayer = Layer.merge(authLayer, requestLayer);
+const httpAppLayer = sessionLayer.pipe(Layer.provideMerge(authRequestLayer));
+const runtimeLayer = Layer.merge(httpAppLayer, makeLoggerLayer(env));
+```
+
+Route shape:
+
+```ts
+({ context: { runEffect } }) =>
+  runEffect(
+    Effect.gen(function* () {
+      const session = yield* Session;
+      if (!session?.user) return yield* Effect.die(redirect({ to: "/login" }));
+      return { sessionUser: session.user };
+    }),
+  );
+```
+
+With current route usage, the service shape should stay `AuthInstance["$Infer"]["Session"] | undefined`. That matches public-route access in `src/routes/_mkt.tsx:14` and the nullish checks already used throughout `src/routes/app.tsx:9`, `src/routes/admin.tsx:41`, and `src/routes/app.index.tsx:9`.
+
 ## Questions To Annotate
 
-1. If multiple top-level `runEffect(...)` executions happen during one HTTP navigation, is it acceptable for lazy `Session` to call `auth.getSession(...)` more than once?
+1. Given the Effect source evidence above, are you OK with lazy `Session` being memoized per top-level `runEffect(...)` call, rather than guaranteed once per entire HTTP request?
 
-Scan the fucking refs/effect4 and figure out the behavior. Why the fuck do you keep saying everything gets re-initialized with each call to runEffect. Show me fucking evidence.
+2. If not, do you want follow-up research/design for a shared request-scoped memo map or managed runtime boundary, or is that out of scope for this migration?
 
-2. Do you want the implementation to accept that behavior as-is, or do you want additional runtime work to try to coalesce/memoize session reads across the whole HTTP request?
+3. Keep `Session` as `AuthInstance["$Infer"]["Session"] | undefined`? Current route usage suggests yes, but annotate if you want a different shape.
 
-Let's first understand what the fucking behavior is. Stop fucking around and do the research.
+4. Is the implementation sketch detailed enough, or do you want the doc to include a more exact `src/worker.ts` diff shape?
 
-3. We currently model public-route session as `AuthInstance["$Infer"]["Session"] | undefined`. Keep that exact shape for the new `Session` service, or change it?
-
-I need to see more context. I don't know what the fuck you are talking about.
-
-4. Do you want the final research doc to include a small implementation sketch in `src/worker.ts`, or keep it conceptual and route-focused?
-
-Let's see some implementation details.
-
-5. After the lazy `Session` service lands, should we immediately remove all `context.session` usage in the same change, or stage it in two steps?
-
-one shot.
+5. Confirm migration scope: remove all `context.session` usage in one shot in the same change?
