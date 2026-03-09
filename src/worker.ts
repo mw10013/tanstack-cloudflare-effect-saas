@@ -14,7 +14,6 @@ import * as Schema from "effect/Schema";
 import { Auth } from "@/lib/Auth";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { D1 } from "@/lib/D1";
-import { createD1SessionService } from "@/lib/d1-session-service";
 import * as Domain from "@/lib/Domain";
 import { KV } from "@/lib/KV";
 import { Repository } from "@/lib/Repository";
@@ -170,22 +169,13 @@ export default {
         return new Response("Rate limit exceeded", { status: 429 });
       }
     }
-    const d1SessionService = createD1SessionService({
-      d1: env.D1,
-      request,
-      sessionConstraint: url.pathname.startsWith("/api/auth/")
-        ? "first-primary"
-        : undefined,
-    });
     const runEffect = makeHttpRunEffect(env, request);
-    const response = await serverEntry.fetch(request, {
+    return serverEntry.fetch(request, {
       context: {
         env,
         runEffect,
       },
     });
-    d1SessionService.setSessionBookmarkCookie(response);
-    return response;
   },
 
   async scheduled(scheduledEvent, env, _ctx) {

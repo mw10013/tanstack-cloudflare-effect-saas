@@ -40,7 +40,7 @@
   - Subscription management (cancel, reactivate, billing portal access)
 
 - **Database & Data Management:**
-  - Cloudflare D1 (SQLite) database with read replication and schema migrations
+  - Cloudflare D1 (SQLite) database with schema migrations
   - Type-safe database operations with Zod schema validation
   - Session management with automatic cleanup of expired sessions
   - Database seeding utilities for development and testing
