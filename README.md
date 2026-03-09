@@ -45,6 +45,15 @@
   - Session management with automatic cleanup of expired sessions
   - Database seeding utilities for development and testing
 
+- **Effect v4 Architecture:**
+  - Services via `ServiceMap.Service` with explicit `Layer.effect` definitions
+  - Traced functions with `Effect.fn` for observability
+  - Type-safe error handling using `Schema.TaggedErrorClass`
+  - Automatic retry with exponential backoff and jitter for KV operations
+  - Idempotent write support for D1 with application-level retry
+  - Layer composition via `Layer.merge` for dependency injection
+  - Service dependencies resolved via `yield*` for compile-time safety
+
 - **Admin Panel:**
   - Admin interface for user management
   - Session monitoring and administration
