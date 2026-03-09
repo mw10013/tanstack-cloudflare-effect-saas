@@ -158,27 +158,8 @@ pnpm dlx shadcn@latest add https://ai-sdk.dev/elements/api/registry/all.json
 ## Llms
 
 ```
-ln -s AGENTS.md CLAUDE.md
 pnpm add -g @playwright/cli@latest
 
-codex -m gpt-5.3-codex -c 'model_reasoning_effort="high"'
-codex -m gpt-5.3-codex -c 'model_reasoning_effort="xhigh"'
-
-npm install -g @openai/codex
-```
-
-- OpenAI model docs: GPT-5.2-Codex supports low, medium, high, xhigh
-
-## Effect
-
-```
-https://effecttalk.dev/
-https://www.effective.software/
-
-https://discord.com/channels/795981131316985866/1474166367530909958
-
-Effect.services + Effect.runPromiseWith
-Or use a FiberSet
 ```
 
 ## Credit
