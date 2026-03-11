@@ -95,12 +95,12 @@ Code excerpt:
 
 ```ts
 export interface HttpClientRequest {
-  readonly method: HttpMethod
-  readonly url: string
-  readonly urlParams: UrlParams.UrlParams
-  readonly hash: string | undefined
-  readonly headers: Headers.Headers
-  readonly body: HttpBody.HttpBody
+  readonly method: HttpMethod;
+  readonly url: string;
+  readonly urlParams: UrlParams.UrlParams;
+  readonly hash: string | undefined;
+  readonly headers: Headers.Headers;
+  readonly body: HttpBody.HttpBody;
 }
 ```
 
@@ -122,7 +122,7 @@ Source: `HttpClientRequest.ts:279-310`
 Type:
 
 ```ts
-export type HttpBody = Empty | Raw | Uint8Array | FormData | Stream
+export type HttpBody = Empty | Raw | Uint8Array | FormData | Stream;
 ```
 
 Source: `HttpBody.ts:30`
@@ -157,7 +157,7 @@ Source: `Headers.ts:154-159`
 Default redacted names:
 
 ```ts
-defaultValue: () => ["authorization", "cookie", "set-cookie", "x-api-key"]
+defaultValue: () => ["authorization", "cookie", "set-cookie", "x-api-key"];
 ```
 
 Source: `Headers.ts:307-315`
@@ -170,10 +170,10 @@ Model:
 
 ```ts
 export interface HttpClientResponse extends HttpIncomingMessage<Error.HttpClientError> {
-  readonly request: HttpClientRequest
-  readonly status: number
-  readonly cookies: Cookies.Cookies
-  readonly formData: Effect<FormData, Error.HttpClientError>
+  readonly request: HttpClientRequest;
+  readonly status: number;
+  readonly cookies: Cookies.Cookies;
+  readonly formData: Effect<FormData, Error.HttpClientError>;
 }
 ```
 
@@ -202,9 +202,9 @@ Source: `HttpClientError.ts:22-24`
 Reason union:
 
 ```ts
-type RequestError = TransportError | EncodeError | InvalidUrlError
-type ResponseError = StatusCodeError | DecodeError | EmptyBodyError
-type HttpClientErrorReason = RequestError | ResponseError
+type RequestError = TransportError | EncodeError | InvalidUrlError;
+type ResponseError = StatusCodeError | DecodeError | EmptyBodyError;
+type HttpClientErrorReason = RequestError | ResponseError;
 ```
 
 Source: `HttpClientError.ts:221-233`
@@ -275,14 +275,14 @@ Rule of thumb:
 
 ## Error Model By Stage
 
-| Stage | Error reason | Where produced |
-|---|---|---|
-| URL assembly | `InvalidUrlError` | `HttpClient.make` (`HttpClient.ts:554-561`) |
-| Transport/fetch | `TransportError` | `FetchHttpClient` catch (`FetchHttpClient.ts:45-50`) |
-| Encode request body | `EncodeError` | non-fetch runtimes when stream encode fails (`BrowserHttpClient.ts:155-162`) |
-| Non-expected status | `StatusCodeError` | `filterStatus` / `filterStatusOk` (`HttpClientResponse.ts:183-209`) |
-| Decode response body | `DecodeError` | response parsers (`HttpClientResponse.ts:286-358`) |
-| Missing stream body | `EmptyBodyError` | `response.stream` with empty body (`HttpClientResponse.ts:275-283`) |
+| Stage                | Error reason      | Where produced                                                               |
+| -------------------- | ----------------- | ---------------------------------------------------------------------------- |
+| URL assembly         | `InvalidUrlError` | `HttpClient.make` (`HttpClient.ts:554-561`)                                  |
+| Transport/fetch      | `TransportError`  | `FetchHttpClient` catch (`FetchHttpClient.ts:45-50`)                         |
+| Encode request body  | `EncodeError`     | non-fetch runtimes when stream encode fails (`BrowserHttpClient.ts:155-162`) |
+| Non-expected status  | `StatusCodeError` | `filterStatus` / `filterStatusOk` (`HttpClientResponse.ts:183-209`)          |
+| Decode response body | `DecodeError`     | response parsers (`HttpClientResponse.ts:286-358`)                           |
+| Missing stream body  | `EmptyBodyError`  | `response.stream` with empty body (`HttpClientResponse.ts:275-283`)          |
 
 Pattern: keep transport/status errors structured, then map to domain errors with `Effect.catchTag("HttpClientError", ...)`.
 
@@ -295,14 +295,16 @@ Pattern: keep transport/status errors structured, then map to domain errors with
 Grounding excerpt from docs:
 
 ```ts
-const client = (yield* HttpClient.HttpClient).pipe(
-  HttpClient.mapRequest(flow(
-    HttpClientRequest.prependUrl("https://jsonplaceholder.typicode.com"),
-    HttpClientRequest.acceptJson
-  )),
+const client = (yield * HttpClient.HttpClient).pipe(
+  HttpClient.mapRequest(
+    flow(
+      HttpClientRequest.prependUrl("https://jsonplaceholder.typicode.com"),
+      HttpClientRequest.acceptJson,
+    ),
+  ),
   HttpClient.filterStatusOk,
-  HttpClient.retryTransient({ schedule: Schedule.exponential(100), times: 3 })
-)
+  HttpClient.retryTransient({ schedule: Schedule.exponential(100), times: 3 }),
+);
 ```
 
 Source: `refs/effect4/ai-docs/src/50_http-client/10_basics.ts:24-42`
@@ -354,7 +356,7 @@ Source: `FetchHttpClient.ts:17-19`
 
 ```ts
 export const layer: Layer.Layer<HttpClient.HttpClient> =
-  HttpClient.layerMergedServices(Effect.succeed(fetch))
+  HttpClient.layerMergedServices(Effect.succeed(fetch));
 ```
 
 Source: `FetchHttpClient.ts:71`
@@ -399,13 +401,13 @@ Source: `FetchHttpClient.ts:17-27`, `FetchHttpClient.ts:30-44`
 
 ## Built-in support in `unstable/http`
 
-| Capability | Status |
-|---|---|
-| Set `Authorization: Bearer ...` | Yes (`HttpClientRequest.bearerToken`) |
-| Set Basic auth | Yes (`HttpClientRequest.basicAuth`) |
-| OAuth2 authorization flow helpers | No |
-| Token endpoint helpers | No |
-| Auto refresh-token middleware | No |
+| Capability                        | Status                                |
+| --------------------------------- | ------------------------------------- |
+| Set `Authorization: Bearer ...`   | Yes (`HttpClientRequest.bearerToken`) |
+| Set Basic auth                    | Yes (`HttpClientRequest.basicAuth`)   |
+| OAuth2 authorization flow helpers | No                                    |
+| Token endpoint helpers            | No                                    |
+| Auto refresh-token middleware     | No                                    |
 
 Evidence:
 
@@ -442,25 +444,27 @@ flowchart TD
 Minimal skeleton:
 
 ```ts
-import { Effect, Ref } from "effect"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import { Effect, Ref } from "effect";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 
 interface TokenState {
-  readonly accessToken: string
-  readonly refreshToken: string
-  readonly expiresAtMs: number
+  readonly accessToken: string;
+  readonly refreshToken: string;
+  readonly expiresAtMs: number;
 }
 
 const withBearer = (
   client: HttpClient.HttpClient,
-  getToken: Effect.Effect<string>
+  getToken: Effect.Effect<string>,
 ) =>
   client.pipe(
     HttpClient.mapRequestEffect((request) =>
-      Effect.map(getToken, (token) => HttpClientRequest.bearerToken(request, token))
-    )
-  )
+      Effect.map(getToken, (token) =>
+        HttpClientRequest.bearerToken(request, token),
+      ),
+    ),
+  );
 ```
 
 Real-world transform idiom reference:
@@ -476,4 +480,3 @@ Real-world transform idiom reference:
 - Use `FetchHttpClient.layer` on Cloudflare Workers; not Node clients.
 - `HttpClientError.reason` is the key discriminant; pattern-match there.
 - OAuth/refresh is not built in; implement with `Ref` + request transforms + 401 retry policy.
-

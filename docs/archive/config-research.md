@@ -18,10 +18,7 @@ Replace direct `CloudflareEnv` service access for scalar config values (strings,
 `src/lib/effect-services.ts` already installs a `ConfigProvider` backed by the Cloudflare `env` object:
 
 ```ts
-ServiceMap.add(
-  ConfigProvider.ConfigProvider,
-  ConfigProvider.fromUnknown(env),
-)
+ServiceMap.add(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env));
 ```
 
 This means `yield* Config.string("ENVIRONMENT")` already resolves from our Cloudflare env — no additional setup needed.
@@ -31,7 +28,7 @@ This means `yield* Config.string("ENVIRONMENT")` already resolves from our Cloud
 `src/routes/app.$organizationId.effect.tsx` already uses Config:
 
 ```ts
-const environment = yield* Config.string("ENVIRONMENT");
+const environment = yield * Config.string("ENVIRONMENT");
 ```
 
 ## Config API Reference
@@ -40,44 +37,44 @@ const environment = yield* Config.string("ENVIRONMENT");
 
 All return `Config<T>` — yieldable in `Effect.gen`.
 
-| Constructor | Type | Example |
-|---|---|---|
-| `Config.string("KEY")` | `string` | `yield* Config.string("ENVIRONMENT")` |
-| `Config.nonEmptyString("KEY")` | `string` (non-empty) | `yield* Config.nonEmptyString("BETTER_AUTH_URL")` |
-| `Config.number("KEY")` | `number` | `yield* Config.number("PORT")` |
-| `Config.int("KEY")` | `number` (integer) | `yield* Config.int("PORT")` |
-| `Config.boolean("KEY")` | `boolean` | `yield* Config.boolean("DEMO_MODE")` — accepts `true/false/yes/no/on/off/1/0/y/n` |
-| `Config.redacted("KEY")` | `Redacted<string>` | `yield* Config.redacted("STRIPE_SECRET_KEY")` — hidden from logs/toString |
-| `Config.url("KEY")` | `URL` | `yield* Config.url("BETTER_AUTH_URL")` |
-| `Config.port("KEY")` | `number` (1–65535) | `yield* Config.port("PORT")` |
-| `Config.literal(value, "KEY")` | literal type | `Config.literal("production", "ENVIRONMENT")` |
+| Constructor                    | Type                 | Example                                                                           |
+| ------------------------------ | -------------------- | --------------------------------------------------------------------------------- |
+| `Config.string("KEY")`         | `string`             | `yield* Config.string("ENVIRONMENT")`                                             |
+| `Config.nonEmptyString("KEY")` | `string` (non-empty) | `yield* Config.nonEmptyString("BETTER_AUTH_URL")`                                 |
+| `Config.number("KEY")`         | `number`             | `yield* Config.number("PORT")`                                                    |
+| `Config.int("KEY")`            | `number` (integer)   | `yield* Config.int("PORT")`                                                       |
+| `Config.boolean("KEY")`        | `boolean`            | `yield* Config.boolean("DEMO_MODE")` — accepts `true/false/yes/no/on/off/1/0/y/n` |
+| `Config.redacted("KEY")`       | `Redacted<string>`   | `yield* Config.redacted("STRIPE_SECRET_KEY")` — hidden from logs/toString         |
+| `Config.url("KEY")`            | `URL`                | `yield* Config.url("BETTER_AUTH_URL")`                                            |
+| `Config.port("KEY")`           | `number` (1–65535)   | `yield* Config.port("PORT")`                                                      |
+| `Config.literal(value, "KEY")` | literal type         | `Config.literal("production", "ENVIRONMENT")`                                     |
 
 ### Combinators
 
 ```ts
 // Default value (only for missing data, not validation errors)
-Config.string("HOST").pipe(Config.withDefault("localhost"))
+Config.string("HOST").pipe(Config.withDefault("localhost"));
 
 // Optional (returns Option<T>)
-Config.option(Config.number("PORT"))
+Config.option(Config.number("PORT"));
 
 // Transform
-Config.string("NAME").pipe(Config.map(s => s.toUpperCase()))
+Config.string("NAME").pipe(Config.map((s) => s.toUpperCase()));
 
 // Fallback on any error
-Config.string("HOST").pipe(Config.orElse(() => Config.succeed("localhost")))
+Config.string("HOST").pipe(Config.orElse(() => Config.succeed("localhost")));
 
 // Combine multiple configs into struct
 Config.all({
   host: Config.string("HOST"),
   port: Config.number("PORT"),
-})
+});
 
 // Namespace/prefix
 Config.all({
   host: Config.string("host"),
   port: Config.number("port"),
-}).pipe(Config.nested("database"))
+}).pipe(Config.nested("database"));
 ```
 
 ### Schema-Based Config
@@ -89,11 +86,11 @@ const AppConfig = Config.schema(
     host: Schema.String,
     port: Schema.Int,
   }),
-  "app" // optional root path
-)
+  "app", // optional root path
+);
 
 // yields { host: string, port: number }
-const config = yield* AppConfig;
+const config = yield * AppConfig;
 ```
 
 ## Idiomatic Patterns from Effect 4 Source
@@ -102,13 +99,13 @@ const config = yield* AppConfig;
 
 ```ts
 // BEFORE (CloudflareEnv)
-const env = yield* CloudflareEnv;
+const env = yield * CloudflareEnv;
 const environment = env.ENVIRONMENT;
 const demoMode = env.DEMO_MODE === "true";
 
 // AFTER (Config)
-const environment = yield* Config.string("ENVIRONMENT");
-const demoMode = yield* Config.boolean("DEMO_MODE");
+const environment = yield * Config.string("ENVIRONMENT");
+const demoMode = yield * Config.boolean("DEMO_MODE");
 ```
 
 ### Pattern 2: Config in Layer construction (Services)
@@ -149,8 +146,8 @@ From `refs/effect4/ai-docs/src/71_ai/10_language-model.ts`:
 
 ```ts
 const AnthropicClientLayer = AnthropicClient.layerConfig({
-  apiKey: Config.redacted("ANTHROPIC_API_KEY")
-})
+  apiKey: Config.redacted("ANTHROPIC_API_KEY"),
+});
 ```
 
 ### Pattern 5: Config in logging/observability
@@ -158,7 +155,8 @@ const AnthropicClientLayer = AnthropicClient.layerConfig({
 From `refs/effect4/ai-docs/src/08_observability/10_logging.ts`:
 
 ```ts
-const env = yield* Config.string("NODE_ENV").pipe(Config.withDefault("development"))
+const env =
+  yield * Config.string("NODE_ENV").pipe(Config.withDefault("development"));
 ```
 
 ## Migration Plan
@@ -187,11 +185,11 @@ Cloudflare bindings are **not** string config — they're runtime service object
 
 ```ts
 // BEFORE
-const env = yield* CloudflareEnv;
+const env = yield * CloudflareEnv;
 return { isDemoMode: env.DEMO_MODE === "true" };
 
 // AFTER
-const demoMode = yield* Config.boolean("DEMO_MODE");
+const demoMode = yield * Config.boolean("DEMO_MODE");
 return { isDemoMode: demoMode };
 ```
 
@@ -235,23 +233,27 @@ const stripe = new StripeClient.Stripe(Redacted.value(stripeSecretKey), {...});
 Auth passes the entire `env` object to `createBetterAuthOptions`. Migrate to a config struct via `Config.all`:
 
 ```ts
-const authConfig = yield* Config.all({
-  betterAuthUrl: Config.nonEmptyString("BETTER_AUTH_URL"),
-  betterAuthSecret: Config.redacted("BETTER_AUTH_SECRET"),
-  environment: Config.nonEmptyString("ENVIRONMENT"),
-  transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
-  demoMode: Config.boolean("DEMO_MODE"),
-});
+const authConfig =
+  yield *
+  Config.all({
+    betterAuthUrl: Config.nonEmptyString("BETTER_AUTH_URL"),
+    betterAuthSecret: Config.redacted("BETTER_AUTH_SECRET"),
+    environment: Config.nonEmptyString("ENVIRONMENT"),
+    transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
+    demoMode: Config.boolean("DEMO_MODE"),
+  });
 // authConfig: { betterAuthUrl: string, betterAuthSecret: Redacted<string>, ... }
 ```
 
 **`Config.all` details:**
+
 - Accepts a record of `Config`s → returns `Config<{ key: T, ... }>` with all values resolved.
 - All configs resolve from the same `ConfigProvider` — our `fromUnknown(env)`.
 - If any single config fails, the whole `Config.all` fails with `ConfigError`.
 - The result is a plain object, so refactoring `createBetterAuthOptions` to accept `typeof authConfig` instead of `Env` is straightforward.
 
 **`string` vs `nonEmptyString` — empty string behavior:**
+
 - `Config.string("KEY")` = `Config.schema(Schema.String)` — succeeds on `""`. An env var set to `""` silently passes through.
 - `Config.nonEmptyString("KEY")` = `Config.schema(Schema.NonEmptyString)` — fails with `ConfigError` (SchemaError) on `""`.
 - For config values that must have a real value (URLs, secrets, emails), use `nonEmptyString`. For values where `""` is a valid sentinel, use `string`.
@@ -268,7 +270,7 @@ The `Env` interface types some values as literal unions (e.g., `ENVIRONMENT: "pr
 #### Approach 1: `Config.nonEmptyString` — recommended default
 
 ```ts
-const environment = yield* Config.nonEmptyString("ENVIRONMENT");
+const environment = yield * Config.nonEmptyString("ENVIRONMENT");
 // type: string
 ```
 
@@ -280,10 +282,9 @@ const environment = yield* Config.nonEmptyString("ENVIRONMENT");
 #### Approach 2: `Config.schema(Schema.Literals([...]))` — for known enums
 
 ```ts
-const environment = yield* Config.schema(
-  Schema.Literals(["production", "local"]),
-  "ENVIRONMENT"
-);
+const environment =
+  yield *
+  Config.schema(Schema.Literals(["production", "local"]), "ENVIRONMENT");
 // type: "production" | "local"
 ```
 
@@ -295,7 +296,7 @@ const environment = yield* Config.schema(
 #### Approach 3: `Config.literal(value)` — single literal only
 
 ```ts
-const environment = yield* Config.literal("production", "ENVIRONMENT");
+const environment = yield * Config.literal("production", "ENVIRONMENT");
 // type: "production"
 ```
 
@@ -305,7 +306,7 @@ const environment = yield* Config.literal("production", "ENVIRONMENT");
 #### Approach 4: `Config.string` — most permissive
 
 ```ts
-const value = yield* Config.string("R2_S3_ACCESS_KEY_ID");
+const value = yield * Config.string("R2_S3_ACCESS_KEY_ID");
 // type: string — "" is valid
 ```
 
@@ -319,8 +320,10 @@ const value = yield* Config.string("R2_S3_ACCESS_KEY_ID");
 
 ```ts
 // src/lib/Domain.ts — single source of truth in app code
-const Environment = Schema.Literals(["production", "local"] as const satisfies
-  readonly Env["ENVIRONMENT"][]);
+const Environment = Schema.Literals([
+  "production",
+  "local",
+] as const satisfies readonly Env["ENVIRONMENT"][]);
 ```
 
 The `satisfies` constraint ensures the array is a subset of `Env["ENVIRONMENT"]`. If wrangler adds `"staging"`, the generated `Env` type changes to `"production" | "local" | "staging"`, and while this won't break the existing Literals (it's still a valid subset), you'd need to manually add `"staging"` to get full coverage. But importantly — **it never silently accepts invalid values**.
@@ -332,7 +335,7 @@ Usage at call sites:
 export const EnvironmentConfig = Config.schema(Environment, "ENVIRONMENT");
 
 // In routes:
-const environment = yield* EnvironmentConfig;
+const environment = yield * EnvironmentConfig;
 // type: "production" | "local"
 ```
 
@@ -353,8 +356,11 @@ if (environment === "local") { ... }
 type Environment = Env["ENVIRONMENT"]; // "production" | "local"
 
 const EnvironmentConfig = Config.schema(
-  Schema.Literals(["production", "local"] as const satisfies readonly Environment[]),
-  "ENVIRONMENT"
+  Schema.Literals([
+    "production",
+    "local",
+  ] as const satisfies readonly Environment[]),
+  "ENVIRONMENT",
 );
 ```
 
@@ -363,6 +369,7 @@ Same as Option A but makes the derivation from `Env` explicit.
 **Analysis of actual usage:**
 
 All 5 call sites use ENVIRONMENT the same way:
+
 - `login.tsx`: `if (env.ENVIRONMENT !== "local")`
 - `upload.tsx`: `if (env.ENVIRONMENT === "local")` (3×)
 - `upload-image.tsx`: `if (env.ENVIRONMENT !== "local")`
@@ -373,12 +380,12 @@ No exhaustive switches. No pattern matching. Just a simple `"local"` guard.
 
 #### Final Recommendation
 
-| Category | Constructor | Examples |
-|---|---|---|
+| Category      | Constructor             | Examples                                                             |
+| ------------- | ----------------------- | -------------------------------------------------------------------- |
 | Most env vars | `Config.nonEmptyString` | `BETTER_AUTH_URL`, `EMAIL_WHITELIST`, `CF_ACCOUNT_ID`, `ENVIRONMENT` |
-| Secrets | `Config.redacted` | `BETTER_AUTH_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| Booleans | `Config.boolean` | `DEMO_MODE` |
-| Empty-valid | `Config.string` | `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY` |
+| Secrets       | `Config.redacted`       | `BETTER_AUTH_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`   |
+| Booleans      | `Config.boolean`        | `DEMO_MODE`                                                          |
+| Empty-valid   | `Config.string`         | `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`                     |
 
 If a future value needs exhaustive matching, define `Schema.Literals` once in `Domain.ts` with a `satisfies` constraint against `Env`, and create a reusable `Config.schema(...)` constant.
 
@@ -389,7 +396,7 @@ Keep secrets as `Redacted<string>` as long as possible. Only unwrap with `Redact
 ### Pattern
 
 ```ts
-const clientSecret = yield* Config.redacted("GOOGLE_OAUTH_CLIENT_SECRET");
+const clientSecret = yield * Config.redacted("GOOGLE_OAUTH_CLIENT_SECRET");
 // type: Redacted<string> — not assignable to string, compiler enforces it
 ```
 
@@ -399,4 +406,3 @@ No special naming convention — rely on the type. TypeScript catches misuse at 
 
 1. **Our own functions**: accept `Redacted` in the signature. Keep secrets opaque through our call chain.
 2. **Third-party SDKs** (e.g. `AwsClient`, `Stripe`, `betterAuth`): unwrap with `Redacted.value()` at the call site — the last possible moment.
-

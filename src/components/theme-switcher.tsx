@@ -2,6 +2,7 @@
 
 import { useTheme } from "better-themes";
 import { Monitor, Moon, Sun } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 
 const themeOptions = [
@@ -42,7 +43,7 @@ export function ThemeSwitcher({ size = "sm" }: ThemeSwitcherProps) {
     >
       <div
         className={cn(
-          "border-border bg-muted flex rounded-full border",
+          "flex rounded-full border border-border bg-muted",
           classes.wrapper,
         )}
       >
@@ -55,7 +56,9 @@ export function ThemeSwitcher({ size = "sm" }: ThemeSwitcherProps) {
               role="radio"
               aria-checked={isActive}
               aria-label={label}
-              onClick={() => { setTheme(value); }}
+              onClick={() => {
+                setTheme(value);
+              }}
               className={cn(
                 "flex items-center justify-center rounded-full transition-colors",
                 classes.button,

@@ -3,6 +3,7 @@ import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import * as Option from "effect/Option";
 import { siGithub } from "simple-icons";
+
 import { AppLogo } from "@/components/app-logo";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
@@ -52,17 +53,17 @@ function Header() {
   const { sessionUser } = Route.useRouteContext();
   const signOutFn = useServerFn(signOutServerFn);
   return (
-    <header className="bg-background/95 sticky top-0 z-10 w-full backdrop-blur">
+    <header className="sticky top-0 z-10 w-full bg-background/95 backdrop-blur">
       <div className="flex h-16 items-center justify-between gap-2">
         <div className="flex items-center gap-12">
           <Link to="/" className="flex items-center gap-1">
             <AppLogo />
-            <span className="bg-primary relative top-1 size-1.5" />
+            <span className="relative top-1 size-1.5 bg-primary" />
           </Link>
           <div className="hidden items-center gap-6 md:flex">
             <Link
               to="/pricing"
-              className="data-hovered:text-primary text-muted-foreground font-medium"
+              className="font-medium text-muted-foreground data-hovered:text-primary"
             >
               Pricing
             </Link>
@@ -70,7 +71,7 @@ function Header() {
               href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
               target="_blank"
               rel="noopener noreferrer"
-              className="data-hovered:text-primary text-muted-foreground font-medium"
+              className="font-medium text-muted-foreground data-hovered:text-primary"
             >
               Documentation
             </a>
@@ -125,9 +126,9 @@ export function Footer() {
         <div className="max-w-md space-y-4 md:col-span-2 lg:col-span-4">
           <Link to="/" className="flex items-center gap-1">
             <AppLogo />
-            <span className="bg-primary relative top-1 size-1.5" />
+            <span className="relative top-1 size-1.5 bg-primary" />
           </Link>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm text-muted-foreground">
             Build and deploy serverless TanStack Start applications on
             Cloudflare.
           </p>
@@ -141,7 +142,7 @@ export function Footer() {
             <li>
               <a
                 href="https://tanstack.com/"
-                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors data-hovered:text-foreground"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -151,7 +152,7 @@ export function Footer() {
             <li>
               <a
                 href="https://developers.cloudflare.com/"
-                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors data-hovered:text-foreground"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -161,7 +162,7 @@ export function Footer() {
             <li>
               <a
                 href="https://effect.website/"
-                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors data-hovered:text-foreground"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -171,7 +172,7 @@ export function Footer() {
             <li>
               <a
                 href="https://www.better-auth.com/"
-                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors data-hovered:text-foreground"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -181,7 +182,7 @@ export function Footer() {
             <li>
               <a
                 href="https://ui.shadcn.com"
-                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors data-hovered:text-foreground"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -191,7 +192,7 @@ export function Footer() {
             <li>
               <a
                 href="https://base-ui.com/"
-                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors data-hovered:text-foreground"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -206,7 +207,7 @@ export function Footer() {
             <li>
               <a
                 href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
-                className="text-muted-foreground data-hovered:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors data-hovered:text-foreground"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -216,14 +217,14 @@ export function Footer() {
           </ul>
         </div>
       </div>
-      <div className="border-border/40 flex flex-col items-center justify-between gap-4 border-t border-dashed pt-8 sm:flex-row">
-        <p className="text-muted-foreground text-sm">
+      <div className="flex flex-col items-center justify-between gap-4 border-t border-dashed border-border/40 pt-8 sm:flex-row">
+        <p className="text-sm text-muted-foreground">
           © 2025 TCES. Built with ♥ by{" "}
           <a
             href="https://github.com/mw10013"
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-foreground text-muted-foreground font-medium transition-all"
+            className="font-medium text-muted-foreground transition-all hover:text-foreground"
           >
             @mw10013
           </a>

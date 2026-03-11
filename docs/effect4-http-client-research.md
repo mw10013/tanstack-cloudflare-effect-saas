@@ -11,13 +11,13 @@ Located at `effect/unstable/http/*` — note the `unstable` namespace (API may e
 ### Import paths
 
 ```ts
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
-import * as HttpBody from "effect/unstable/http/HttpBody"
-import * as Headers from "effect/unstable/http/Headers"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as HttpBody from "effect/unstable/http/HttpBody";
+import * as Headers from "effect/unstable/http/Headers";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 ```
 
 ### FetchHttpClient — Cloudflare Compatible
@@ -26,11 +26,11 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 
 ```ts
 // Layer that provides HttpClient using globalThis.fetch
-FetchHttpClient.layer  // Layer.Layer<HttpClient.HttpClient>
+FetchHttpClient.layer; // Layer.Layer<HttpClient.HttpClient>
 
 // Customizable via ServiceMap references:
-FetchHttpClient.Fetch       // override the fetch function itself
-FetchHttpClient.RequestInit // provide default RequestInit options
+FetchHttpClient.Fetch; // override the fetch function itself
+FetchHttpClient.RequestInit; // provide default RequestInit options
 ```
 
 No Node.js-specific dependencies. No Undici. Pure fetch.
@@ -72,11 +72,11 @@ request.pipe(
 
 ```ts
 // Decode JSON body with Schema
-HttpClientResponse.schemaBodyJson(MySchema)(response)
+HttpClientResponse.schemaBodyJson(MySchema)(response);
 // => Effect<MySchema["Type"], HttpClientError | SchemaError>
 
 // Full response decoding (status + headers + body)
-HttpClientResponse.schemaJson(MySchema)(response)
+HttpClientResponse.schemaJson(MySchema)(response);
 ```
 
 `schemaBodyJson` uses `Schema.toCodecJson` + `Schema.decodeEffect` under the hood — fully effectful, returns `SchemaError` on decode failure.
@@ -84,10 +84,10 @@ HttpClientResponse.schemaJson(MySchema)(response)
 #### Body Construction
 
 ```ts
-HttpBody.jsonUnsafe({ key: "value" })  // sync, throws on stringify failure
-HttpBody.json({ key: "value" })        // Effect<HttpBody, HttpBodyError>
-HttpBody.text("raw string")
-HttpBody.urlParams(params)
+HttpBody.jsonUnsafe({ key: "value" }); // sync, throws on stringify failure
+HttpBody.json({ key: "value" }); // Effect<HttpBody, HttpBodyError>
+HttpBody.text("raw string");
+HttpBody.urlParams(params);
 ```
 
 #### Error Types
@@ -140,17 +140,17 @@ const fetchGoogle = async <S>({ url, accessToken, method, body, schema }) => {
 **Option A: Thin wrapper using HttpClient service**
 
 ```ts
-import * as Effect from "effect"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
-import * as HttpBody from "effect/unstable/http/HttpBody"
-import * as Schema from "effect/Schema"
+import * as Effect from "effect";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as HttpBody from "effect/unstable/http/HttpBody";
+import * as Schema from "effect/Schema";
 
 class GoogleApiError extends Data.TaggedError("GoogleApiError")<{
-  readonly code: number
-  readonly message: string
-  readonly status?: string
+  readonly code: number;
+  readonly message: string;
+  readonly status?: string;
 }> {}
 
 const GoogleApiErrorBody = Schema.Struct({
@@ -159,17 +159,17 @@ const GoogleApiErrorBody = Schema.Struct({
     message: Schema.String,
     status: Schema.optionalKey(Schema.String),
   }),
-})
+});
 
 const fetchGoogle = <S extends Schema.Top>(
   request: HttpClientRequest.HttpClientRequest,
   schema: S,
 ) =>
   Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
+    const client = yield* HttpClient.HttpClient;
     const response = yield* client.execute(
       request.pipe(HttpClientRequest.acceptJson),
-    )
+    );
     return yield* HttpClientResponse.matchStatus({
       "2xx": HttpClientResponse.schemaBodyJson(schema),
       orElse: (r) =>
@@ -177,32 +177,37 @@ const fetchGoogle = <S extends Schema.Top>(
           HttpClientResponse.schemaBodyJson(GoogleApiErrorBody)(r).pipe(
             Effect.catchAll(() =>
               Effect.fail(
-                new GoogleApiError({ code: r.status, message: `HTTP ${r.status}` }),
+                new GoogleApiError({
+                  code: r.status,
+                  message: `HTTP ${r.status}`,
+                }),
               ),
             ),
           ),
-          ({ error }) =>
-            Effect.fail(new GoogleApiError(error)),
+          ({ error }) => Effect.fail(new GoogleApiError(error)),
         ),
-    })(response)
-  })
+    })(response);
+  });
 ```
 
 Usage:
 
 ```ts
 export const listDriveSpreadsheets = (accessToken: string, pageSize = 100) => {
-  const url = new URL("https://www.googleapis.com/drive/v3/files")
-  url.searchParams.set("q", "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false")
-  url.searchParams.set("fields", "files(id,name,modifiedTime,webViewLink)")
-  url.searchParams.set("pageSize", String(pageSize))
+  const url = new URL("https://www.googleapis.com/drive/v3/files");
+  url.searchParams.set(
+    "q",
+    "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+  );
+  url.searchParams.set("fields", "files(id,name,modifiedTime,webViewLink)");
+  url.searchParams.set("pageSize", String(pageSize));
   return fetchGoogle(
     HttpClientRequest.get(url, {
       headers: { authorization: `Bearer ${accessToken}` },
     }),
     DriveListResponse,
-  )
-}
+  );
+};
 // => Effect<DriveListResponse["Type"], GoogleApiError | HttpClientError | SchemaError, HttpClient>
 ```
 
@@ -220,23 +225,29 @@ const makeGoogleClient = (accessToken: string) =>
         ),
       ),
     ),
-  )
+  );
 
 export const listDriveSpreadsheets = (accessToken: string, pageSize = 100) =>
   Effect.gen(function* () {
-    const google = yield* makeGoogleClient(accessToken)
-    const url = new URL("https://www.googleapis.com/drive/v3/files")
-    url.searchParams.set("q", "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false")
-    url.searchParams.set("fields", "files(id,name,modifiedTime,webViewLink)")
-    url.searchParams.set("pageSize", String(pageSize))
-    const response = yield* google.get(url)
-    return yield* HttpClientResponse.schemaBodyJson(DriveListResponse)(response)
-  })
+    const google = yield* makeGoogleClient(accessToken);
+    const url = new URL("https://www.googleapis.com/drive/v3/files");
+    url.searchParams.set(
+      "q",
+      "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+    );
+    url.searchParams.set("fields", "files(id,name,modifiedTime,webViewLink)");
+    url.searchParams.set("pageSize", String(pageSize));
+    const response = yield* google.get(url);
+    return yield* HttpClientResponse.schemaBodyJson(DriveListResponse)(
+      response,
+    );
+  });
 ```
 
 ### Recommendation
 
 **Option B** is more idiomatic — mirrors how `AnthropicClient` works in `refs/effect4/packages/ai/anthropic/src/AnthropicClient.ts`:
+
 - Base client from context → transform with `mapRequest` for auth headers / base URL
 - `filterStatusOk` converts non-2xx to `HttpClientError` with `StatusCodeError` reason
 - `schemaBodyJson` for typed decoding
@@ -248,13 +259,13 @@ For google-client, a custom error mapper can extract the Google API error body f
 const mapGoogleError = Effect.catchTag("HttpClientError", (error) =>
   error.response
     ? Effect.flatMap(
-        HttpClientResponse.schemaBodyJson(GoogleApiErrorBody)(error.response).pipe(
-          Effect.catchAll(() => Effect.fail(error)),
-        ),
+        HttpClientResponse.schemaBodyJson(GoogleApiErrorBody)(
+          error.response,
+        ).pipe(Effect.catchAll(() => Effect.fail(error))),
         ({ error: e }) => Effect.fail(new GoogleApiError(e)),
       )
     : Effect.fail(error),
-)
+);
 ```
 
 ## Approach: google-oauth-client.ts
@@ -266,17 +277,20 @@ The OAuth client uses `openid-client` library for OIDC discovery and token excha
 1. **Keep openid-client as-is, wrap in Effect** — `openid-client` handles OIDC complexity well. Wrap calls in `Effect.tryPromise` for Effect integration:
 
 ```ts
-export const buildGoogleAuthorizationRequest = (input: GoogleAuthorizationInput) =>
+export const buildGoogleAuthorizationRequest = (
+  input: GoogleAuthorizationInput,
+) =>
   Effect.tryPromise({
     try: () => buildGoogleAuthorizationRequestRaw(input),
-    catch: (cause) => new GoogleOAuthError({ reason: "AuthorizationBuild", cause }),
-  })
+    catch: (cause) =>
+      new GoogleOAuthError({ reason: "AuthorizationBuild", cause }),
+  });
 
 export const exchangeGoogleAuthorizationCode = (input: ExchangeInput) =>
   Effect.tryPromise({
     try: () => exchangeRaw(input),
     catch: (cause) => new GoogleOAuthError({ reason: "TokenExchange", cause }),
-  })
+  });
 ```
 
 2. **Replace openid-client with HttpClient** — manually implement OIDC discovery + token exchange. Not recommended — OIDC has many edge cases that `openid-client` handles.
@@ -286,6 +300,7 @@ export const exchangeGoogleAuthorizationCode = (input: ExchangeInput) =>
 ### Recommendation
 
 **Option 1** — wrap `openid-client` calls in `Effect.tryPromise`. The OIDC protocol complexity justifies keeping the library. Changes:
+
 - Replace `async` functions with Effect-returning functions
 - Replace `Schema.decodeUnknownSync` with `Schema.decodeEffect` or `Schema.decodeUnknownEffect`
 - Define typed errors (`GoogleOAuthError`) instead of raw throws
@@ -293,32 +308,48 @@ export const exchangeGoogleAuthorizationCode = (input: ExchangeInput) =>
 
 ```ts
 class GoogleOAuthError extends Data.TaggedError("GoogleOAuthError")<{
-  readonly reason: "Discovery" | "AuthorizationBuild" | "TokenExchange" | "TokenRefresh"
-  readonly cause?: unknown
+  readonly reason:
+    | "Discovery"
+    | "AuthorizationBuild"
+    | "TokenExchange"
+    | "TokenRefresh";
+  readonly cause?: unknown;
 }> {}
 
 const getGoogleOidcConfig = (input: GoogleOAuthClientInput) =>
   Effect.tryPromise({
     try: async () => {
-      const secret = Redacted.value(input.clientSecret)
-      return Oidc.discovery(new URL("https://accounts.google.com"), input.clientId, secret)
+      const secret = Redacted.value(input.clientSecret);
+      return Oidc.discovery(
+        new URL("https://accounts.google.com"),
+        input.clientId,
+        secret,
+      );
     },
     catch: (cause) => new GoogleOAuthError({ reason: "Discovery", cause }),
-  })
+  });
 
 export const exchangeGoogleAuthorizationCode = (input: ExchangeInput) =>
   Effect.gen(function* () {
-    const config = yield* getGoogleOidcConfig(input)
+    const config = yield* getGoogleOidcConfig(input);
     const tokenResponse = yield* Effect.tryPromise({
       try: () =>
-        Oidc.authorizationCodeGrant(config, input.currentUrl, {
-          pkceCodeVerifier: input.codeVerifier,
-          expectedState: input.expectedState,
-        }, { redirect_uri: input.redirectUri }),
-      catch: (cause) => new GoogleOAuthError({ reason: "TokenExchange", cause }),
-    })
-    return yield* Schema.decodeUnknownEffect(GoogleTokenResponse)(tokenResponse)
-  })
+        Oidc.authorizationCodeGrant(
+          config,
+          input.currentUrl,
+          {
+            pkceCodeVerifier: input.codeVerifier,
+            expectedState: input.expectedState,
+          },
+          { redirect_uri: input.redirectUri },
+        ),
+      catch: (cause) =>
+        new GoogleOAuthError({ reason: "TokenExchange", cause }),
+    });
+    return yield* Schema.decodeUnknownEffect(GoogleTokenResponse)(
+      tokenResponse,
+    );
+  });
 ```
 
 ## Providing HttpClient on Cloudflare
@@ -326,14 +357,12 @@ export const exchangeGoogleAuthorizationCode = (input: ExchangeInput) =>
 At the app's entry point / Effect runtime setup:
 
 ```ts
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 // FetchHttpClient.layer provides HttpClient backed by globalThis.fetch
 // Cloudflare Workers has globalThis.fetch — no extra config needed
 
-const program = myEffect.pipe(
-  Effect.provide(FetchHttpClient.layer),
-)
+const program = myEffect.pipe(Effect.provide(FetchHttpClient.layer));
 ```
 
 Or if using Layer composition:
@@ -342,18 +371,18 @@ Or if using Layer composition:
 const MainLayer = Layer.mergeAll(
   FetchHttpClient.layer,
   // ...other layers
-)
+);
 ```
 
 ## Key Differences from Current Code
 
-| Current | Effect 4 HttpClient |
-|---------|-------------------|
-| Raw `fetch` + manual headers | `HttpClientRequest.get/post` + `setHeader` |
-| `if (!response.ok) throw` | `filterStatusOk` or `matchStatus` |
-| `Schema.decodeUnknownSync` | `schemaBodyJson` (effectful, returns `SchemaError`) |
-| `throw new Error(...)` | Tagged errors (`GoogleApiError`, `HttpClientError`) |
-| `async/await` | `Effect.gen` / pipe |
+| Current                         | Effect 4 HttpClient                                     |
+| ------------------------------- | ------------------------------------------------------- |
+| Raw `fetch` + manual headers    | `HttpClientRequest.get/post` + `setHeader`              |
+| `if (!response.ok) throw`       | `filterStatusOk` or `matchStatus`                       |
+| `Schema.decodeUnknownSync`      | `schemaBodyJson` (effectful, returns `SchemaError`)     |
+| `throw new Error(...)`          | Tagged errors (`GoogleApiError`, `HttpClientError`)     |
+| `async/await`                   | `Effect.gen` / pipe                                     |
 | Manual error message formatting | Structured `HttpClientError` with `reason` discriminant |
 
 ## Cloudflare Compatibility Notes

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
 import * as Option from "effect/Option";
+
 import { D1 } from "@/lib/D1";
 import { Repository } from "@/lib/Repository";
 import { Stripe } from "@/lib/Stripe";
@@ -43,10 +44,12 @@ export const Route = createFileRoute("/api/e2e/delete/user/$email")({
               );
             }
 
-            const [deleteOrganizationResult, deleteUserResult] = yield* d1.batch(
-              [
-                d1.prepare(
-                  `
+            const [deleteOrganizationResult, deleteUserResult] =
+              yield* d1.batch(
+                [
+                  d1
+                    .prepare(
+                      `
 delete from Organization where id in (
   select o.id
   from Organization o
@@ -62,13 +65,14 @@ delete from Organization where id in (
     )
 )
           `,
-                ).bind(user.id),
-                d1.prepare("delete from User where id = ? returning *").bind(
-                  user.id,
-                ),
-              ],
-              { idempotentWrite: true },
-            );
+                    )
+                    .bind(user.id),
+                  d1
+                    .prepare("delete from User where id = ? returning *")
+                    .bind(user.id),
+                ],
+                { idempotentWrite: true },
+              );
 
             const message = `Deleted user ${email}, deletedOrganizationCount: ${String(deleteOrganizationResult.results.length)} deletedUserCount: ${String(deleteUserResult.results.length)})`;
             yield* Effect.logInfo(message);

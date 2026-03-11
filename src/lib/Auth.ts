@@ -5,6 +5,7 @@ import type {
   OrganizationOptions,
 } from "better-auth/plugins";
 import type { Stripe as StripeTypes } from "stripe";
+
 import { stripe as stripePlugin } from "@better-auth/stripe";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
@@ -14,7 +15,9 @@ import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
 import * as Option from "effect/Option";
+
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
+
 import { KV } from "./KV";
 import { Repository } from "./Repository";
 import { Request } from "./Request";

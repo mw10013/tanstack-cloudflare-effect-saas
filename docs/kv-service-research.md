@@ -10,7 +10,9 @@ Research for creating `src/lib/KV.ts` — an Effect v4 service wrapping Cloudfla
 class D1 extends ServiceMap.Service<D1>()("D1", {
   make: Effect.gen(function* () {
     const { D1: d1 } = yield* CloudflareEnv;
-    return { /* methods returning Effects */ };
+    return {
+      /* methods returning Effects */
+    };
   }),
 }) {
   static layer = Layer.effect(this, this.make);
@@ -18,6 +20,7 @@ class D1 extends ServiceMap.Service<D1>()("D1", {
 ```
 
 Key elements:
+
 - `Schema.TaggedErrorClass` for typed errors
 - `Effect.tryPromise` wrapper (`tryD1`) to catch and convert promise rejections
 - `Effect.tapError` for error logging
@@ -37,6 +40,7 @@ export const CloudflareEnv = ServiceMap.Service<Env>("CloudflareEnv");
 ## KVNamespace API (from worker-configuration.d.ts)
 
 ### `get` — read values
+
 ```ts
 get(key: Key, options?: Partial<KVNamespaceGetOptions<undefined>>): Promise<string | null>;
 get(key: Key, type: "text"): Promise<string | null>;
@@ -48,52 +52,69 @@ get(key: Key, type: "stream"): Promise<ReadableStream | null>;
 ```
 
 ### `put` — write values
+
 ```ts
 put(key: Key, value: string | ArrayBuffer | ArrayBufferView | ReadableStream, options?: KVNamespacePutOptions): Promise<void>;
 ```
 
 `KVNamespacePutOptions`:
+
 ```ts
 interface KVNamespacePutOptions {
-  expiration?: number;    // seconds since epoch
+  expiration?: number; // seconds since epoch
   expirationTtl?: number; // seconds from now (min 60)
-  metadata?: any | null;  // max 1024 bytes serialized JSON
+  metadata?: any | null; // max 1024 bytes serialized JSON
 }
 ```
 
 ### `delete` — remove key-value pair
+
 ```ts
 delete(key: Key): Promise<void>;
 ```
 
 ### `getWithMetadata` — read with metadata
+
 ```ts
 getWithMetadata<Metadata>(key: Key, type: "json"): Promise<KVNamespaceGetWithMetadataResult<ExpectedValue, Metadata>>;
 // Returns { value, metadata, cacheStatus }
 ```
 
 ### `list` — enumerate keys
+
 ```ts
 list<Metadata>(options?: KVNamespaceListOptions): Promise<KVNamespaceListResult<Metadata, Key>>;
 ```
 
 `KVNamespaceListOptions`:
+
 ```ts
 interface KVNamespaceListOptions {
-  limit?: number;           // max 1000 (default)
+  limit?: number; // max 1000 (default)
   prefix?: string | null;
   cursor?: string | null;
 }
 ```
 
 `KVNamespaceListResult` is a discriminated union on `list_complete`:
+
 ```ts
 type KVNamespaceListResult<Metadata, Key> =
-  | { list_complete: false; keys: KVNamespaceListKey<Metadata, Key>[]; cursor: string; cacheStatus: string | null }
-  | { list_complete: true;  keys: KVNamespaceListKey<Metadata, Key>[]; cacheStatus: string | null };
+  | {
+      list_complete: false;
+      keys: KVNamespaceListKey<Metadata, Key>[];
+      cursor: string;
+      cacheStatus: string | null;
+    }
+  | {
+      list_complete: true;
+      keys: KVNamespaceListKey<Metadata, Key>[];
+      cacheStatus: string | null;
+    };
 ```
 
 `KVNamespaceListKey`:
+
 ```ts
 interface KVNamespaceListKey<Metadata, Key> {
   name: Key;
@@ -117,11 +138,14 @@ interface KVNamespaceListKey<Metadata, Key> {
 ## Effect v4 Patterns (from refs/effect4)
 
 ### ServiceMap.Service with `make`
+
 ```ts
 class MyService extends ServiceMap.Service<MyService>()("MyService", {
   make: Effect.gen(function* () {
     // access dependencies
-    return { /* service methods */ };
+    return {
+      /* service methods */
+    };
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make);
@@ -129,6 +153,7 @@ class MyService extends ServiceMap.Service<MyService>()("MyService", {
 ```
 
 ### Error class
+
 ```ts
 class MyError extends Schema.TaggedErrorClass<MyError>()("MyError", {
   message: Schema.String,
@@ -137,50 +162,57 @@ class MyError extends Schema.TaggedErrorClass<MyError>()("MyError", {
 ```
 
 ### tryPromise wrapper
+
 ```ts
 const tryKV = <A>(evaluate: () => Promise<A>) =>
   Effect.tryPromise({
     try: evaluate,
-    catch: (cause) => new KVError({
-      message: cause instanceof Error ? cause.message : String(cause),
-      cause,
-    }),
+    catch: (cause) =>
+      new KVError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
   }).pipe(Effect.tapError((error) => Effect.logError(error)));
 ```
 
 ## Proposed KV.ts Design
 
 ### Error
+
 - `KVError` via `Schema.TaggedErrorClass` — mirrors `D1Error`
 
 ### Service methods to expose
+
 Following the D1 pattern of thin wrappers that return Effects:
 
-| Method | Wraps | Returns |
-|--------|-------|---------|
-| `get` | `kv.get(key, type?)` | `Effect<string \| null, KVError>` (text default) |
-| `getJson` | `kv.get<T>(key, "json")` | `Effect<T \| null, KVError>` |
-| `put` | `kv.put(key, value, options?)` | `Effect<void, KVError>` |
-| `delete` | `kv.delete(key)` | `Effect<void, KVError>` |
-| `list` | `kv.list(options?)` | `Effect<KVNamespaceListResult<Metadata>, KVError>` |
-| `getWithMetadata` | `kv.getWithMetadata(key, type?)` | `Effect<{value, metadata, cacheStatus}, KVError>` |
+| Method            | Wraps                            | Returns                                            |
+| ----------------- | -------------------------------- | -------------------------------------------------- |
+| `get`             | `kv.get(key, type?)`             | `Effect<string \| null, KVError>` (text default)   |
+| `getJson`         | `kv.get<T>(key, "json")`         | `Effect<T \| null, KVError>`                       |
+| `put`             | `kv.put(key, value, options?)`   | `Effect<void, KVError>`                            |
+| `delete`          | `kv.delete(key)`                 | `Effect<void, KVError>`                            |
+| `list`            | `kv.list(options?)`              | `Effect<KVNamespaceListResult<Metadata>, KVError>` |
+| `getWithMetadata` | `kv.getWithMetadata(key, type?)` | `Effect<{value, metadata, cacheStatus}, KVError>`  |
 
 ### Retry Deep Dive
 
 #### KV error landscape
 
 **1. Write rate limit — 429 (put only)**
+
 - 1 write/sec to the **same key**. Writes to different keys are unlimited (paid). Source: `refs/cloudflare-docs/src/content/docs/kv/platform/limits.mdx` line 14, FAQ line 48.
 - Error message: `"KV PUT failed: 429 Too Many Requests"`
 - Only affects `put`. Reads are not per-key rate limited (unlimited on paid plan).
 
 **2. Transient infrastructure errors (all operations)**
+
 - Workers runtime documents `Network connection lost` as a retryable runtime error: "Connection failure. Catch a fetch or binding invocation and retry it." Source: Cloudflare Workers errors docs, runtime errors table.
 - `daemonDown` — "A temporary problem invoking the Worker." Also transient.
 - KV has experienced elevated timeouts during infrastructure issues (Oct 2025 incident, Jun 2025 major outage caused by storage provider failure).
 - D1 service already retries on similar transient signals: `"network connection lost"`, `"internal error"`, `"transient issue on remote node"`, `"reset because its code was updated"`. These same infrastructure-level errors can occur for KV since both sit on Workers runtime.
 
 **3. Non-retryable errors**
+
 - Application logic errors (wrong key format, value too large >25MiB)
 - Auth/permission errors
 - Memory/CPU limit exceeded
@@ -193,10 +225,7 @@ Since KV puts are **inherently idempotent** (no auto-increment, no append, last-
 Applied automatically to every `tryKV` call. Retries on infrastructure-level transient errors that affect any KV operation (reads and writes alike).
 
 ```ts
-const RETRYABLE_KV_SIGNALS = [
-  "network connection lost",
-  "daemondown",
-] as const;
+const RETRYABLE_KV_SIGNALS = ["network connection lost", "daemondown"] as const;
 ```
 
 **Layer 2: Write rate limit retry (put only)**
@@ -267,9 +296,7 @@ const tryKV = <A>(evaluate: () => Promise<A>) =>
     Effect.retry({
       while: (error) => {
         const message = error.message.toLowerCase();
-        return RETRYABLE_KV_SIGNALS.some((signal) =>
-          message.includes(signal),
-        );
+        return RETRYABLE_KV_SIGNALS.some((signal) => message.includes(signal));
       },
       times: 2,
       schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),

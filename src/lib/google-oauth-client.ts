@@ -1,9 +1,13 @@
 import { Data, Effect, Redacted } from "effect";
-import * as Oidc from "openid-client";
 import * as Schema from "effect/Schema";
+import * as Oidc from "openid-client";
 
 export class GoogleOAuthError extends Data.TaggedError("GoogleOAuthError")<{
-  readonly reason: "Discovery" | "AuthorizationBuild" | "TokenExchange" | "TokenRefresh";
+  readonly reason:
+    | "Discovery"
+    | "AuthorizationBuild"
+    | "TokenExchange"
+    | "TokenRefresh";
   readonly cause?: unknown;
 }> {}
 
@@ -28,9 +32,10 @@ const GoogleTokenResponse = Schema.Struct({
 let cachedConfig: Oidc.Configuration | undefined;
 let cachedConfigKey: string | undefined;
 
-const getGoogleOidcConfig = (
-  { clientId, clientSecret }: GoogleOAuthClientInput,
-) =>
+const getGoogleOidcConfig = ({
+  clientId,
+  clientSecret,
+}: GoogleOAuthClientInput) =>
   Effect.tryPromise({
     try: async () => {
       const secret = Redacted.value(clientSecret);
@@ -59,7 +64,8 @@ export const buildGoogleAuthorizationRequest = (
     const codeVerifier = Oidc.randomPKCECodeVerifier();
     const codeChallenge = yield* Effect.tryPromise({
       try: () => Oidc.calculatePKCECodeChallenge(codeVerifier),
-      catch: (cause) => new GoogleOAuthError({ reason: "AuthorizationBuild", cause }),
+      catch: (cause) =>
+        new GoogleOAuthError({ reason: "AuthorizationBuild", cause }),
     });
     const authorizationUrl = Oidc.buildAuthorizationUrl(config, {
       redirect_uri: input.redirectUri,
@@ -98,7 +104,8 @@ export const exchangeGoogleAuthorizationCode = (
           },
           { redirect_uri: input.redirectUri },
         ),
-      catch: (cause) => new GoogleOAuthError({ reason: "TokenExchange", cause }),
+      catch: (cause) =>
+        new GoogleOAuthError({ reason: "TokenExchange", cause }),
     });
     return Schema.decodeUnknownSync(GoogleTokenResponse)(tokenResponse);
   });

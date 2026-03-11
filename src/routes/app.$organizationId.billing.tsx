@@ -10,6 +10,7 @@ import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,7 +73,7 @@ function RouteComponent() {
     <div className="flex flex-col gap-8 p-6">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-muted-foreground">
           Manage your organization's subscription and billing information.
         </p>
       </header>
@@ -185,7 +186,7 @@ function SubscriptionCard({
             {subscription.plan} Plan
           </p>
           <p
-            className="text-muted-foreground text-sm"
+            className="text-sm text-muted-foreground"
             data-testid="active-status"
           >
             Status:{" "}
@@ -245,7 +246,7 @@ function SubscriptionCard({
 function NoSubscriptionCard() {
   return (
     <div className="flex items-center justify-between">
-      <p className="text-muted-foreground text-sm">
+      <p className="text-sm text-muted-foreground">
         No active subscription for this organization.
       </p>
       <Button variant="outline" render={<Link to="/pricing" />}>
@@ -284,24 +285,25 @@ const manageBilling = createServerFn({ method: "POST" })
  */
 const cancelSubscription = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(subscriptionActionSchema))
-  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const request = yield* Request;
-        const auth = yield* Auth;
-        return yield* Effect.tryPromise(() =>
-          auth.api.cancelSubscription({
-            headers: request.headers,
-            body: {
-              referenceId: organizationId,
-              customerType: "organization",
-              subscriptionId,
-              returnUrl: `${new URL(request.url).origin}/app/${organizationId}/billing`,
-            },
-          }),
-        );
-      }),
-    ),
+  .handler(
+    ({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
+      runEffect(
+        Effect.gen(function* () {
+          const request = yield* Request;
+          const auth = yield* Auth;
+          return yield* Effect.tryPromise(() =>
+            auth.api.cancelSubscription({
+              headers: request.headers,
+              body: {
+                referenceId: organizationId,
+                customerType: "organization",
+                subscriptionId,
+                returnUrl: `${new URL(request.url).origin}/app/${organizationId}/billing`,
+              },
+            }),
+          );
+        }),
+      ),
   );
 
 /**
@@ -309,21 +311,22 @@ const cancelSubscription = createServerFn({ method: "POST" })
  */
 const restoreSubscription = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(subscriptionActionSchema))
-  .handler(({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const request = yield* Request;
-        const auth = yield* Auth;
-        yield* Effect.tryPromise(() =>
-          auth.api.restoreSubscription({
-            headers: request.headers,
-            body: {
-              referenceId: organizationId,
-              customerType: "organization",
-              subscriptionId,
-            },
-          }),
-        );
-      }),
-    ),
+  .handler(
+    ({ data: { organizationId, subscriptionId }, context: { runEffect } }) =>
+      runEffect(
+        Effect.gen(function* () {
+          const request = yield* Request;
+          const auth = yield* Auth;
+          yield* Effect.tryPromise(() =>
+            auth.api.restoreSubscription({
+              headers: request.headers,
+              body: {
+                referenceId: organizationId,
+                customerType: "organization",
+                subscriptionId,
+              },
+            }),
+          );
+        }),
+      ),
   );

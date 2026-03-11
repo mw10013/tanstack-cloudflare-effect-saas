@@ -1,9 +1,12 @@
-import type { Plan } from "@/lib/Domain";
 import type { Stripe as StripeTypes } from "stripe";
+
+import type { Plan } from "@/lib/Domain";
+
 import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as StripeClient from "stripe";
+
 import { planData, Plan as PlanSchema } from "@/lib/Domain";
 import { KV } from "@/lib/KV";
 
@@ -115,9 +118,7 @@ export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
               (price) => price.lookup_key === plan.annualPriceLookupKey,
             );
             if (!annualPrice) {
-              return yield* failStripe(
-                `Missing annual price for ${plan.name}`,
-              );
+              return yield* failStripe(`Missing annual price for ${plan.name}`);
             }
             return {
               name: plan.name,

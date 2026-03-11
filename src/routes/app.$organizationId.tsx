@@ -1,4 +1,5 @@
 import type { AuthInstance } from "@/lib/Auth";
+
 import {
   createFileRoute,
   Link,
@@ -10,6 +11,7 @@ import {
 import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Cause, Effect } from "effect";
 import { ChevronsUpDown, LogOut } from "lucide-react";
+
 import { AppLogo } from "@/components/app-logo";
 import { Button } from "@/components/ui/button";
 import {
@@ -235,7 +237,7 @@ function OrganizationSwitcher({
             <div className="grid leading-tight">
               <span className="truncate font-medium">{organization.name}</span>
             </div>
-            <ChevronsUpDown className="text-muted-foreground ml-2 size-4" />
+            <ChevronsUpDown className="ml-2 size-4 text-muted-foreground" />
           </Button>
         )}
       />

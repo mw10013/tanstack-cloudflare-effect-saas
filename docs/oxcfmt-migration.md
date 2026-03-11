@@ -16,23 +16,23 @@ JS, JSX, TS, TSX, JSON, JSONC, JSON5, YAML, TOML, HTML, Angular, Vue, CSS, SCSS,
 
 ## Built-in Features (No Plugins Needed)
 
-| Feature | Prettier | Oxfmt |
-|---|---|---|
-| Import sorting | `@ianvs/prettier-plugin-sort-imports` | Built-in `sortImports` |
-| Tailwind class sorting | `prettier-plugin-tailwindcss` | Built-in `sortTailwindcss` |
-| package.json sorting | `prettier-plugin-sort-packagejson` | Built-in `sortPackageJson` (on by default) |
-| Embedded formatting | N/A | Built-in (CSS-in-JS, GraphQL) |
-| SQL formatting | `prettier-plugin-sql` | ❌ Not supported |
+| Feature                | Prettier                              | Oxfmt                                      |
+| ---------------------- | ------------------------------------- | ------------------------------------------ |
+| Import sorting         | `@ianvs/prettier-plugin-sort-imports` | Built-in `sortImports`                     |
+| Tailwind class sorting | `prettier-plugin-tailwindcss`         | Built-in `sortTailwindcss`                 |
+| package.json sorting   | `prettier-plugin-sort-packagejson`    | Built-in `sortPackageJson` (on by default) |
+| Embedded formatting    | N/A                                   | Built-in (CSS-in-JS, GraphQL)              |
+| SQL formatting         | `prettier-plugin-sql`                 | ❌ Not supported                           |
 
 ## Key Config Differences
 
-| Option | Prettier default | Oxfmt default |
-|---|---|---|
-| `printWidth` | 80 | **100** |
-| `trailingComma` | `"all"` | `"all"` |
-| `sortImports` | N/A (plugin) | Disabled by default |
-| `sortTailwindcss` | N/A (plugin) | Disabled by default |
-| `sortPackageJson` | N/A | Enabled by default |
+| Option            | Prettier default | Oxfmt default       |
+| ----------------- | ---------------- | ------------------- |
+| `printWidth`      | 80               | **100**             |
+| `trailingComma`   | `"all"`          | `"all"`             |
+| `sortImports`     | N/A (plugin)     | Disabled by default |
+| `sortTailwindcss` | N/A (plugin)     | Disabled by default |
+| `sortPackageJson` | N/A              | Enabled by default  |
 
 ## Config File
 
@@ -55,6 +55,7 @@ Oxfmt reads `.gitignore` and `.prettierignore` by default. Can also use `ignoreP
 Uses [eslint-plugin-perfectionist/sort-imports](https://perfectionist.dev/rules/sort-imports) algorithm. Groups use selectors like `type-builtin`, `value-external`, `value-internal`, etc.
 
 Key options:
+
 - `groups`: Array of group names (combinable in sub-arrays)
 - `customGroups`: Define custom groups with `groupName` + `elementNamePattern` (glob)
 - `internalPattern`: Default `["~/", "@/"]` — matches our `@/*` path aliases
@@ -63,6 +64,7 @@ Key options:
 ### Tailwind CSS Sorting Config
 
 Uses same algorithm as `prettier-plugin-tailwindcss`. Options:
+
 - `stylesheet`: Path to Tailwind v4 stylesheet (default: installed `theme.css`)
 - `functions`: Custom function names to sort (e.g., `["clsx", "cn", "cva", "tw"]`)
 - `attributes`: Additional attributes beyond `class`/`className`
@@ -82,27 +84,27 @@ Uses same algorithm as `prettier-plugin-tailwindcss`. Options:
       ["value-builtin", "value-external"],
       "value-internal",
       ["value-parent", "value-sibling", "value-index"],
-      "unknown"
+      "unknown",
     ],
     "customGroups": [
       {
         "groupName": "react-libs",
-        "elementNamePattern": ["react", "react-**"]
-      }
-    ]
+        "elementNamePattern": ["react", "react-**"],
+      },
+    ],
   },
   "sortTailwindcss": {
     "stylesheet": "./src/styles.css",
-    "functions": ["tw", "twMerge", "twJoin", "cva", "cn"]
+    "functions": ["tw", "twMerge", "twJoin", "cva", "cn"],
   },
   "overrides": [
     {
       "files": ["*.jsonc"],
       "options": {
-        "trailingComma": "none"
-      }
-    }
-  ]
+        "trailingComma": "none",
+      },
+    },
+  ],
 }
 ```
 

@@ -25,9 +25,10 @@ export class ChatRoom extends DurableObject<Env> {
 
   private async migrate() {
     // Check current schema version
-    const version = this.ctx.storage.sql
-      .exec<{ version: number }>("PRAGMA user_version")
-      .one()?.version ?? 0;
+    const version =
+      this.ctx.storage.sql
+        .exec<{ version: number }>("PRAGMA user_version")
+        .one()?.version ?? 0;
 
     if (version < 1) {
       this.ctx.storage.sql.exec(`
@@ -88,15 +89,17 @@ addColumnIfNotExists("ALTER TABLE users ADD COLUMN city TEXT");
 **Purpose:** Blocks all concurrent requests during initialization/migration
 
 **Use sparingly:**
+
 - Reduces throughput (~200 req/sec if migration takes 5ms)
 - Only use for initialization and schema migrations
 - Do NOT use across I/O operations (fetch, KV, R2, external APIs)
 
 **Best practice:**
+
 ```typescript
 constructor(ctx: DurableObjectState, env: Env) {
   super(ctx, env);
-  
+
   ctx.blockConcurrencyWhile(async () => {
     // Fast operations only: schema setup, state initialization
     await this.migrate();
@@ -107,13 +110,13 @@ constructor(ctx: DurableObjectState, env: Env) {
 
 ## Migration Types Reference
 
-| Migration Type | Where | Purpose |
-|---------------|-------|---------|
-| `new_sqlite_classes` | wrangler.jsonc | Create new DO/Agent with SQLite |
-| `renamed_classes` | wrangler.jsonc | Rename class (same Worker) |
-| `transferred_classes` | wrangler.jsonc | Transfer between classes (different Workers) |
-| `deleted_classes` | wrangler.jsonc | Delete class and all data |
-| Schema migrations | Code | Table/column changes via `blockConcurrencyWhile()` |
+| Migration Type        | Where          | Purpose                                            |
+| --------------------- | -------------- | -------------------------------------------------- |
+| `new_sqlite_classes`  | wrangler.jsonc | Create new DO/Agent with SQLite                    |
+| `renamed_classes`     | wrangler.jsonc | Rename class (same Worker)                         |
+| `transferred_classes` | wrangler.jsonc | Transfer between classes (different Workers)       |
+| `deleted_classes`     | wrangler.jsonc | Delete class and all data                          |
+| Schema migrations     | Code           | Table/column changes via `blockConcurrencyWhile()` |
 
 ## Important Constraints
 
@@ -128,17 +131,18 @@ constructor(ctx: DurableObjectState, env: Env) {
 export class MyAgent extends Agent<Env> {
   constructor(ctx: AgentContext, env: Env) {
     super(ctx, env);
-    
+
     ctx.blockConcurrencyWhile(async () => {
       await this.runMigrations();
     });
   }
-  
+
   private async runMigrations() {
-    const version = this.ctx.storage.sql
-      .exec<{ version: number }>("PRAGMA user_version")
-      .one()?.version ?? 0;
-    
+    const version =
+      this.ctx.storage.sql
+        .exec<{ version: number }>("PRAGMA user_version")
+        .one()?.version ?? 0;
+
     if (version < 1) {
       // Initial schema
       this.ctx.storage.sql.exec(`
@@ -150,7 +154,7 @@ export class MyAgent extends Agent<Env> {
         PRAGMA user_version = 1;
       `);
     }
-    
+
     if (version < 2) {
       // Add email column
       this.ctx.storage.sql.exec(`
@@ -159,7 +163,7 @@ export class MyAgent extends Agent<Env> {
         PRAGMA user_version = 2;
       `);
     }
-    
+
     if (version < 3) {
       // Add posts table
       this.ctx.storage.sql.exec(`

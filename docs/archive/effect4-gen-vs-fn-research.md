@@ -55,8 +55,8 @@ Export and docs:
 
 ```ts
 export const fn: fn.Traced & {
-  (name: string, options?: SpanOptionsNoTrace): fn.Traced
-} = internal.fn
+  (name: string, options?: SpanOptionsNoTrace): fn.Traced;
+} = internal.fn;
 ```
 
 Source: `refs/effect4/packages/effect/src/Effect.ts:12849-12851`
@@ -148,17 +148,18 @@ Partially, functionally; no, architecturally.
 You can write:
 
 ```ts
-const getUser = (id: string) => Effect.gen(function*() {
-  return yield* fetchUserById(id)
-})
+const getUser = (id: string) =>
+  Effect.gen(function* () {
+    return yield* fetchUserById(id);
+  });
 ```
 
 But guidance prefers:
 
 ```ts
-const getUser = Effect.fn("UserService.getUser")(function*(id: string) {
-  return yield* fetchUserById(id)
-})
+const getUser = Effect.fn("UserService.getUser")(function* (id: string) {
+  return yield* fetchUserById(id);
+});
 ```
 
 Reason: `fn` captures a stable function boundary and can attach span/stack behavior centrally.
@@ -200,12 +201,15 @@ flowchart TD
 ### Pattern 1: workflow with `gen`
 
 ```ts
-const program = Effect.gen(function*() {
-  const transactionAmount = yield* fetchTransactionAmount
-  const discountRate = yield* fetchDiscountRate
-  const discountedAmount = yield* applyDiscount(transactionAmount, discountRate)
-  return `Final amount to charge: ${discountedAmount}`
-})
+const program = Effect.gen(function* () {
+  const transactionAmount = yield* fetchTransactionAmount;
+  const discountRate = yield* fetchDiscountRate;
+  const discountedAmount = yield* applyDiscount(
+    transactionAmount,
+    discountRate,
+  );
+  return `Final amount to charge: ${discountedAmount}`;
+});
 ```
 
 Source: `refs/effect4/packages/effect/src/Effect.ts:1549-1558`
@@ -213,18 +217,20 @@ Source: `refs/effect4/packages/effect/src/Effect.ts:1549-1558`
 ### Pattern 2: service methods with `fn`
 
 ```ts
-const getById = Effect.fn("TodoRepo.getById")(function*(id: number) {
-  const todo = store.get(id)
-  if (todo === undefined) return yield* new TodoNotFound({ id })
-  return todo
-})
+const getById = Effect.fn("TodoRepo.getById")(function* (id: number) {
+  const todo = store.get(id);
+  if (todo === undefined) return yield* new TodoNotFound({ id });
+  return todo;
+});
 
-const create = Effect.fn("TodoRepo.create")(function*(payload: CreateTodoPayload) {
-  const id = yield* Ref.getAndUpdate(nextId, (current) => current + 1)
-  const todo = new Todo({ id, title: payload.title, completed: false })
-  store.set(id, todo)
-  return todo
-})
+const create = Effect.fn("TodoRepo.create")(function* (
+  payload: CreateTodoPayload,
+) {
+  const id = yield* Ref.getAndUpdate(nextId, (current) => current + 1);
+  const todo = new Todo({ id, title: payload.title, completed: false });
+  store.set(id, todo);
+  return todo;
+});
 ```
 
 Source: `refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:40-53`
@@ -234,9 +240,9 @@ Source: `refs/effect4/ai-docs/src/03_integration/10_managed-runtime.ts:40-53`
 `Effect.gen` with `this` now uses options object:
 
 ```ts
-compute = Effect.gen({ self: this }, function*() {
-  return yield* Effect.succeed(this.local + 1)
-})
+compute = Effect.gen({ self: this }, function* () {
+  return yield* Effect.succeed(this.local + 1);
+});
 ```
 
 Source: `refs/effect4/migration/generators.md:23-31`
@@ -259,18 +265,18 @@ Zero `Effect.fn` usage found. All 70+ effect generators use `Effect.gen`. Below 
 
 These are functions assigned to object properties inside service `make` blocks. They accept arguments, are called from multiple sites, and represent a named API boundary. Classic `Effect.fn` territory.
 
-| File | Function | Suggested Name |
-|------|----------|----------------|
-| `src/lib/Stripe.ts:53` | `getPrices()` | `"Stripe.getPrices"` |
-| `src/lib/Stripe.ts:112` | `getPlans()` | `"Stripe.getPlans"` |
-| `src/lib/Stripe.ts:178` | `ensureBillingPortalConfiguration()` | `"Stripe.ensureBillingPortalConfiguration"` |
-| `src/lib/Repository.ts:10` | `getUser(email)` | `"Repository.getUser"` |
-| `src/lib/Repository.ts:31` | `getUsers({limit, offset, searchValue})` | `"Repository.getUsers"` |
-| `src/lib/Repository.ts:90` | `getAppDashboardData({...})` | `"Repository.getAppDashboardData"` |
-| `src/lib/Repository.ts:160` | `getAdminDashboardData()` | `"Repository.getAdminDashboardData"` |
-| `src/lib/Repository.ts:198` | `getCustomers({...})` | `"Repository.getCustomers"` |
-| `src/lib/Repository.ts:281` | `getSubscriptions({...})` | `"Repository.getSubscriptions"` |
-| `src/lib/Repository.ts:395` | `getSessions({...})` | `"Repository.getSessions"` |
+| File                        | Function                                 | Suggested Name                              |
+| --------------------------- | ---------------------------------------- | ------------------------------------------- |
+| `src/lib/Stripe.ts:53`      | `getPrices()`                            | `"Stripe.getPrices"`                        |
+| `src/lib/Stripe.ts:112`     | `getPlans()`                             | `"Stripe.getPlans"`                         |
+| `src/lib/Stripe.ts:178`     | `ensureBillingPortalConfiguration()`     | `"Stripe.ensureBillingPortalConfiguration"` |
+| `src/lib/Repository.ts:10`  | `getUser(email)`                         | `"Repository.getUser"`                      |
+| `src/lib/Repository.ts:31`  | `getUsers({limit, offset, searchValue})` | `"Repository.getUsers"`                     |
+| `src/lib/Repository.ts:90`  | `getAppDashboardData({...})`             | `"Repository.getAppDashboardData"`          |
+| `src/lib/Repository.ts:160` | `getAdminDashboardData()`                | `"Repository.getAdminDashboardData"`        |
+| `src/lib/Repository.ts:198` | `getCustomers({...})`                    | `"Repository.getCustomers"`                 |
+| `src/lib/Repository.ts:281` | `getSubscriptions({...})`                | `"Repository.getSubscriptions"`             |
+| `src/lib/Repository.ts:395` | `getSessions({...})`                     | `"Repository.getSessions"`                  |
 
 **Why:** These are reusable effectful methods on a service object, called from route handlers and other services. `Effect.fn("Name")` adds per-call tracing spans and definition-site stack frames — exactly what `fn` was designed for. Currently these methods have zero instrumentation; `fn` would give tracing for free.
 
@@ -278,11 +284,11 @@ These are functions assigned to object properties inside service `make` blocks. 
 
 Standalone exported functions that accept arguments and return an `Effect`. Called from multiple sites or represent a clear API boundary.
 
-| File | Function | Suggested Name |
-|------|----------|----------------|
-| `src/lib/google-oauth-client.ts:53` | `buildGoogleAuthorizationRequest(input)` | `"GoogleOAuth.buildAuthorizationRequest"` |
-| `src/lib/google-oauth-client.ts:81` | `exchangeGoogleAuthorizationCode(input)` | `"GoogleOAuth.exchangeAuthorizationCode"` |
-| `src/lib/google-oauth-client.ts:106` | `refreshGoogleToken(input)` | `"GoogleOAuth.refreshToken"` |
+| File                                 | Function                                 | Suggested Name                            |
+| ------------------------------------ | ---------------------------------------- | ----------------------------------------- |
+| `src/lib/google-oauth-client.ts:53`  | `buildGoogleAuthorizationRequest(input)` | `"GoogleOAuth.buildAuthorizationRequest"` |
+| `src/lib/google-oauth-client.ts:81`  | `exchangeGoogleAuthorizationCode(input)` | `"GoogleOAuth.exchangeAuthorizationCode"` |
+| `src/lib/google-oauth-client.ts:106` | `refreshGoogleToken(input)`              | `"GoogleOAuth.refreshToken"`              |
 
 **Why:** Named functions that return Effects. Each represents a distinct API operation. `fn` attaches tracing to every call without manual `withLogSpan` boilerplate.
 
@@ -290,12 +296,12 @@ Standalone exported functions that accept arguments and return an `Effect`. Call
 
 These are one-off workflows that build a service layer. No reusable function boundary — they run once during layer construction.
 
-| File | Line |
-|------|------|
-| `src/lib/D1.ts:13` | `D1.make` |
+| File                      | Line              |
+| ------------------------- | ----------------- |
+| `src/lib/D1.ts:13`        | `D1.make`         |
 | `src/lib/Repository.ts:7` | `Repository.make` |
-| `src/lib/Stripe.ts:46` | `Stripe.make` |
-| `src/lib/Auth.ts:350` | `Auth.make` |
+| `src/lib/Stripe.ts:46`    | `Stripe.make`     |
+| `src/lib/Auth.ts:350`     | `Auth.make`       |
 
 **Why:** `make` is a one-shot layer construction workflow. No function boundary, no arguments, no reuse. `Effect.gen` is correct.
 
@@ -303,33 +309,33 @@ These are one-off workflows that build a service layer. No reusable function bou
 
 Inline `Effect.gen` inside `createServerFn` handlers and worker `fetch`/`scheduled` callbacks. These are one-off orchestration workflows scoped to a single request handler.
 
-| File | Context |
-|------|---------|
-| `src/worker.ts:141,158,178,199` | `onBeforeConnect`, `onBeforeRequest`, session fetch, cron handler |
-| `src/routes/admin.users.tsx:87,121,139` | `getUsers`, `unbanUser`, `impersonateUser` server fns |
-| `src/routes/admin.users.tsx:372` | `banUser` server fn |
-| `src/routes/admin.tsx:40` | admin loader |
-| `src/routes/login.tsx:36,53` | login server fns |
-| `src/routes/app.tsx:8` | app loader |
-| `src/routes/app.index.tsx:8` | app index loader |
-| `src/routes/app.$organizationId.tsx:45,62` | org layout loader/server fn |
-| `src/routes/app.$organizationId.billing.tsx:41,265,289,314` | billing loader/server fns |
-| `src/routes/app.$organizationId.index.tsx:48,69,95` | org index server fns |
-| `src/routes/app.$organizationId.members.tsx:54,99,119,139` | members server fns |
-| `src/routes/app.$organizationId.invitations.tsx:65,160,328` | invitations server fns |
-| `src/routes/app.$organizationId.upload.tsx:82,124,155` | upload server fns |
-| `src/routes/app.$organizationId.google.tsx:54` | google oauth server fn |
-| `src/routes/app.$organizationId.inspector.tsx:10` | inspector loader |
-| `src/routes/app.$organizationId.workflow.tsx:40` | workflow loader |
-| `src/routes/admin.customers.tsx:48` | customers loader |
-| `src/routes/admin.sessions.tsx:48` | sessions loader |
-| `src/routes/admin.subscriptions.tsx:48` | subscriptions loader |
-| `src/routes/_mkt.pricing.tsx:30,50` | pricing loader/server fn |
-| `src/routes/magic-link.tsx:8` | magic-link loader |
-| `src/routes/api/auth/$.tsx:24,31` | auth API handler |
-| `src/routes/api/google/callback.tsx:13` | google callback handler |
-| `src/routes/api/org.$organizationId.upload-image.$name.tsx:11` | upload API handler |
-| `src/routes/api/e2e/delete/user/$email.tsx:13` | e2e delete handler |
+| File                                                           | Context                                                           |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `src/worker.ts:141,158,178,199`                                | `onBeforeConnect`, `onBeforeRequest`, session fetch, cron handler |
+| `src/routes/admin.users.tsx:87,121,139`                        | `getUsers`, `unbanUser`, `impersonateUser` server fns             |
+| `src/routes/admin.users.tsx:372`                               | `banUser` server fn                                               |
+| `src/routes/admin.tsx:40`                                      | admin loader                                                      |
+| `src/routes/login.tsx:36,53`                                   | login server fns                                                  |
+| `src/routes/app.tsx:8`                                         | app loader                                                        |
+| `src/routes/app.index.tsx:8`                                   | app index loader                                                  |
+| `src/routes/app.$organizationId.tsx:45,62`                     | org layout loader/server fn                                       |
+| `src/routes/app.$organizationId.billing.tsx:41,265,289,314`    | billing loader/server fns                                         |
+| `src/routes/app.$organizationId.index.tsx:48,69,95`            | org index server fns                                              |
+| `src/routes/app.$organizationId.members.tsx:54,99,119,139`     | members server fns                                                |
+| `src/routes/app.$organizationId.invitations.tsx:65,160,328`    | invitations server fns                                            |
+| `src/routes/app.$organizationId.upload.tsx:82,124,155`         | upload server fns                                                 |
+| `src/routes/app.$organizationId.google.tsx:54`                 | google oauth server fn                                            |
+| `src/routes/app.$organizationId.inspector.tsx:10`              | inspector loader                                                  |
+| `src/routes/app.$organizationId.workflow.tsx:40`               | workflow loader                                                   |
+| `src/routes/admin.customers.tsx:48`                            | customers loader                                                  |
+| `src/routes/admin.sessions.tsx:48`                             | sessions loader                                                   |
+| `src/routes/admin.subscriptions.tsx:48`                        | subscriptions loader                                              |
+| `src/routes/_mkt.pricing.tsx:30,50`                            | pricing loader/server fn                                          |
+| `src/routes/magic-link.tsx:8`                                  | magic-link loader                                                 |
+| `src/routes/api/auth/$.tsx:24,31`                              | auth API handler                                                  |
+| `src/routes/api/google/callback.tsx:13`                        | google callback handler                                           |
+| `src/routes/api/org.$organizationId.upload-image.$name.tsx:11` | upload API handler                                                |
+| `src/routes/api/e2e/delete/user/$email.tsx:13`                 | e2e delete handler                                                |
 
 **Why:** These are anonymous one-off workflows inside request handlers. No named function boundary, not called from multiple sites. `Effect.gen` is the right tool.
 
@@ -337,26 +343,26 @@ Inline `Effect.gen` inside `createServerFn` handlers and worker `fetch`/`schedul
 
 Inline generators inside better-auth hooks and plugin callbacks. These are deeply nested, anonymous, and tied to the hook framework's callback shape.
 
-| File | Lines | Context |
-|------|-------|---------|
-| `src/lib/Auth.ts:125` | hooks.before middleware |
-| `src/lib/Auth.ts:147` | magicLink.sendMagicLink |
-| `src/lib/Auth.ts:196` | stripe.subscription.plans |
+| File                  | Lines                                  | Context |
+| --------------------- | -------------------------------------- | ------- |
+| `src/lib/Auth.ts:125` | hooks.before middleware                |
+| `src/lib/Auth.ts:147` | magicLink.sendMagicLink                |
+| `src/lib/Auth.ts:196` | stripe.subscription.plans              |
 | `src/lib/Auth.ts:250` | stripe.subscription.authorizeReference |
-| `src/lib/Auth.ts:383` | databaseHookUserCreateAfter |
-| `src/lib/Auth.ts:420` | databaseHookSessionCreateBefore |
-| `src/lib/Auth.ts:489` | signOutServerFn |
+| `src/lib/Auth.ts:383` | databaseHookUserCreateAfter            |
+| `src/lib/Auth.ts:420` | databaseHookSessionCreateBefore        |
+| `src/lib/Auth.ts:489` | signOutServerFn                        |
 
 **Why:** Callbacks passed to third-party plugin APIs. The function shape is dictated by the plugin, not our API surface. These already use manual `withLogSpan`/`annotateLogs` for tracing. Converting would require wrapping in `fn` then immediately invoking, adding noise.
 
 ### Summary
 
-| Category | Count | Action |
-|----------|-------|--------|
-| Service methods → `Effect.fn` | 10 | Migrate |
-| Exported functions → `Effect.fn` | 3 | Migrate |
-| Service `make` blocks | 4 | Keep `Effect.gen` |
-| Route handler bodies | ~30 | Keep `Effect.gen` |
-| Auth callback bodies | 7 | Keep `Effect.gen` |
+| Category                         | Count | Action            |
+| -------------------------------- | ----- | ----------------- |
+| Service methods → `Effect.fn`    | 10    | Migrate           |
+| Exported functions → `Effect.fn` | 3     | Migrate           |
+| Service `make` blocks            | 4     | Keep `Effect.gen` |
+| Route handler bodies             | ~30   | Keep `Effect.gen` |
+| Auth callback bodies             | 7     | Keep `Effect.gen` |
 
 **Highest-value migrations:** `Repository` methods (7) and `Stripe` methods (3). These are the most-called service methods, currently have zero tracing, and `Effect.fn` would add named spans automatically.

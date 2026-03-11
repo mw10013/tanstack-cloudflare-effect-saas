@@ -1,4 +1,5 @@
 import { Effect, Layer, Schema, ServiceMap } from "effect";
+
 import { D1 } from "./D1";
 import * as Domain from "./Domain";
 import { DataFromResult } from "./SchemaEx";
@@ -27,7 +28,9 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
       }) {
         const result = yield* d1.first(
           d1
-            .prepare("select * from Member where userId = ?1 and organizationId = ?2")
+            .prepare(
+              "select * from Member where userId = ?1 and organizationId = ?2",
+            )
             .bind(userId, organizationId),
         );
         return yield* Effect.fromOption(result).pipe(
@@ -61,24 +64,22 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
      */
     const initializeActiveOrganizationForUserSessions = Effect.fn(
       "Repository.initializeActiveOrganizationForUserSessions",
-    )(
-      function* ({
-        organizationId,
-        userId,
-      }: {
-        organizationId: string;
-        userId: string;
-      }) {
-        return yield* d1.run(
-          d1
-            .prepare(
-              "update Session set activeOrganizationId = ?1 where userId = ?2 and activeOrganizationId is null",
-            )
-            .bind(organizationId, userId),
-          { idempotentWrite: true },
-        );
-      },
-    );
+    )(function* ({
+      organizationId,
+      userId,
+    }: {
+      organizationId: string;
+      userId: string;
+    }) {
+      return yield* d1.run(
+        d1
+          .prepare(
+            "update Session set activeOrganizationId = ?1 where userId = ?2 and activeOrganizationId is null",
+          )
+          .bind(organizationId, userId),
+        { idempotentWrite: true },
+      );
+    });
     const getUsers = Effect.fn("Repository.getUsers")(function* ({
       limit,
       offset,
@@ -341,20 +342,21 @@ select json_object(
         ),
       );
     });
-    const getSubscriptions = Effect.fn("Repository.getSubscriptions")(function* ({
-      limit,
-      offset,
-      searchValue,
-    }: {
-      limit: number;
-      offset: number;
-      searchValue?: string;
-    }) {
-      const searchPattern = searchValue ? `%${searchValue}%` : "%";
-      const result = yield* d1.first(
-        d1
-          .prepare(
-            `
+    const getSubscriptions = Effect.fn("Repository.getSubscriptions")(
+      function* ({
+        limit,
+        offset,
+        searchValue,
+      }: {
+        limit: number;
+        offset: number;
+        searchValue?: string;
+      }) {
+        const searchPattern = searchValue ? `%${searchValue}%` : "%";
+        const result = yield* d1.first(
+          d1
+            .prepare(
+              `
 select json_object(
   'subscriptions', coalesce((
     select json_group_array(
@@ -439,24 +441,25 @@ select json_object(
   'offset', ?3
 ) as data
             `,
-          )
-          .bind(searchPattern, limit, offset),
-      );
-      return yield* Effect.fromOption(result).pipe(
-        Effect.flatMap(
-          Schema.decodeUnknownEffect(
-            DataFromResult(
-              Schema.Struct({
-                subscriptions: Schema.Array(Domain.SubscriptionWithUser),
-                count: Schema.Number,
-                limit: Schema.Number,
-                offset: Schema.Number,
-              }),
+            )
+            .bind(searchPattern, limit, offset),
+        );
+        return yield* Effect.fromOption(result).pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(
+              DataFromResult(
+                Schema.Struct({
+                  subscriptions: Schema.Array(Domain.SubscriptionWithUser),
+                  count: Schema.Number,
+                  limit: Schema.Number,
+                  offset: Schema.Number,
+                }),
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
     const getSessions = Effect.fn("Repository.getSessions")(function* ({
       limit,
       offset,
@@ -575,19 +578,17 @@ select json_object(
         );
       },
     );
-    const deleteExpiredSessions = Effect.fn(
-      "Repository.deleteExpiredSessions",
-    )(function* () {
-      const cutoff = new Date().toISOString();
-      return yield* d1
-        .run(
-          d1
-            .prepare("delete from Session where expiresAt < ?1")
-            .bind(cutoff),
-          { idempotentWrite: true },
-        )
-        .pipe(Effect.map((result) => result.meta.changes));
-    });
+    const deleteExpiredSessions = Effect.fn("Repository.deleteExpiredSessions")(
+      function* () {
+        const cutoff = new Date().toISOString();
+        return yield* d1
+          .run(
+            d1.prepare("delete from Session where expiresAt < ?1").bind(cutoff),
+            { idempotentWrite: true },
+          )
+          .pipe(Effect.map((result) => result.meta.changes));
+      },
+    );
     return {
       getUser,
       getMemberByUserAndOrg,

@@ -36,10 +36,9 @@ Always use parameterized queries to prevent SQL injection:
 
 ```typescript
 // Good - uses parameters
-const user = this.ctx.storage.sql.exec(
-  `SELECT * FROM users WHERE email = ?`,
-  email
-).one();
+const user = this.ctx.storage.sql
+  .exec(`SELECT * FROM users WHERE email = ?`, email)
+  .one();
 
 // Or with Agents SQL template tag
 const user = this.sql`SELECT * FROM users WHERE email = ${email}`.at(0);
@@ -51,12 +50,12 @@ For batch inserts, use multiple VALUES clauses or transactions:
 
 ```typescript
 // Multiple inserts in one statement
-const values = users.map(u => `(?, ?, ?)`).join(', ');
-const params = users.flatMap(u => [u.name, u.email, u.age]);
+const values = users.map((u) => `(?, ?, ?)`).join(", ");
+const params = users.flatMap((u) => [u.name, u.email, u.age]);
 
 this.ctx.storage.sql.exec(
   `INSERT INTO users (name, email, age) VALUES ${values}`,
-  ...params
+  ...params,
 );
 ```
 
@@ -67,7 +66,7 @@ this.ctx.storage.sql.exec(
 const page = this.ctx.storage.sql.exec(
   `SELECT * FROM posts ORDER BY created_at DESC LIMIT ? OFFSET ?`,
   pageSize,
-  offset
+  offset,
 );
 ```
 
@@ -95,14 +94,13 @@ Store JSON as TEXT and parse/stringify in code:
 this.ctx.storage.sql.exec(
   `INSERT INTO data (id, payload) VALUES (?, ?)`,
   id,
-  JSON.stringify(payload)
+  JSON.stringify(payload),
 );
 
 // Retrieve
-const row = this.ctx.storage.sql.exec(
-  `SELECT payload FROM data WHERE id = ?`,
-  id
-).one();
+const row = this.ctx.storage.sql
+  .exec(`SELECT payload FROM data WHERE id = ?`, id)
+  .one();
 const payload = JSON.parse(row.payload);
 ```
 
@@ -114,7 +112,7 @@ Use BLOB for binary data (respects 2MB limit):
 this.ctx.storage.sql.exec(
   `INSERT INTO files (id, content) VALUES (?, ?)`,
   id,
-  binaryData // Uint8Array or ArrayBuffer
+  binaryData, // Uint8Array or ArrayBuffer
 );
 ```
 
@@ -153,10 +151,9 @@ const addColumnSafe = (sql: string) => {
 
 ```typescript
 try {
-  const result = this.ctx.storage.sql.exec(
-    `SELECT * FROM users WHERE id = ?`,
-    userId
-  ).one();
+  const result = this.ctx.storage.sql
+    .exec(`SELECT * FROM users WHERE id = ?`, userId)
+    .one();
   return result;
 } catch (e) {
   if (e.message.includes("no such table")) {
@@ -187,7 +184,7 @@ CREATE INDEX idx_posts_user_time ON posts(user_id, created_at);
 ```typescript
 // Always limit large queries
 const recent = this.ctx.storage.sql.exec(
-  `SELECT * FROM logs ORDER BY created_at DESC LIMIT 100`
+  `SELECT * FROM logs ORDER BY created_at DESC LIMIT 100`,
 );
 ```
 
@@ -197,7 +194,7 @@ const recent = this.ctx.storage.sql.exec(
 // Batch delete old records
 this.ctx.storage.sql.exec(
   `DELETE FROM logs WHERE created_at < ?`,
-  cutoffTimestamp
+  cutoffTimestamp,
 );
 ```
 
@@ -209,7 +206,7 @@ const users = this.ctx.storage.sql.exec(`SELECT * FROM users`);
 for (const user of users) {
   const posts = this.ctx.storage.sql.exec(
     `SELECT * FROM posts WHERE user_id = ?`,
-    user.id
+    user.id,
   );
 }
 
@@ -232,11 +229,11 @@ private async migrate() {
   const version = this.ctx.storage.sql
     .exec<{ version: number }>("PRAGMA user_version")
     .one()?.version ?? 0;
-  
+
   if (version < 1) {
     this.ctx.storage.sql.exec(`-- v1 schema... PRAGMA user_version = 1;`);
   }
-  
+
   if (version < 2) {
     this.ctx.storage.sql.exec(`-- v2 migration... PRAGMA user_version = 2;`);
   }
@@ -263,7 +260,11 @@ if (version < 3) {
 
 ```typescript
 // List all tables
-const tables = [...this.ctx.storage.sql.exec(`SELECT name FROM sqlite_master WHERE type='table'`)];
+const tables = [
+  ...this.ctx.storage.sql.exec(
+    `SELECT name FROM sqlite_master WHERE type='table'`,
+  ),
+];
 
 // Get table schema
 const schema = [...this.ctx.storage.sql.exec(`PRAGMA table_info(users)`)];

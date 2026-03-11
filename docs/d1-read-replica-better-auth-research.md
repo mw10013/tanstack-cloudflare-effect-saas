@@ -35,7 +35,7 @@ declare abstract class D1DatabaseSession {
 ```ts
 // Detection (getKyselyDatabaseType)
 if ("batch" in db && "exec" in db && "prepare" in db) {
-    return "sqlite";
+  return "sqlite";
 }
 ```
 
@@ -44,10 +44,10 @@ if ("batch" in db && "exec" in db && "prepare" in db) {
 ```ts
 // Adapter creation (createKyselyAdapter)
 if ("batch" in db && "exec" in db && "prepare" in db) {
-    const { D1SqliteDialect } = await import("./d1-sqlite-dialect");
-    dialect = new D1SqliteDialect({
-        database: db,
-    });
+  const { D1SqliteDialect } = await import("./d1-sqlite-dialect");
+  dialect = new D1SqliteDialect({
+    database: db,
+  });
 }
 ```
 
@@ -57,14 +57,14 @@ if ("batch" in db && "exec" in db && "prepare" in db) {
 
 ```ts
 class D1SqliteConnection implements DatabaseConnection {
-    readonly #db: D1Database;
-    async executeQuery<O>(compiledQuery: CompiledQuery): Promise<QueryResult<O>> {
-        const results = await this.#db
-            .prepare(compiledQuery.sql)
-            .bind(...compiledQuery.parameters)
-            .all();
-        // ...
-    }
+  readonly #db: D1Database;
+  async executeQuery<O>(compiledQuery: CompiledQuery): Promise<QueryResult<O>> {
+    const results = await this.#db
+      .prepare(compiledQuery.sql)
+      .bind(...compiledQuery.parameters)
+      .all();
+    // ...
+  }
 }
 ```
 
@@ -124,6 +124,7 @@ Not recommended. `exec` is only for detection but it's fragile - better-auth cou
 **Q1**: Is Option A worth implementing now, or should we go with Option B and revisit later? The benefit is proportional to read volume on the Repository layer.
 
 **Q2**: For Option A, should the session constraint be route-aware? e.g.:
+
 - API auth routes (`/api/auth/*`): no session needed (better-auth uses raw D1)
 - Other routes: `first-unconstrained` with bookmark from cookie
 - Or just use `first-unconstrained` globally for the Effect D1 session?

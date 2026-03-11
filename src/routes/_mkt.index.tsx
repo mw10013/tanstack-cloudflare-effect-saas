@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { siGithub } from "simple-icons";
+
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_mkt/")({
@@ -12,20 +13,20 @@ function RouteComponent() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center py-12">
       <div className="relative flex min-h-[40vh] w-full flex-col items-center justify-center gap-4 border px-6 py-24">
-        <span className="bg-primary absolute -top-2.25 left-0 h-5 w-px animate-pulse opacity-80" />
-        <span className="bg-primary absolute top-0 -left-2.25 h-px w-5 animate-pulse opacity-80" />
-        <span className="bg-primary absolute right-0 -bottom-2.25 h-5 w-px animate-pulse opacity-80" />
-        <span className="bg-primary absolute -right-2.25 bottom-0 h-px w-5 animate-pulse opacity-80" />
+        <span className="absolute -top-2.25 left-0 h-5 w-px animate-pulse bg-primary opacity-80" />
+        <span className="absolute top-0 -left-2.25 h-px w-5 animate-pulse bg-primary opacity-80" />
+        <span className="absolute right-0 -bottom-2.25 h-5 w-px animate-pulse bg-primary opacity-80" />
+        <span className="absolute -right-2.25 bottom-0 h-px w-5 animate-pulse bg-primary opacity-80" />
         <span className="absolute top-0 right-0 size-24 rounded-tr-[9.4rem] border-t border-r opacity-80" />
         <span className="absolute top-0 left-0 size-24 rounded-tl-[9.4rem] border-t border-l opacity-80" />
 
-        <span className="bg-secondary text-primary/90 mb-2 flex h-8 items-center rounded-full border px-3 py-1 text-sm font-medium">
+        <span className="mb-2 flex h-8 items-center rounded-full border bg-secondary px-3 py-1 text-sm font-medium text-primary/90">
           Production-Ready SaaS Template
         </span>
         <h1 className="text-center text-3xl leading-tight font-semibold text-wrap md:text-5xl">
           Launch in days, not months.
         </h1>
-        <p className="text-muted-foreground max-w-xl text-center text-xl text-pretty md:text-2xl">
+        <p className="max-w-xl text-center text-xl text-pretty text-muted-foreground md:text-2xl">
           Everything you need: authentication, subscriptions, team management,
           and edge infrastructure.
         </p>
@@ -234,7 +235,7 @@ function RouteComponent() {
       <div className="relative flex w-full flex-col items-start justify-center gap-4 border p-12 py-16">
         <div className="absolute inset-4 -z-10">
           <svg
-            className="text-primary/10 pointer-events-none absolute inset-0"
+            className="pointer-events-none absolute inset-0 text-primary/10"
             width="100%"
             height="100%"
           >
@@ -256,7 +257,7 @@ function RouteComponent() {
         <h1 className="text-2xl leading-tight font-semibold text-wrap lg:text-3xl">
           All-in-one.
         </h1>
-        <p className="text-muted-foreground text-2xl leading-normal font-medium text-wrap sm:max-w-[80%] lg:text-3xl">
+        <p className="text-2xl leading-normal font-medium text-wrap text-muted-foreground sm:max-w-[80%] lg:text-3xl">
           Build with{" "}
           <a
             href="https://ui.shadcn.com"
@@ -272,13 +273,13 @@ function RouteComponent() {
               strokeWidth={32}
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
               <line x1="208" y1="128" x2="128" y2="208" />
               <line x1="192" y1="40" x2="40" y2="192" />
             </svg>
-            <span className="text-primary font-semibold">Shadcn</span>
+            <span className="font-semibold text-primary">Shadcn</span>
           </a>{" "}
           components on{" "}
           <a
@@ -293,13 +294,13 @@ function RouteComponent() {
               height="24"
               viewBox="0 0 17 24"
               fill="currentColor"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
               <path d="M9.5001 7.01537C9.2245 6.99837 9 7.22385 9 7.49999V23C13.4183 23 17 19.4183 17 15C17 10.7497 13.6854 7.27351 9.5001 7.01537Z" />
               <path d="M8 9.8V12V23C3.58172 23 0 19.0601 0 14.2V12V1C4.41828 1 8 4.93989 8 9.8Z" />
             </svg>
-            <span className="text-primary font-semibold">Base UI</span>
+            <span className="font-semibold text-primary">Base UI</span>
           </a>
           , authenticate users with{" "}
           <a
@@ -311,14 +312,14 @@ function RouteComponent() {
             <svg
               viewBox="69 121 361 259"
               fill="currentColor"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
               <path d="M69 121h86.988v259H69zM337.575 121H430v259h-92.425z" />
               <path d="M427.282 121v83.456h-174.52V121zM430 296.544V380H252.762v-83.456z" />
               <path d="M252.762 204.455v92.089h-96.774v-92.089z" />
             </svg>
-            <span className="text-primary font-semibold">Better-Auth</span>
+            <span className="font-semibold text-primary">Better-Auth</span>
           </a>
           , monetize through{" "}
           <a
@@ -331,7 +332,7 @@ function RouteComponent() {
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 32 32"
-                className="text-primary size-6"
+                className="size-6 text-primary"
                 fill="currentColor"
               >
                 <path
@@ -344,7 +345,7 @@ function RouteComponent() {
                   fillRule="evenodd"
                 />
               </svg>
-              <span className="text-primary font-semibold">Stripe</span>
+              <span className="font-semibold text-primary">Stripe</span>
             </span>
           </a>
           , and productionize with{" "}
@@ -357,16 +358,32 @@ function RouteComponent() {
             <svg
               viewBox="0 0 32 32"
               fill="currentColor"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
-              <path fillRule="evenodd" clipRule="evenodd" d="M29.8022 24.317C30.2747 24.05 30.4361 23.4582 30.1636 22.9953C29.891 22.5329 29.2873 22.3741 28.8148 22.6411L15.9211 29.9362L3.07463 22.6683C2.60281 22.4012 1.999 22.5594 1.72597 23.0225C1.45347 23.4854 1.61541 24.077 2.08741 24.3441L15.3897 31.8698C15.5053 31.9353 15.6327 31.9771 15.7645 31.9929C15.8963 32.0087 16.0299 31.9981 16.1576 31.9617C16.278 31.9433 16.3941 31.9031 16.5002 31.8431L29.8022 24.317Z" />
-              <path fillRule="evenodd" clipRule="evenodd" d="M31.1298 16.6012C31.1974 16.1929 31.0061 15.7675 30.6177 15.5488L16.555 7.63105C16.4443 7.56873 16.3234 7.52682 16.198 7.50732C16.0631 7.46888 15.922 7.45758 15.7827 7.47405C15.6434 7.49053 15.5088 7.53446 15.3865 7.60332L1.32289 15.5214C0.913972 15.7518 0.723686 16.2117 0.824499 16.6391C0.780205 16.9913 0.91787 17.3598 1.32768 17.5916L15.3904 25.5478C15.5127 25.6169 15.6475 25.661 15.7869 25.6776C15.9263 25.6942 16.0675 25.6829 16.2026 25.6445C16.3297 25.6253 16.4522 25.583 16.5642 25.5197L30.6275 17.563C31.0408 17.329 31.1776 16.9562 31.1298 16.6012ZM28.2266 16.5591L15.9459 9.64453L3.67206 16.5554L15.9528 23.5034L28.2266 16.5591Z" />
-              <path fillRule="evenodd" clipRule="evenodd" d="M31.3429 10.6097C31.8677 10.3131 32.0476 9.65608 31.7442 9.14178C31.4416 8.62819 30.7712 8.45201 30.2464 8.74854L15.9269 16.8501L1.66063 8.77876C1.13584 8.48152 0.465408 8.65787 0.162793 9.172C-0.14053 9.68541 0.0391253 10.3432 0.564095 10.6397L15.337 18.9976C15.4654 19.0702 15.607 19.1165 15.7534 19.1339C15.8998 19.1514 16.0482 19.1395 16.19 19.0991C16.3236 19.0791 16.4524 19.0347 16.5701 18.9681L31.3429 10.6097Z" />
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M29.8022 24.317C30.2747 24.05 30.4361 23.4582 30.1636 22.9953C29.891 22.5329 29.2873 22.3741 28.8148 22.6411L15.9211 29.9362L3.07463 22.6683C2.60281 22.4012 1.999 22.5594 1.72597 23.0225C1.45347 23.4854 1.61541 24.077 2.08741 24.3441L15.3897 31.8698C15.5053 31.9353 15.6327 31.9771 15.7645 31.9929C15.8963 32.0087 16.0299 31.9981 16.1576 31.9617C16.278 31.9433 16.3941 31.9031 16.5002 31.8431L29.8022 24.317Z"
+              />
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M31.1298 16.6012C31.1974 16.1929 31.0061 15.7675 30.6177 15.5488L16.555 7.63105C16.4443 7.56873 16.3234 7.52682 16.198 7.50732C16.0631 7.46888 15.922 7.45758 15.7827 7.47405C15.6434 7.49053 15.5088 7.53446 15.3865 7.60332L1.32289 15.5214C0.913972 15.7518 0.723686 16.2117 0.824499 16.6391C0.780205 16.9913 0.91787 17.3598 1.32768 17.5916L15.3904 25.5478C15.5127 25.6169 15.6475 25.661 15.7869 25.6776C15.9263 25.6942 16.0675 25.6829 16.2026 25.6445C16.3297 25.6253 16.4522 25.583 16.5642 25.5197L30.6275 17.563C31.0408 17.329 31.1776 16.9562 31.1298 16.6012ZM28.2266 16.5591L15.9459 9.64453L3.67206 16.5554L15.9528 23.5034L28.2266 16.5591Z"
+              />
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M31.3429 10.6097C31.8677 10.3131 32.0476 9.65608 31.7442 9.14178C31.4416 8.62819 30.7712 8.45201 30.2464 8.74854L15.9269 16.8501L1.66063 8.77876C1.13584 8.48152 0.465408 8.65787 0.162793 9.172C-0.14053 9.68541 0.0391253 10.3432 0.564095 10.6397L15.337 18.9976C15.4654 19.0702 15.607 19.1165 15.7534 19.1339C15.8998 19.1514 16.0482 19.1395 16.19 19.0991C16.3236 19.0791 16.4524 19.0347 16.5701 18.9681L31.3429 10.6097Z"
+              />
               <path d="M2.7403 9.6795L15.8991 1.62024L29.0577 9.67879L15.8989 17.2013L2.7403 9.6795Z" />
-              <path fillRule="evenodd" clipRule="evenodd" d="M31.3255 8.49027C31.8513 8.78627 32.0333 9.44279 31.7325 9.95692C31.4307 10.4707 30.7603 10.6474 30.2344 10.3514L15.9128 2.28787L1.64317 10.3224C1.11731 10.6184 0.44688 10.4415 0.145328 9.92794C-0.15587 9.41381 0.0262664 8.75729 0.55159 8.46129L15.325 0.143725C15.4534 0.0713274 15.5949 0.0251207 15.7412 0.00776107C15.8875 -0.00959854 16.0358 0.00223134 16.1775 0.0425706C16.3093 0.0631109 16.4364 0.107185 16.5526 0.172702L31.3255 8.49027Z" />
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M31.3255 8.49027C31.8513 8.78627 32.0333 9.44279 31.7325 9.95692C31.4307 10.4707 30.7603 10.6474 30.2344 10.3514L15.9128 2.28787L1.64317 10.3224C1.11731 10.6184 0.44688 10.4415 0.145328 9.92794C-0.15587 9.41381 0.0262664 8.75729 0.55159 8.46129L15.325 0.143725C15.4534 0.0713274 15.5949 0.0251207 15.7412 0.00776107C15.8875 -0.00959854 16.0358 0.00223134 16.1775 0.0425706C16.3093 0.0631109 16.4364 0.107185 16.5526 0.172702L31.3255 8.49027Z"
+              />
             </svg>
-            <span className="text-primary font-semibold">Effect</span>
+            <span className="font-semibold text-primary">Effect</span>
           </a>
           .
         </p>
@@ -375,7 +392,7 @@ function RouteComponent() {
         <div className="absolute inset-0 isolate -z-10 overflow-hidden">
           <div className="absolute inset-y-0 left-1/2 w-300 -translate-x-1/2 mask-[linear-gradient(black,transparent_320px),linear-gradient(90deg,transparent,black_5%,black_95%,transparent)] mask-intersect">
             <svg
-              className="text-primary/10 pointer-events-none absolute inset-0"
+              className="pointer-events-none absolute inset-0 text-primary/10"
               width="100%"
               height="100%"
             >
@@ -404,13 +421,13 @@ function RouteComponent() {
             <div className="absolute -inset-16 bg-[conic-gradient(from_90deg,#22d3ee_5deg,#38bdf8_63deg,#2563eb_115deg,#0ea5e9_170deg,#22d3ee_220deg,#38bdf8_286deg,#22d3ee_360deg)] mix-blend-overlay blur-[50px] grayscale saturate-[2]" />
           </div>
         </div>
-        <span className="text-primary/90 flex h-8 items-center rounded-full text-sm font-medium">
+        <span className="flex h-8 items-center rounded-full text-sm font-medium text-primary/90">
           Open Source & Free
         </span>
         <h1 className="text-center text-3xl leading-tight font-semibold text-wrap md:text-5xl">
           Ready to build your next SaaS?
         </h1>
-        <p className="text-muted-foreground max-w-xl text-center text-xl leading-relaxed md:text-2xl">
+        <p className="max-w-xl text-center text-xl leading-relaxed text-muted-foreground md:text-2xl">
           Start your project in minutes, support us on GitHub and jump straight
           into the code.
         </p>
@@ -433,7 +450,7 @@ function RouteComponent() {
               Star on Github
             </Button>
           </div>
-          <p className="text-muted-foreground text-sm">MIT licensed.</p>
+          <p className="text-sm text-muted-foreground">MIT licensed.</p>
         </div>
       </div>
     </div>

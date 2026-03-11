@@ -1,5 +1,6 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+
 import { extractSessionCookie, resetDb } from "../test-utils";
 
 async function signInMagicLink({ email }: { email: string }) {

@@ -214,7 +214,8 @@ export const InvitationWithOrganizationAndInviter = Invitation.pipe(
     inviter: User,
   }),
 );
-export type InvitationWithOrganizationAndInviter = typeof InvitationWithOrganizationAndInviter.Type;
+export type InvitationWithOrganizationAndInviter =
+  typeof InvitationWithOrganizationAndInviter.Type;
 
 export const SessionWithUser = Session.pipe(
   Schema.fieldsAssign({

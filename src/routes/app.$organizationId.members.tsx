@@ -3,6 +3,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -134,19 +135,20 @@ const leaveOrganization = createServerFn({ method: "POST" })
  */
 const updateMemberRole = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(updateMemberRoleSchema))
-  .handler(({ data: { organizationId, memberId, role }, context: { runEffect } }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const request = yield* Request;
-        const auth = yield* Auth;
-        yield* Effect.tryPromise(() =>
-          auth.api.updateMemberRole({
-            headers: request.headers,
-            body: { role, memberId, organizationId },
-          }),
-        );
-      }),
-    ),
+  .handler(
+    ({ data: { organizationId, memberId, role }, context: { runEffect } }) =>
+      runEffect(
+        Effect.gen(function* () {
+          const request = yield* Request;
+          const auth = yield* Auth;
+          yield* Effect.tryPromise(() =>
+            auth.api.updateMemberRole({
+              headers: request.headers,
+              body: { role, memberId, organizationId },
+            }),
+          );
+        }),
+      ),
   );
 
 function RouteComponent() {
@@ -156,7 +158,7 @@ function RouteComponent() {
     <div className="flex flex-col gap-8 p-6">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Members</h1>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-muted-foreground">
           Manage organization members and control access to your organization.
         </p>
       </header>
@@ -181,7 +183,7 @@ function RouteComponent() {
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-muted-foreground">
               No members have been added to this organization yet.
             </p>
           )}

@@ -10,6 +10,7 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { AlertCircle } from "lucide-react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,7 +94,7 @@ function RouteComponent() {
     <div className="flex flex-col gap-8 p-6">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Invitations</h1>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-muted-foreground">
           Invite new members and manage your invitations.
         </p>
       </header>
@@ -122,7 +123,7 @@ function RouteComponent() {
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-muted-foreground">
               No invitations have been sent for this organization yet.
             </p>
           )}
@@ -155,39 +156,41 @@ const invitationIdSchema = Schema.Struct({ invitationId: Schema.String });
  */
 const invite = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(inviteSchema))
-  .handler(({ data: { organizationId, emails, role }, context: { runEffect } }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const request = yield* Request;
-        const auth = yield* Auth;
-        const repository = yield* Repository;
-        for (const email of emails) {
-          const result = yield* Effect.tryPromise(() =>
-            auth.api.createInvitation({
-              headers: request.headers,
-              body: {
-                email,
-                role,
-                organizationId,
-                resend: true,
-              },
-            }),
-          );
-          // Workaround for better-auth createInvitation role bug.
-          // Occurs when a pending invitation exists and a new invitation is created with a different role.
-          if (result.role !== role) {
-            yield* Effect.logInfo(
-              "auth.invitation.roleMismatchWorkaround",
-              { expectedRole: role, actualRole: result.role, invitationId: result.id },
+  .handler(
+    ({ data: { organizationId, emails, role }, context: { runEffect } }) =>
+      runEffect(
+        Effect.gen(function* () {
+          const request = yield* Request;
+          const auth = yield* Auth;
+          const repository = yield* Repository;
+          for (const email of emails) {
+            const result = yield* Effect.tryPromise(() =>
+              auth.api.createInvitation({
+                headers: request.headers,
+                body: {
+                  email,
+                  role,
+                  organizationId,
+                  resend: true,
+                },
+              }),
             );
-            yield* repository.updateInvitationRole({
-              invitationId: result.id,
-              role,
-            });
+            // Workaround for better-auth createInvitation role bug.
+            // Occurs when a pending invitation exists and a new invitation is created with a different role.
+            if (result.role !== role) {
+              yield* Effect.logInfo("auth.invitation.roleMismatchWorkaround", {
+                expectedRole: role,
+                actualRole: result.role,
+                invitationId: result.id,
+              });
+              yield* repository.updateInvitationRole({
+                invitationId: result.id,
+                role,
+              });
+            }
           }
-        }
-      }),
-    ),
+        }),
+      ),
   );
 
 function InviteForm({ organizationId }: { organizationId: string }) {

@@ -1,4 +1,5 @@
 import * as React from "react";
+
 import { useMutation } from "@tanstack/react-query";
 import {
   createFileRoute,
@@ -11,6 +12,7 @@ import { Effect } from "effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -142,14 +144,14 @@ function RouteComponent() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center py-12">
       <div className="relative flex w-full flex-col items-center justify-center gap-4 border px-6 py-48">
-        <span className="bg-primary absolute -top-2.25 left-0 h-5 w-px animate-pulse opacity-80" />
-        <span className="bg-primary absolute top-0 -left-2.25 h-px w-5 animate-pulse opacity-80" />
-        <span className="bg-primary absolute right-0 -bottom-2.25 h-5 w-px animate-pulse opacity-80" />
-        <span className="bg-primary absolute -right-2.25 bottom-0 h-px w-5 animate-pulse opacity-80" />
+        <span className="absolute -top-2.25 left-0 h-5 w-px animate-pulse bg-primary opacity-80" />
+        <span className="absolute top-0 -left-2.25 h-px w-5 animate-pulse bg-primary opacity-80" />
+        <span className="absolute right-0 -bottom-2.25 h-5 w-px animate-pulse bg-primary opacity-80" />
+        <span className="absolute -right-2.25 bottom-0 h-px w-5 animate-pulse bg-primary opacity-80" />
         <div className="absolute inset-0 isolate -z-10 overflow-hidden">
           <div className="absolute inset-y-0 left-1/2 w-300 -translate-x-1/2 mask-[linear-gradient(black,transparent_320px),linear-gradient(90deg,transparent,black_5%,black_95%,transparent)] mask-intersect">
             <svg
-              className="text-primary/10 pointer-events-none absolute inset-0"
+              className="pointer-events-none absolute inset-0 text-primary/10"
               width="100%"
               height="100%"
             >
@@ -182,7 +184,7 @@ function RouteComponent() {
         <h1 className="text-center text-3xl leading-tight font-semibold text-wrap md:text-5xl">
           Find the perfect plan for you.
         </h1>
-        <p className="text-muted-foreground text-center text-xl text-pretty">
+        <p className="text-center text-xl text-pretty text-muted-foreground">
           Simple and transparent pricing. No hidden fees, no surprises.
         </p>
       </div>
@@ -194,7 +196,7 @@ function RouteComponent() {
               "repeating-linear-gradient(45deg, var(--muted) 0px, var(--muted) 1px, transparent 1px, transparent 5px)",
           }}
         />
-        <div className="bg-secondary absolute -top-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-6 rounded-full p-2 px-3">
+        <div className="absolute -top-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-6 rounded-full bg-secondary p-2 px-3">
           <span className="text-sm font-medium">Monthly</span>
           <Switch
             checked={isAnnual}
@@ -237,7 +239,7 @@ function RouteComponent() {
                 </p>
                 <div className="relative flex items-end">
                   <span className="text-4xl font-semibold">${price}</span>
-                  <span className="text-muted-foreground text-2xl">
+                  <span className="text-2xl text-muted-foreground">
                     {isAnnual ? "/yr" : "/mo"}
                   </span>
                 </div>
@@ -272,7 +274,7 @@ function RouteComponent() {
       <div className="relative flex w-full flex-col items-start justify-center gap-4 border border-t-0 p-12 py-16">
         <div className="absolute inset-4 -z-10">
           <svg
-            className="text-primary/10 pointer-events-none absolute inset-0"
+            className="pointer-events-none absolute inset-0 text-primary/10"
             width="100%"
             height="100%"
           >
@@ -294,7 +296,7 @@ function RouteComponent() {
         <h1 className="text-2xl leading-tight font-semibold text-wrap lg:text-3xl">
           Get started with TCES.
         </h1>
-        <p className="text-muted-foreground text-2xl leading-normal font-medium text-wrap sm:max-w-[80%] lg:text-3xl">
+        <p className="text-2xl leading-normal font-medium text-wrap text-muted-foreground sm:max-w-[80%] lg:text-3xl">
           Build with{" "}
           <a
             href="https://ui.shadcn.com/"
@@ -310,13 +312,13 @@ function RouteComponent() {
               strokeWidth={32}
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
               <line x1="208" y1="128" x2="128" y2="208" />
               <line x1="192" y1="40" x2="40" y2="192" />
             </svg>
-            <span className="text-primary font-semibold">Shadcn</span>
+            <span className="font-semibold text-primary">Shadcn</span>
           </a>{" "}
           components on{" "}
           <a
@@ -331,13 +333,13 @@ function RouteComponent() {
               height="24"
               viewBox="0 0 17 24"
               fill="currentColor"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
               <path d="M9.5001 7.01537C9.2245 6.99837 9 7.22385 9 7.49999V23C13.4183 23 17 19.4183 17 15C17 10.7497 13.6854 7.27351 9.5001 7.01537Z" />
               <path d="M8 9.8V12V23C3.58172 23 0 19.0601 0 14.2V12V1C4.41828 1 8 4.93989 8 9.8Z" />
             </svg>
-            <span className="text-primary font-semibold">Base UI</span>
+            <span className="font-semibold text-primary">Base UI</span>
           </a>
           , authenticate users with{" "}
           <a
@@ -349,14 +351,14 @@ function RouteComponent() {
             <svg
               viewBox="69 121 361 259"
               fill="currentColor"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
               <path d="M69 121h86.988v259H69zM337.575 121H430v259h-92.425z" />
               <path d="M427.282 121v83.456h-174.52V121zM430 296.544V380H252.762v-83.456z" />
               <path d="M252.762 204.455v92.089h-96.774v-92.089z" />
             </svg>
-            <span className="text-primary font-semibold">Better-Auth</span>
+            <span className="font-semibold text-primary">Better-Auth</span>
           </a>
           , monetize through{" "}
           <a
@@ -369,7 +371,7 @@ function RouteComponent() {
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 32 32"
-                className="text-primary size-6"
+                className="size-6 text-primary"
                 fill="currentColor"
               >
                 <path
@@ -382,7 +384,7 @@ function RouteComponent() {
                   fillRule="evenodd"
                 />
               </svg>
-              <span className="text-primary font-semibold">Stripe</span>
+              <span className="font-semibold text-primary">Stripe</span>
             </span>
           </a>
           , and productionize with{" "}
@@ -395,7 +397,7 @@ function RouteComponent() {
             <svg
               viewBox="0 0 32 32"
               fill="currentColor"
-              className="text-primary size-6"
+              className="size-6 text-primary"
               aria-hidden="true"
             >
               <path
@@ -420,7 +422,7 @@ function RouteComponent() {
                 d="M31.3255 8.49027C31.8513 8.78627 32.0333 9.44279 31.7325 9.95692C31.4307 10.4707 30.7603 10.6474 30.2344 10.3514L15.9128 2.28787L1.64317 10.3224C1.11731 10.6184 0.44688 10.4415 0.145328 9.92794C-0.15587 9.41381 0.0262664 8.75729 0.55159 8.46129L15.325 0.143725C15.4534 0.0713274 15.5949 0.0251207 15.7412 0.00776107C15.8875 -0.00959854 16.0358 0.00223134 16.1775 0.0425706C16.3093 0.0631109 16.4364 0.107185 16.5526 0.172702L31.3255 8.49027Z"
               />
             </svg>
-            <span className="text-primary font-semibold">Effect</span>
+            <span className="font-semibold text-primary">Effect</span>
           </a>
           .
         </p>

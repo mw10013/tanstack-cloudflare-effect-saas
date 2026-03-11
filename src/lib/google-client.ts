@@ -1,8 +1,9 @@
+import type * as HttpClientError from "effect/unstable/http/HttpClientError";
+
 import { Data, Effect } from "effect";
 import * as Schema from "effect/Schema";
-import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpBody from "effect/unstable/http/HttpBody";
-import type * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
@@ -20,14 +21,18 @@ const GoogleApiErrorBody = Schema.Struct({
   }),
 });
 
-const toGoogleApiError = (error: HttpClientError.HttpClientError): Effect.Effect<never, GoogleApiError> => {
+const toGoogleApiError = (
+  error: HttpClientError.HttpClientError,
+): Effect.Effect<never, GoogleApiError> => {
   const fallback = new GoogleApiError({
     code: error.response?.status ?? 0,
     message: error.message,
   });
   if (!error.response) return Effect.fail(fallback);
   return error.response.json.pipe(
-    Effect.flatMap((json) => Schema.decodeUnknownEffect(GoogleApiErrorBody)(json)),
+    Effect.flatMap((json) =>
+      Schema.decodeUnknownEffect(GoogleApiErrorBody)(json),
+    ),
     Effect.flatMap(({ error: e }) => Effect.fail(new GoogleApiError(e))),
     Effect.mapError(() => fallback),
   );
@@ -66,7 +71,9 @@ const SheetsAppendResponse = Schema.Struct({
   ),
 });
 
-const fetchGoogle = <S extends Schema.Top & { readonly DecodingServices: never }>(
+const fetchGoogle = <
+  S extends Schema.Top & { readonly DecodingServices: never },
+>(
   request: HttpClientRequest.HttpClientRequest,
   schema: S,
 ) =>

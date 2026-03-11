@@ -5,6 +5,7 @@ import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Config, Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +35,9 @@ const getLoaderData = createServerFn({ method: "GET" }).handler(
   ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const demoMode = yield* Config.boolean("DEMO_MODE").pipe(Config.withDefault(false));
+        const demoMode = yield* Config.boolean("DEMO_MODE").pipe(
+          Config.withDefault(false),
+        );
         return { isDemoMode: demoMode };
       }),
     ),
@@ -53,7 +56,9 @@ export const login = createServerFn({
       Effect.gen(function* () {
         const request = yield* Request;
         const auth = yield* Auth;
-        const demoMode = yield* Config.boolean("DEMO_MODE").pipe(Config.withDefault(false));
+        const demoMode = yield* Config.boolean("DEMO_MODE").pipe(
+          Config.withDefault(false),
+        );
 
         const result = yield* Effect.tryPromise(() =>
           auth.api.signInMagicLink({

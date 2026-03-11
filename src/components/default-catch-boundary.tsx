@@ -1,5 +1,7 @@
 import type { ErrorComponentProps } from "@tanstack/react-router";
+
 import { useState } from "react";
+
 import { Link, rootRouteId, useMatch, useRouter } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -10,6 +12,7 @@ import {
   Mail,
   RefreshCw,
 } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,12 +50,12 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
       <Card className="w-full max-w-2xl">
         <CardHeader>
           <div className="flex items-center space-x-2">
-            <div className="bg-destructive/10 flex h-10 w-10 items-center justify-center rounded-full">
-              <AlertTriangle className="text-destructive h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
             </div>
             <div>
               <CardTitle className="text-xl">Something went wrong</CardTitle>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-sm text-muted-foreground">
                 We encountered an unexpected error. Please try again.
               </p>
             </div>
@@ -104,7 +107,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
               <CollapsibleTrigger>
                 <button
                   type="button"
-                  className="text-muted-foreground hover:text-foreground flex items-center gap-2 text-sm"
+                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
                 >
                   <Bug className="size-4" />
                   Technical Details
@@ -114,11 +117,11 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
                 </button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-2">
-                <div className="bg-muted rounded-lg p-4">
+                <div className="rounded-lg bg-muted p-4">
                   <h4 className="mb-2 text-sm font-medium">
                     Error Stack Trace:
                   </h4>
-                  <pre className="text-muted-foreground max-h-40 overflow-y-auto text-xs break-words whitespace-pre-wrap">
+                  <pre className="max-h-40 overflow-y-auto text-xs break-words whitespace-pre-wrap text-muted-foreground">
                     {errorStack}
                   </pre>
                 </div>
@@ -128,7 +131,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
 
           <div className="border-t pt-4">
             <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-              <div className="text-muted-foreground text-sm">
+              <div className="text-sm text-muted-foreground">
                 If this error persists, please report it to our support team.
               </div>
               <Button

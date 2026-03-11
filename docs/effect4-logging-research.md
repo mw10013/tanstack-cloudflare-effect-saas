@@ -138,13 +138,15 @@ For Promise APIs in callbacks, wrap with `Effect.tryPromise` and `yield*`:
 ```ts
 sendMagicLink: (data) =>
   runEffect(
-    Effect.gen(function*() {
-      yield* Effect.logInfo("sendMagicLink", { email: data.email })
-      yield* Effect.tryPromise(() => kv.put("demo:magicLink", data.url, { expirationTtl: 60 }))
+    Effect.gen(function* () {
+      yield* Effect.logInfo("sendMagicLink", { email: data.email });
+      yield* Effect.tryPromise(() =>
+        kv.put("demo:magicLink", data.url, { expirationTtl: 60 }),
+      );
     }).pipe(
-      Effect.annotateLogs({ service: "better-auth", hook: "sendMagicLink" })
-    )
-  )
+      Effect.annotateLogs({ service: "better-auth", hook: "sendMagicLink" }),
+    ),
+  );
 ```
 
 Grounding:
@@ -154,12 +156,20 @@ Grounding:
 ### Suggested logger layer strategy
 
 ```ts
-const LoggerLayer = Layer.unwrap(Effect.gen(function*() {
-  const env = yield* Config.string("NODE_ENV").pipe(Config.withDefault("development"))
-  return env === "production"
-    ? Logger.layer([Logger.consoleJson, Logger.tracerLogger], { mergeWithExisting: false })
-    : Logger.layer([Logger.consolePretty(), Logger.tracerLogger], { mergeWithExisting: false })
-}))
+const LoggerLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const env = yield* Config.string("NODE_ENV").pipe(
+      Config.withDefault("development"),
+    );
+    return env === "production"
+      ? Logger.layer([Logger.consoleJson, Logger.tracerLogger], {
+          mergeWithExisting: false,
+        })
+      : Logger.layer([Logger.consolePretty(), Logger.tracerLogger], {
+          mergeWithExisting: false,
+        });
+  }),
+);
 ```
 
 Notes:
@@ -200,13 +210,17 @@ Suggested bootstrap shape:
 const loggerLayer =
   env.ENVIRONMENT === "production"
     ? Layer.merge(
-        Logger.layer([Logger.consoleJson, Logger.tracerLogger], { mergeWithExisting: false }),
-        Layer.succeed(References.MinimumLogLevel, "Info")
+        Logger.layer([Logger.consoleJson, Logger.tracerLogger], {
+          mergeWithExisting: false,
+        }),
+        Layer.succeed(References.MinimumLogLevel, "Info"),
       )
     : Layer.merge(
-        Logger.layer([Logger.consolePretty(), Logger.tracerLogger], { mergeWithExisting: false }),
-        Layer.succeed(References.MinimumLogLevel, "Debug")
-      )
+        Logger.layer([Logger.consolePretty(), Logger.tracerLogger], {
+          mergeWithExisting: false,
+        }),
+        Layer.succeed(References.MinimumLogLevel, "Debug"),
+      );
 ```
 
 Then compose this into the layer passed to `Effect.provide(..., layer)` inside `makeRunEffect`.
@@ -267,10 +281,10 @@ Pattern A: pure log callback
 ```ts
 onSubscriptionUpdate: ({ subscription }) =>
   runEffect(
-    Effect.logInfo("stripe plugin: onSubscriptionUpdate", { subscriptionId: subscription.id }).pipe(
-      Effect.annotateLogs({ hook: "stripe.onSubscriptionUpdate" })
-    )
-  )
+    Effect.logInfo("stripe plugin: onSubscriptionUpdate", {
+      subscriptionId: subscription.id,
+    }).pipe(Effect.annotateLogs({ hook: "stripe.onSubscriptionUpdate" })),
+  );
 ```
 
 Pattern B: log + Promise side effect
@@ -278,13 +292,13 @@ Pattern B: log + Promise side effect
 ```ts
 sendMagicLink: (data) =>
   runEffect(
-    Effect.gen(function*() {
-      yield* Effect.logInfo("sendMagicLink", { email: data.email })
-      yield* Effect.tryPromise(() => kv.put("demo:magicLink", data.url, { expirationTtl: 60 }))
-    }).pipe(
-      Effect.annotateLogs({ hook: "magicLink.sendMagicLink" })
-    )
-  )
+    Effect.gen(function* () {
+      yield* Effect.logInfo("sendMagicLink", { email: data.email });
+      yield* Effect.tryPromise(() =>
+        kv.put("demo:magicLink", data.url, { expirationTtl: 60 }),
+      );
+    }).pipe(Effect.annotateLogs({ hook: "magicLink.sendMagicLink" })),
+  );
 ```
 
 Grounding:

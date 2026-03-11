@@ -1,6 +1,8 @@
 import type { Page } from "@playwright/test";
+
 import { invariant } from "@epic-web/invariant";
 import { expect, test } from "@playwright/test";
+
 import { scopeEmail } from "./utils";
 
 test.describe("invite", () => {

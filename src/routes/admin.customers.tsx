@@ -1,9 +1,11 @@
 import * as React from "react";
+
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { ChevronLeftIcon, ChevronRightIcon, Search } from "lucide-react";
+
 import {
   InputGroup,
   InputGroupAddon,
@@ -96,7 +98,7 @@ function RouteComponent() {
     <div className="flex flex-col gap-8 p-6">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-muted-foreground">
           Manage your customers and subscriptions.
         </p>
       </header>
@@ -183,7 +185,7 @@ function RouteComponent() {
               </PaginationItem>
             ) : (
               <PaginationItem>
-                <span className="text-muted-foreground inline-flex h-9 items-center px-4 py-2">
+                <span className="inline-flex h-9 items-center px-4 py-2 text-muted-foreground">
                   <ChevronLeftIcon className="mr-1 size-4" />
                   <span className="hidden sm:inline">Previous</span>
                 </span>
@@ -223,7 +225,7 @@ function RouteComponent() {
               </PaginationItem>
             ) : (
               <PaginationItem>
-                <span className="text-muted-foreground inline-flex h-9 items-center px-4 py-2">
+                <span className="inline-flex h-9 items-center px-4 py-2 text-muted-foreground">
                   <span className="hidden sm:inline">Next</span>
                   <ChevronRightIcon className="ml-1 size-4" />
                 </span>

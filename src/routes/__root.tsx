@@ -1,5 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
+
 import * as React from "react";
+
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import {
   createRootRouteWithContext,
@@ -9,17 +11,21 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { createServerFn } from "@tanstack/react-start";
-import { Config, Effect } from "effect";
 import { ThemeProvider } from "better-themes";
+import { Config, Effect } from "effect";
+
 import { DefaultCatchBoundary } from "@/components/default-catch-boundary";
 import { NotFound } from "@/components/not-found";
+
 import appCss from "../styles.css?url";
 
 const getAnalyticsToken = createServerFn({ method: "GET" }).handler(
   ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const analyticsToken = yield* Config.string("ANALYTICS_TOKEN").pipe(Config.withDefault(""));
+        const analyticsToken = yield* Config.string("ANALYTICS_TOKEN").pipe(
+          Config.withDefault(""),
+        );
         return { analyticsToken };
       }),
     ),
@@ -66,7 +72,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="bg-background text-foreground font-sans antialiased">
+      <body className="bg-background font-sans text-foreground antialiased">
         <ThemeProvider attribute="class" disableTransitionOnChange>
           {children}
         </ThemeProvider>
