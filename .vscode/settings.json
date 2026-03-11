@@ -8,5 +8,8 @@
   "files.readonlyInclude": {
     "**/routeTree.gen.ts": true
   },
-  "tailwindCSS.classFunctions": ["tw", "twMerge", "twJoin", "cva", "cn"]
+  "tailwindCSS.classFunctions": ["tw", "twMerge", "twJoin", "cva", "cn"],
+  "oxc.fmt.configPath": ".oxfmtrc.json",
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.formatOnSave": true
 }
