@@ -7,29 +7,24 @@ This document explains how pnpm manages Node versions, how Node ships with npm, 
 ## How Node Ships with npm
 
 - **Node includes npm**: Every Node.js installation includes npm by default
-- **Corepack**: Node 14.19+ and 16.9+ include corepack, a version manager for package managers (yarn, pnpm)
 - **No standalone npm installation**: npm is bundled with Node - you don't install npm separately
 
 When you install Node (via pnpm env, nvm, or directly), you get:
 - The Node runtime (`node`)
 - npm CLI (`npm`)
-- corepack (`corepack`)
 
 ## pnpm as a Version Manager
 
 ### Installing pnpm
 
+**Important**: Do not rely on corepack for pnpm installation. Corepack will be removed from Node.js starting with v25 (see [Node.js corepack removal](https://github.com/nodejs/node/issues/51931)). Instead, install pnpm standalone using the official installer script:
+
 ```bash
-# Option 1: via corepack (recommended - comes with Node)
-corepack enable
-corepack prepare pnpm@latest --activate
-
-# Option 2: via npm
-npm install -g pnpm
-
-# Option 3: standalone script
+# Standalone script - installs to ~/.local/share/pnpm
 curl -f https://get.pnpm.io | sh -
 ```
+
+This is the recommended approach because it doesn't depend on npm/Node and works regardless of your current setup.
 
 ### Using pnpm env to Manage Node Versions
 
@@ -67,7 +62,7 @@ You can pin the pnpm version in your project's `package.json` using the `package
 }
 ```
 
-This uses corepack to enforce a specific pnpm version for the project. When someone runs `pnpm install`, corepack will ensure the correct version is used.
+When someone runs `pnpm install`, pnpm will auto-download and use that version.
 
 **Note**: The format must match:
 ```
@@ -78,6 +73,20 @@ For example:
 - `"pnpm@9.3.0"` ✓
 - `"pnpm@9"` ✗ (must be full semver)
 - `"pnpm@^9.3.0"` ✗
+
+### pnpm Settings Related to packageManager
+
+These settings control how pnpm handles the `packageManager` field. Set in `pnpm-workspace.yaml` or via `pnpm config`:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `managePackageManagerVersions` | `true` | Auto-download pnpm version from `packageManager` field |
+| `packageManagerStrict` | `true` | Fail if a different package manager is specified in `packageManager` |
+| `packageManagerStrictVersion` | `false` | Require exact version match (not just package name) |
+
+If you disable `managePackageManagerVersions`, pnpm won't automatically download the version specified in `packageManager`.
+
+**Warning**: corepack (which also reads `packageManager`) is being removed from Node.js v25. However, pnpm has its own implementation of `packageManager` handling via `managePackageManagerVersions`, so this field still works as long as you have pnpm installed via the standalone script.
 
 ## The npm Prefix Problem
 
@@ -172,4 +181,3 @@ npm i -g @openai/codex
 - pnpm config: https://pnpm.io/cli/config
 - pnpm env: https://pnpm.io/cli/env
 - pnpm settings: https://pnpm.io/settings
-- corepack: https://github.com/nodejs/corepack
