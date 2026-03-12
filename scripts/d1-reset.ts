@@ -4,18 +4,18 @@ import "zx/globals";
 
 const wranglerJsoncPaths = ["wrangler.jsonc"];
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+// oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const env = argv.env ?? "local";
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+// oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 const wranglerJsonc = await fs.readFile(wranglerJsoncPaths[0], "utf-8");
-// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+// oxlint-disable-next-line @typescript-eslint/no-unsafe-argument
 const wranglerJsoncTree = jsonc.parseTree(wranglerJsonc);
 if (!wranglerJsoncTree) {
   throw new Error(`Failed to parse jsonc: ${wranglerJsoncPaths[0]}`);
 }
 const nodeDatabaseName = jsonc.findNodeAtLocation(
   wranglerJsoncTree,
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  // oxlint-disable-next-line @typescript-eslint/no-unsafe-argument
   env === "local"
     ? ["d1_databases", 0, "database_name"]
     : ["env", env, "d1_databases", 0, "database_name"],
@@ -29,7 +29,7 @@ if (!databaseName) {
     `Failed to find database name in wrangler.jsonc: ${wranglerJsoncPaths[0]} for env: ${String(env)}`,
   );
 }
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+// oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment
 console.log({ env, databaseName });
 
 if (env === "local") {
@@ -74,27 +74,27 @@ console.log({ databaseId });
 
 for (const wranglerJsoncPath of wranglerJsoncPaths) {
   console.log({ wranglerJsoncPath });
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   const wranglerJsonc = await fs.readFile(wranglerJsoncPath, "utf-8");
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  // oxlint-disable-next-line @typescript-eslint/no-unsafe-argument
   const wranglerJsoncTree = jsonc.parseTree(wranglerJsonc);
   if (!wranglerJsoncTree) {
     throw new Error(`Failed to parse jsonc: ${wranglerJsoncPath}`);
   }
   const nodePath = ["env", env, "d1_databases", 0, "database_id"];
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  // oxlint-disable-next-line @typescript-eslint/no-unsafe-argument
   const nodeDatabaseId = jsonc.findNodeAtLocation(wranglerJsoncTree, nodePath);
   if (!nodeDatabaseId) {
     throw new Error(
       `Failed to find database_id in jsonc: ${wranglerJsoncPath}`,
     );
   }
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  // oxlint-disable-next-line @typescript-eslint/no-unsafe-argument
   const edit = jsonc.modify(wranglerJsonc, nodePath, databaseId, {});
   if (!Array.isArray(edit) || edit.length === 0) {
     throw new Error(`Failed to modify jsonc: ${wranglerJsoncPath}`);
   }
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument
+  // oxlint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument
   await fs.writeFile(wranglerJsoncPath, jsonc.applyEdits(wranglerJsonc, edit));
 }
 

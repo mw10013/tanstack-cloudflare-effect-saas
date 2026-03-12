@@ -66,7 +66,7 @@ export const Route = createFileRoute("/admin/subscriptions")({
   loader: async ({ deps }) => {
     const result = await getSubscriptions({ data: deps });
     if (deps.page > result.pageCount) {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      // oxlint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect({
         to: "/admin/subscriptions",
         search: { page: result.pageCount, filter: deps.filter },

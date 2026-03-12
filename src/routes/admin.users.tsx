@@ -105,7 +105,7 @@ export const Route = createFileRoute("/admin/users")({
   loader: async ({ deps }) => {
     const result = await getUsers({ data: deps });
     if (deps.page > result.pageCount) {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      // oxlint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect({
         to: "/admin/users",
         search: { page: result.pageCount, filter: deps.filter },

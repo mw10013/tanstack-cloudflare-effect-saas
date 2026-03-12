@@ -113,7 +113,7 @@ const makeHttpRunEffect = (env: Env, request: Request) => {
     );
     if (Exit.isSuccess(exit)) return exit.value;
     const squashed = Cause.squash(exit.cause);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error -- redirect is a Response, notFound is a plain object; TanStack expects these thrown as-is
+    // oxlint-disable-next-line @typescript-eslint/only-throw-error -- redirect is a Response, notFound is a plain object; TanStack expects these thrown as-is
     if (isRedirect(squashed) || isNotFound(squashed)) throw squashed;
     const pretty = Cause.pretty(exit.cause);
     if (squashed instanceof Error) {
