@@ -2,6 +2,10 @@
   "name": "tanstack-cloudflare-effect-saas",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "24.14.0"
+  },
+  "packageManager": "pnpm@10.17.1",
   "scripts": {
     "dev": "mkdir -p logs && source .env && vite dev --port $PORT --force 2>&1 | tee logs/server.log",
     "build": "vite build",
