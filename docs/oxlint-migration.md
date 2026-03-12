@@ -279,6 +279,7 @@ Delete `eslint.config.js`.
 ## Caveats
 
 - **JS Plugins are experimental**: most ESLint v9 plugins work, but not 100% API coverage yet. Custom parsers not supported.
+- **JS Plugin rules have no categories**: oxlint's category system (`correctness`, `suspicious`, etc.) only applies to native built-in plugins. JS plugin rules (e.g., TanStack router/query) must be individually configured with explicit severity in `rules` — they won't be picked up by `categories`.
 - **Type-aware linting**: uses `typescript-go` (TS7). Some legacy tsconfig options may not be supported. See [TS migration guide](https://github.com/microsoft/TypeScript/issues/62508).
 - **`plugins` array overwrites defaults**: must list all desired plugins explicitly.
 - **`settings` not supported in overrides**: only at root level.
