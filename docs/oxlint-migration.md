@@ -183,50 +183,64 @@ Already have `oxc.oxc-vscode` as default formatter (for oxfmt). Linter features 
 
 ## Configuration Format
 
-`.oxlintrc.json` (supports comments like jsonc):
+`.oxlintrc.json` (supports comments like jsonc).
+
+### Idiomatic Approach: Categories over Manual Rules
+
+Oxlint groups rules into **categories**. Use categories to bulk-enable rules instead of listing them individually:
+
+| Category | Description | Recommended |
+|---|---|---|
+| `correctness` | Definitely wrong or useless code | `"error"` |
+| `suspicious` | Likely wrong or useless | `"warn"` |
+| `pedantic` | Stricter rules, occasional false positives | `"warn"` |
+| `style` | Idiomatic and consistent code style | `"warn"` |
+| `perf` | Runtime performance | off (opt-in) |
+| `restriction` | Bans specific patterns — **must not be bulk-enabled**, case-by-case only | individual rules |
+| `nursery` | Under development, may change | off |
+
+Categories apply across **all loaded plugins**. So enabling `"correctness": "error"` activates correctness rules from eslint, typescript, react, jsx-a11y, unicorn, etc.
+
+Only use explicit `rules` entries for:
+- Rules with **custom options** (e.g., `no-unused-vars` with ignore patterns)
+- **Restriction** category rules (must be individually enabled)
+- **Overrides** to turn off noisy/inapplicable rules
+
+### Rules to Turn Off for This Project
+
+These style/pedantic rules conflict with project patterns (Effect v4 generators, TanStack Start async handlers, React JSX patterns):
+
+- `react-in-jsx-scope` — React 17+ JSX transform
+- `no-ternary`, `no-nested-ternary` — ternaries are idiomatic in JSX
+- `sort-keys`, `sort-imports` — oxfmt handles import sorting
+- `func-names` — Effect `function*` generators
+- `func-style` — function declarations are used
+- `new-cap` — Effect/Schema use PascalCase functions
+- `require-await` — TanStack Start needs async handlers without await
+- `strict-boolean-expressions` — too strict for typical TS patterns
+- `capitalized-comments`, `no-inline-comments` — comment style not enforced
+- `max-*` rules — too strict for component files
+- Various unicorn rules (`filename-case`, `no-null`, `prefer-global-this`)
+
+### linkComponents Setting
+
+The `settings.react.linkComponents` setting tells rules like `no-unsafe-target-blank` and `jsx-a11y` rules that `<Link>` is a link element (alternative to `<a>`). The schema requires `attribute` (not `linkAttribute` despite misleading docs):
 
 ```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react"],
-  "categories": {
-    "correctness": "error",
-    "suspicious": "warn"
-  },
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
-    "typescript/no-floating-promises": "error"
-  },
-  "ignorePatterns": [
-    "build/", "dist/", ".wrangler/",
-    "worker-configuration.d.ts", "refs/",
-    "playwright-report/", "test-results/"
-  ],
-  "jsPlugins": [
-    "@tanstack/eslint-plugin-router",
-    "@tanstack/eslint-plugin-query"
-  ],
-  "overrides": [
-    {
-      "files": ["src/**/*.tsx", "src/**/*.ts"],
-      "rules": {}
-    }
-  ]
-}
+"linkComponents": [{ "name": "Link", "attribute": "to" }]
 ```
 
-Or TypeScript config (`oxlint.config.ts`):
-```ts
-import { defineConfig } from "oxlint";
-export default defineConfig({
-  plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
-  options: { typeAware: true },
-  // ...
-});
-```
+### Import Plugin
+
+The `import` plugin is **not** about import ordering (oxfmt handles that). It provides multi-file analysis rules:
+- `import/no-cycle` — circular dependencies
+- `import/no-self-import` — file importing itself
+- `import/named` — verifies named imports exist
+- `import/default` — verifies default imports
+- `import/namespace` — validates namespace imports
+- `import/no-duplicates` — merges duplicate imports
+
+Not enabled by default because it requires building a module graph (perf cost). The `jsx-a11y` plugin is also not default because it's framework-specific.
 
 ## React Rules
 
