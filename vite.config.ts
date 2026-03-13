@@ -13,7 +13,7 @@ const config = defineConfig({
   // consistently during optimizeDeps and SSR module execution.
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@": fileURLToPath(new URL("src", import.meta.url)),
     },
   },
   build: {

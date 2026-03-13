@@ -5,6 +5,9 @@ import { expect, test } from "@playwright/test";
 
 import { scopeEmail } from "./utils";
 
+const getOrganizationName = (email: string) =>
+  `${email.charAt(0).toUpperCase() + email.slice(1)}'s Organization`;
+
 test.describe("invite", () => {
   const users: {
     email: string;
@@ -116,9 +119,6 @@ test.describe("admin invite", () => {
     adminEmail: scopeEmail("invite-admin-admin@e2e.com"),
     memberEmail: scopeEmail("invite-admin-member@e2e.com"),
   };
-
-  const getOrganizationName = (email: string) =>
-    `${email.charAt(0).toUpperCase() + email.slice(1)}'s Organization`;
 
   test.beforeAll(async ({ request }) => {
     for (const email of Object.values(adminInviteScenario)) {

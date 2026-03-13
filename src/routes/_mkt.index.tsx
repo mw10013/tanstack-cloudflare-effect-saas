@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { siGithub } from "simple-icons";
 
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_mkt/")({
   component: RouteComponent,
@@ -9,6 +9,17 @@ export const Route = createFileRoute("/_mkt/")({
 
 function RouteComponent() {
   const { sessionUser } = Route.useRouteContext();
+  let cta: { to: "/login" | "/admin" | "/app"; label: string } = {
+    to: "/login",
+    label: "Get Started",
+  };
+
+  if (sessionUser) {
+    cta = {
+      to: sessionUser.role === "admin" ? "/admin" : "/app",
+      label: "Go to Dashboard",
+    };
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center py-12">
@@ -31,41 +42,29 @@ function RouteComponent() {
           and edge infrastructure.
         </p>
         <div className="mt-6 flex w-fit gap-4">
-          {sessionUser ? (
-            <Button
-              variant="default"
-              className="h-11 rounded-full! px-6 text-base! font-medium"
-              render={
-                <a href={sessionUser.role === "admin" ? "/admin" : "/app"} />
-              }
-            >
-              Go to Dashboard
-            </Button>
-          ) : (
-            <Button
-              variant="default"
-              className="h-11 rounded-full! px-6 text-base! font-medium"
-              render={<a href="/login" />}
-            >
-              Get Started
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            render={
-              <a
-                href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            }
-            className="h-11 rounded-full! text-base! font-medium"
+          <Link
+            to={cta.to}
+            className={buttonVariants({
+              variant: "default",
+              className: "h-11 rounded-full! px-6 text-base! font-medium",
+            })}
+          >
+            {cta.label}
+          </Link>
+          <a
+            href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({
+              variant: "outline",
+              className: "h-11 rounded-full! text-base! font-medium",
+            })}
           >
             <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
               <path d={siGithub.path} />
             </svg>
             Star on Github
-          </Button>
+          </a>
         </div>
       </div>
       <div className="flex w-full flex-col items-center md:flex-row">
@@ -433,22 +432,20 @@ function RouteComponent() {
         </p>
         <div className="mt-6 flex flex-col items-center gap-6">
           <div className="flex w-fit gap-4">
-            <Button
-              variant="outline"
-              render={
-                <a
-                  href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              }
-              className="h-11 rounded-full! text-base! font-medium"
+            <a
+              href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({
+                variant: "outline",
+                className: "h-11 rounded-full! text-base! font-medium",
+              })}
             >
               <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
                 <path d={siGithub.path} />
               </svg>
               Star on Github
-            </Button>
+            </a>
           </div>
           <p className="text-sm text-muted-foreground">MIT licensed.</p>
         </div>

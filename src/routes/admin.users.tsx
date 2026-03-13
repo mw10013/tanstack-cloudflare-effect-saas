@@ -349,13 +349,11 @@ function RouteComponent() {
         userId={banDialog.userId}
         isOpen={banDialog.isOpen}
         onOpenChange={(isOpen) => {
-          setBanDialog((prev) =>
-            prev.isOpen === isOpen
-              ? prev
-              : isOpen
-                ? { ...prev, isOpen }
-                : { isOpen: false, userId: undefined },
-          );
+          setBanDialog((prev) => {
+            if (prev.isOpen === isOpen) return prev;
+            if (isOpen) return { ...prev, isOpen };
+            return { isOpen: false, userId: undefined };
+          });
         }}
       />
     </div>
@@ -459,9 +457,8 @@ function BanDialog({
                 </AlertDescription>
               </Alert>
             )}
-            <form.Field
-              name="banReason"
-              children={(field) => {
+            <form.Field name="banReason">
+              {(field) => {
                 const isInvalid =
                   field.state.meta.isTouched && !field.state.meta.isValid;
                 return (
@@ -475,7 +472,6 @@ function BanDialog({
                       onChange={(e) => {
                         field.handleChange(e.target.value);
                       }}
-                      autoFocus
                       aria-invalid={isInvalid}
                       disabled={!isHydrated}
                     />
@@ -485,7 +481,7 @@ function BanDialog({
                   </Field>
                 );
               }}
-            />
+            </form.Field>
           </FieldGroup>
         </form>
         <DialogFooter>

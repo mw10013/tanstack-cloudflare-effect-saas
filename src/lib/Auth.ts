@@ -129,7 +129,7 @@ const makeAuth = ({
                   organizationApiCreate({
                     body: {
                       name: `${user.email.charAt(0).toUpperCase() + user.email.slice(1)}'s Organization`,
-                      slug: user.email.replace(/[^a-z0-9]/g, "-").toLowerCase(),
+                      slug: user.email.replaceAll(/[^a-z0-9]/g, "-").toLowerCase(),
                       userId: user.id,
                     },
                   }),
@@ -163,10 +163,10 @@ const makeAuth = ({
                 return {
                   data: {
                     ...session,
-                    activeOrganizationId: Option.map(
-                      activeOrganization,
-                      (organization) => organization.id,
-                    ).pipe(Option.getOrUndefined),
+                    activeOrganizationId: activeOrganization.pipe(
+                      Option.map((organization) => organization.id),
+                      Option.getOrUndefined,
+                    ),
                   },
                 };
               }),

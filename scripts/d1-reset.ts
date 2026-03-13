@@ -58,8 +58,8 @@ pragma table_list`;
 
 try {
   await $`pnpm wrangler d1 delete ${databaseName} --skip-confirmation`;
-} catch (p) {
-  console.error(`Ignoring execption: ${String(p)}`);
+} catch (error) {
+  console.error(`Ignoring execption: ${String(error)}`);
 }
 
 const processOutput = await $`pnpm wrangler d1 create ${databaseName}`;

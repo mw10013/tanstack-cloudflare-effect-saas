@@ -92,7 +92,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             defer
             src="https://static.cloudflareinsights.com/beacon.min.js"
             data-cf-beacon={JSON.stringify({ token: analyticsToken })}
-          ></script>
+          />
         ) : null}
         <Scripts />
       </body>
