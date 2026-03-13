@@ -152,9 +152,8 @@ function RouteComponent() {
                   </AlertDescription>
                 </Alert>
               )}
-              <form.Field
-                name="email"
-                children={(field) => {
+              <form.Field name="email">
+                {(field) => {
                   const isInvalid = field.state.meta.errors.length > 0;
                   return (
                     <Field data-invalid={isInvalid}>
@@ -178,7 +177,7 @@ function RouteComponent() {
                     </Field>
                   );
                 }}
-              />
+              </form.Field>
               <form.Subscribe selector={(formState) => formState.canSubmit}>
                 {(canSubmit) => (
                   <Button

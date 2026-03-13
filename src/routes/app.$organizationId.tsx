@@ -13,7 +13,7 @@ import { Cause, Effect } from "effect";
 import { ChevronsUpDown, LogOut } from "lucide-react";
 
 import { AppLogo } from "@/components/app-logo";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,14 +126,13 @@ function AppSidebar({
     <Sidebar>
       <SidebarHeader>
         <div className="flex w-full items-center gap-3 p-2">
-          <Button
-            variant="ghost"
-            size="icon"
+          <Link
+            to="/"
             aria-label="Home"
-            render={<Link to="/" />}
+            className={buttonVariants({ variant: "ghost", size: "icon" })}
           >
             <AppLogo />
-          </Button>
+          </Link>
           <OrganizationSwitcher
             organizations={organizations}
             organization={organization}

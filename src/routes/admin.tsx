@@ -11,7 +11,7 @@ import * as Option from "effect/Option";
 import { ChevronsUpDown, LogOut } from "lucide-react";
 
 import { AppLogo } from "@/components/app-logo";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,14 +79,13 @@ function AppSidebar({ user }: { user: { email: string } }) {
   return (
     <Sidebar>
       <SidebarHeader className="items-center justify-center">
-        <Button
-          variant="ghost"
-          size="icon"
+        <Link
+          to="/"
           aria-label="Home"
-          render={<Link to="/" />}
+          className={buttonVariants({ variant: "ghost", size: "icon" })}
         >
           <AppLogo />
-        </Button>
+        </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

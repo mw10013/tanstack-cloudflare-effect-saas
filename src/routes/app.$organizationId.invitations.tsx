@@ -244,9 +244,8 @@ function InviteForm({ organizationId }: { organizationId: string }) {
                 </AlertDescription>
               </Alert>
             )}
-            <form.Field
-              name="emails"
-              children={(field) => {
+            <form.Field name="emails">
+              {(field) => {
                 const isInvalid = field.state.meta.errors.length > 0;
                 return (
                   <Field data-invalid={isInvalid}>
@@ -271,10 +270,9 @@ function InviteForm({ organizationId }: { organizationId: string }) {
                   </Field>
                 );
               }}
-            />
-            <form.Field
-              name="role"
-              children={(field) => {
+            </form.Field>
+            <form.Field name="role">
+              {(field) => {
                 const isInvalid = field.state.meta.errors.length > 0;
                 return (
                   <Field data-invalid={isInvalid} className="w-fit">
@@ -300,10 +298,9 @@ function InviteForm({ organizationId }: { organizationId: string }) {
                   </Field>
                 );
               }}
-            />
-            <form.Subscribe
-              selector={(state) => state.canSubmit}
-              children={(canSubmit) => (
+            </form.Field>
+            <form.Subscribe selector={(state) => state.canSubmit}>
+              {(canSubmit) => (
                 <Button
                   type="submit"
                   disabled={
@@ -314,7 +311,7 @@ function InviteForm({ organizationId }: { organizationId: string }) {
                   Invite
                 </Button>
               )}
-            />
+            </form.Subscribe>
           </FieldGroup>
         </form>
       </CardContent>

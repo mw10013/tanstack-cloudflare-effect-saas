@@ -8,6 +8,7 @@ import { planData } from "@/lib/Domain";
 import { scopeEmail } from "./utils";
 
 const emailPrefix = "stripe-";
+const reversedPlanData = [planData[1], planData[0]] as const;
 
 test.describe("subscribe", () => {
   planData
@@ -76,7 +77,7 @@ test.describe("subscribe/cancel", () => {
 
 test.describe("subscribe/upgrade", () => {
   test.describe.configure({ mode: "parallel", timeout: 120_000 });
-  [planData, [...planData].reverse()]
+  [planData, reversedPlanData]
     .flatMap(([plan, plan1]) => [
       {
         email: scopeEmail(

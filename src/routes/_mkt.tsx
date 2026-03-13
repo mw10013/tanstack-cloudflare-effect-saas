@@ -6,7 +6,7 @@ import { siGithub } from "simple-icons";
 
 import { AppLogo } from "@/components/app-logo";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Auth, signOutServerFn } from "@/lib/Auth";
 import { Request } from "@/lib/Request";
@@ -19,7 +19,8 @@ const beforeLoadServerFn = createServerFn().handler(
         const auth = yield* Auth;
         const session = yield* auth.getSession(request.headers);
         return {
-          sessionUser: Option.map(session, (value) => value.user).pipe(
+          sessionUser: session.pipe(
+            Option.map((value) => value.user),
             Option.getOrUndefined,
           ),
         };
@@ -87,9 +88,12 @@ function Header() {
                 Sign Out
               </Button>
             ) : (
-              <Button variant="default" size="sm" render={<Link to="/login" />}>
+              <Link
+                to="/login"
+                className={buttonVariants({ variant: "default", size: "sm" })}
+              >
                 Sign in / Sign up
-              </Button>
+              </Link>
             )}
           </div>
         </div>
@@ -100,22 +104,17 @@ function Header() {
 
 function GitHubRepoLink({ className }: { className?: string }) {
   return (
-    <Button
-      variant="ghost"
-      className={className}
+    <a
+      href="https://github.com/mw10013/tanstack-cloudflare-effect-invoice"
+      target="_blank"
+      rel="noopener noreferrer"
       aria-label="GitHub repo"
-      render={
-        <a
-          href="https://github.com/mw10013/tanstack-cloudflare-effect-invoice"
-          target="_blank"
-          rel="noopener noreferrer"
-        />
-      }
+      className={buttonVariants({ variant: "ghost", className })}
     >
       <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
         <path d={siGithub.path} />
       </svg>
-    </Button>
+    </a>
   );
 }
 

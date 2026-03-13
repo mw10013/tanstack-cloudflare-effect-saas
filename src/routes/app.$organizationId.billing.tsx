@@ -12,7 +12,7 @@ import * as Schema from "effect/Schema";
 import { AlertCircle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -249,9 +249,9 @@ function NoSubscriptionCard() {
       <p className="text-sm text-muted-foreground">
         No active subscription for this organization.
       </p>
-      <Button variant="outline" render={<Link to="/pricing" />}>
+      <Link to="/pricing" className={buttonVariants({ variant: "outline" })}>
         Pricing
-      </Button>
+      </Link>
     </div>
   );
 }

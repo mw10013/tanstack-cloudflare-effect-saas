@@ -182,7 +182,7 @@ export default {
   async scheduled(scheduledEvent, env, _ctx) {
     const runEffect = makeScheduledRunEffect(env);
     switch (scheduledEvent.cron) {
-      case "0 0 * * *":
+      case "0 0 * * *": {
         await runEffect(
           Effect.gen(function* () {
             const repository = yield* Repository;
@@ -191,13 +191,15 @@ export default {
           }),
         );
         break;
-      default:
+      }
+      default: {
         await runEffect(
           Effect.logWarning("session.cleanup.unexpectedCronSchedule", {
             cron: scheduledEvent.cron,
           }),
         );
         break;
+      }
     }
   },
 } satisfies ExportedHandler<Env>;
