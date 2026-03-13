@@ -9,18 +9,6 @@ export const Route = createFileRoute("/_mkt/")({
 
 function RouteComponent() {
   const { sessionUser } = Route.useRouteContext();
-  let cta: { to: "/login" | "/admin" | "/app"; label: string } = {
-    to: "/login",
-    label: "Get Started",
-  };
-
-  if (sessionUser) {
-    cta = {
-      to: sessionUser.role === "admin" ? "/admin" : "/app",
-      label: "Go to Dashboard",
-    };
-  }
-
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center py-12">
       <div className="relative flex min-h-[40vh] w-full flex-col items-center justify-center gap-4 border px-6 py-24">
@@ -42,17 +30,29 @@ function RouteComponent() {
           and edge infrastructure.
         </p>
         <div className="mt-6 flex w-fit gap-4">
-          <Link
-            to={cta.to}
-            className={buttonVariants({
-              variant: "default",
-              className: "h-11 rounded-full! px-6 text-base! font-medium",
-            })}
-          >
-            {cta.label}
-          </Link>
+          {sessionUser ? (
+            <Link
+              to={sessionUser.role === "admin" ? "/admin" : "/app"}
+              className={buttonVariants({
+                variant: "default",
+                className: "h-11 rounded-full! px-6 text-base! font-medium",
+              })}
+            >
+              Go to Dashboard
+            </Link>
+          ) : (
+            <Link
+              to="/login"
+              className={buttonVariants({
+                variant: "default",
+                className: "h-11 rounded-full! px-6 text-base! font-medium",
+              })}
+            >
+              Get Started
+            </Link>
+          )}
           <a
-            href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
+            href="https://github.com/mw10013/tanstack-cloudflare-effect-invoice"
             target="_blank"
             rel="noopener noreferrer"
             className={buttonVariants({
