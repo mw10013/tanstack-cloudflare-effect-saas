@@ -1,3 +1,4 @@
+/* oxlint-disable */
 import {
   defineWorkersProject,
   readD1Migrations,
