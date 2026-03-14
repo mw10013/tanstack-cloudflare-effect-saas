@@ -178,7 +178,9 @@ Tradeoffs:
 
 - Always fresh URL, but one extra request per click.
 
-I'm undecided. what's your recommendation and why? which one is simpler implementation?
+### Recommendation
+
+Option A is simpler and closer to refs/tca: reuse loader mapping + signed URL generation once per refresh, no extra server fn or client click handler. It also keeps URL construction co-located with invoice data in the loader, matching the existing pattern for uploads.
 
 ### Local proxy route (if we keep parity with refs/tca)
 
@@ -189,4 +191,40 @@ Follow the `refs/tca` route pattern to stream from R2 in local dev only; the URL
 - Ensure `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`, `CF_ACCOUNT_ID`, `R2_BUCKET_NAME` are available in env and config in this repo; refs/tca depends on these for signing.
 - For top-level navigation (`target="_blank"`), CORS is less critical than for XHR, but keep the R2 CORS config aligned with presigned URL usage if images are also embedded.
 
-Go check our wrangler to see if we have all we need there. It may have bucket names that are incorrect.
+### Wrangler config check (this repo)
+
+`wrangler.jsonc` already defines the signing inputs, but the access keys are empty placeholders and must be set in production for presigning.
+
+```jsonc
+// wrangler.jsonc
+"vars": {
+  "CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
+  "R2_BUCKET_NAME": "tcei-r2-local",
+  "R2_S3_ACCESS_KEY_ID": "",
+  "R2_S3_SECRET_ACCESS_KEY": ""
+}
+```
+
+Production env has the same variables with the production bucket name:
+
+```jsonc
+// wrangler.jsonc (env.production.vars)
+"CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
+"R2_BUCKET_NAME": "tcei-r2-production",
+"R2_S3_ACCESS_KEY_ID": "",
+"R2_S3_SECRET_ACCESS_KEY": ""
+```
+
+Bucket binding names match those values:
+
+```jsonc
+// wrangler.jsonc
+"r2_buckets": [{ "binding": "R2", "bucket_name": "tcei-r2-local" }]
+// wrangler.jsonc (env.production.r2_buckets)
+"r2_buckets": [{ "binding": "R2", "bucket_name": "tcei-r2-production" }]
+```
+
+Queue binding mismatch (non-blocking for signed URLs, but relevant to invoice ingest):
+
+- Top-level queue binding is `INVOICE_INGEST_Q` for `invoice-ingest`.
+- `env.production.queues` uses `R2_UPLOAD_QUEUE` bound to `r2-invoice-notifications`.
