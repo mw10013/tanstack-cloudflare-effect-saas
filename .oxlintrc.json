@@ -1,13 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "eslint",
-    "typescript",
-    "unicorn",
-    "oxc",
-    "react",
-    "jsx-a11y"
-  ],
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y"],
   "settings": {
     "react": {
       "linkComponents": [{ "name": "Link", "attribute": "to" }]
@@ -151,12 +144,7 @@
   ],
   "overrides": [
     {
-      "files": [
-        "**/*.ts",
-        "**/*.tsx",
-        "**/*.mts",
-        "**/*.cts"
-      ],
+      "files": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
       "rules": {
         "constructor-super": "off",
         "no-class-assign": "off",
@@ -179,10 +167,7 @@
       }
     },
     {
-      "files": [
-        "src/**/*.tsx",
-        "src/**/*.ts"
-      ],
+      "files": ["src/**/*.tsx", "src/**/*.ts"],
       "rules": {
         "react-hooks/rules-of-hooks": "error",
         "react-hooks/exhaustive-deps": "warn"

@@ -129,7 +129,9 @@ const makeAuth = ({
                   organizationApiCreate({
                     body: {
                       name: `${user.email.charAt(0).toUpperCase() + user.email.slice(1)}'s Organization`,
-                      slug: user.email.replaceAll(/[^a-z0-9]/g, "-").toLowerCase(),
+                      slug: user.email
+                        .replaceAll(/[^a-z0-9]/g, "-")
+                        .toLowerCase(),
                       userId: user.id,
                     },
                   }),

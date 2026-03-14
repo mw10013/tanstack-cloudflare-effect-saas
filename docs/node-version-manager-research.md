@@ -200,14 +200,14 @@ This is good for `pnpm run` and `pnpm node`, but it is not the same as making pl
 
 ## Ranked Options
 
-| Rank | Tool | Verdict | Why |
-| --- | --- | --- | --- |
-| 1 | `mise` | Best overall | active, cross-platform, exact project pinning, auto-switch, multi-tool future-proof |
-| 2 | `fnm` | Best low-friction Node-only choice | fast, simple, cross-platform, low team friction |
-| 3 | `asdf` | Solid if already adopted | mature, credible, multi-runtime, but more plugin/shim friction |
-| 4 | `nvm` | Common, but weaker standardization choice | POSIX-first, more shell hassle, weak native Windows story |
-| 5 | `Volta` | Not for new adoption | repo now says unmaintained |
-| - | `Corepack` | Optional bridge, not default | experimental, no longer bundled in Node 25+, recent signature/update friction |
+| Rank | Tool       | Verdict                                   | Why                                                                                 |
+| ---- | ---------- | ----------------------------------------- | ----------------------------------------------------------------------------------- |
+| 1    | `mise`     | Best overall                              | active, cross-platform, exact project pinning, auto-switch, multi-tool future-proof |
+| 2    | `fnm`      | Best low-friction Node-only choice        | fast, simple, cross-platform, low team friction                                     |
+| 3    | `asdf`     | Solid if already adopted                  | mature, credible, multi-runtime, but more plugin/shim friction                      |
+| 4    | `nvm`      | Common, but weaker standardization choice | POSIX-first, more shell hassle, weak native Windows story                           |
+| 5    | `Volta`    | Not for new adoption                      | repo now says unmaintained                                                          |
+| -    | `Corepack` | Optional bridge, not default              | experimental, no longer bundled in Node 25+, recent signature/update friction       |
 
 ## Evidence By Tool
 

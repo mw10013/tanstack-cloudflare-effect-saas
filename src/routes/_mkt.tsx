@@ -111,7 +111,10 @@ function GitHubRepoLink({ className }: { className?: string }) {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="GitHub repo"
-      className={cn(buttonVariants({ variant: "ghost", size: "icon" }), className)}
+      className={cn(
+        buttonVariants({ variant: "ghost", size: "icon" }),
+        className,
+      )}
     >
       <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
         <path d={siGithub.path} />

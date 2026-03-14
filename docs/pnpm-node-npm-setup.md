@@ -10,6 +10,7 @@ This document explains how pnpm manages Node versions, how Node ships with npm, 
 - **No standalone npm installation**: npm is bundled with Node - you don't install npm separately
 
 When you install Node (via pnpm env, nvm, or directly), you get:
+
 - The Node runtime (`node`)
 - npm CLI (`npm`)
 
@@ -48,6 +49,7 @@ pnpm env remove --global 18.20.0
 ```
 
 When you run `pnpm env use --global <version>`:
+
 1. pnpm downloads and installs the requested Node version
 2. It creates a symlink at `$PNPM_HOME/node` pointing to the new version
 3. The Node version is stored in `~/Library/pnpm/nodejs/<version>/`
@@ -65,11 +67,13 @@ You can pin the pnpm version in your project's `package.json` using the `package
 When someone runs `pnpm install`, pnpm will auto-download and use that version.
 
 **Note**: The format must match:
+
 ```
 (npm|pnpm|yarn)@\d+\.\d+\.\d+(-.+)?
 ```
 
 For example:
+
 - `"pnpm@9.3.0"` ✓
 - `"pnpm@9"` ✗ (must be full semver)
 - `"pnpm@^9.3.0"` ✗
@@ -78,11 +82,11 @@ For example:
 
 These settings control how pnpm handles the `packageManager` field. Set in `pnpm-workspace.yaml` or via `pnpm config`:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `managePackageManagerVersions` | `true` | Auto-download pnpm version from `packageManager` field |
-| `packageManagerStrict` | `true` | Fail if a different package manager is specified in `packageManager` |
-| `packageManagerStrictVersion` | `false` | Require exact version match (not just package name) |
+| Setting                        | Default | Description                                                          |
+| ------------------------------ | ------- | -------------------------------------------------------------------- |
+| `managePackageManagerVersions` | `true`  | Auto-download pnpm version from `packageManager` field               |
+| `packageManagerStrict`         | `true`  | Fail if a different package manager is specified in `packageManager` |
+| `packageManagerStrictVersion`  | `false` | Require exact version match (not just package name)                  |
 
 If you disable `managePackageManagerVersions`, pnpm won't automatically download the version specified in `packageManager`.
 
@@ -99,6 +103,7 @@ When using pnpm to manage Node versions, each Node version has its own npm insta
 - This means global packages installed with `npm -g` go to different directories
 
 Example:
+
 - Node 20: `npm -g install codex` → `/Users/mw/Library/pnpm/nodejs/20.x.x/bin/codex`
 - Node 22: `npm -g install codex` → `/Users/mw/Library/pnpm/nodejs/22.x.x/bin/codex`
 
@@ -113,11 +118,13 @@ npm config set prefix ~/.local
 This writes to `~/.npmrc` and persists across Node version changes.
 
 **What prefix controls** (from npm docs):
+
 - Global packages: `{prefix}/lib/node_modules`
 - Binaries: `{prefix}/bin`
 - Man pages: `{prefix}/share/man`
 
 **Recommended value**: `~/.local`
+
 - Already in most shells' PATH
 - Version-agnostic - stays the same regardless of which Node version is active
 - Used by many tools (Claude Code, Amp, etc.)
@@ -147,6 +154,7 @@ npm bin -g
 - **pnpm-specific setting for bins**: `global-bin-dir`
 
 To set pnpm's global bin directory:
+
 ```bash
 pnpm config set --global global-bin-dir ~/.local/bin
 ```

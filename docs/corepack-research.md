@@ -138,13 +138,13 @@ Archived. Do not adopt.
 
 ## Assessment
 
-| Aspect | Status |
-|---|---|
+| Aspect                | Status                           |
+| --------------------- | -------------------------------- |
 | Manages pnpm versions | ✅ Via Corepack or native plugin |
-| Per-project pinning | ✅ `.mise.toml` |
-| Active development | ✅ Very active |
-| Complexity | ⚠️ Heavy for pnpm-only use case |
-| Manages Node.js too | ✅ Replaces nvm/fnm |
+| Per-project pinning   | ✅ `.mise.toml`                  |
+| Active development    | ✅ Very active                   |
+| Complexity            | ⚠️ Heavy for pnpm-only use case  |
+| Manages Node.js too   | ✅ Replaces nvm/fnm              |
 
 ## Verdict: Viable but Heavy
 
@@ -172,11 +172,11 @@ Since **pnpm v9.0.0**, pnpm natively reads the `packageManager` field from `pack
 
 Three settings control behavior (in `pnpm-workspace.yaml`):
 
-| Setting | Default (v10) | Behavior |
-|---|---|---|
-| `managePackageManagerVersions` | **`true`** | **Auto-downloads and runs the version in `packageManager`**. This is the killer feature — you just need *any* pnpm 10+ installed, and it delegates to the correct version automatically. |
-| `packageManagerStrict` | `true` | Errors if a **different package manager** (e.g., npm, yarn) is used. Only checks name, not version (since v9.2.0). |
-| `packageManagerStrictVersion` | `false` | When `true`, errors if pnpm version doesn't exactly match (redundant if `managePackageManagerVersions` is on). |
+| Setting                        | Default (v10) | Behavior                                                                                                                                                                                 |
+| ------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `managePackageManagerVersions` | **`true`**    | **Auto-downloads and runs the version in `packageManager`**. This is the killer feature — you just need _any_ pnpm 10+ installed, and it delegates to the correct version automatically. |
+| `packageManagerStrict`         | `true`        | Errors if a **different package manager** (e.g., npm, yarn) is used. Only checks name, not version (since v9.2.0).                                                                       |
+| `packageManagerStrictVersion`  | `false`       | When `true`, errors if pnpm version doesn't exactly match (redundant if `managePackageManagerVersions` is on).                                                                           |
 
 ### 3. Multi-project scenario (different pnpm versions)
 
@@ -237,18 +237,18 @@ This replaces `.nvmrc` / nvm for projects using pnpm.
 
 ## Effectiveness Assessment
 
-| Aspect | Status |
-|---|---|
-| Locks pnpm version per project | ✅ Via `packageManager` field |
+| Aspect                         | Status                                                      |
+| ------------------------------ | ----------------------------------------------------------- |
+| Locks pnpm version per project | ✅ Via `packageManager` field                               |
 | Auto-switches between projects | ✅ Via `managePackageManagerVersions` (default true in v10) |
-| Prevents wrong package manager | ✅ Via `packageManagerStrict` (default true) |
-| No external tools needed | ✅ Built into pnpm itself |
-| Works without Corepack | ✅ Since pnpm v9.0.0 |
-| Self-update mechanism | ✅ `pnpm self-update` |
-| CI support | ✅ `pnpm/action-setup` reads `packageManager` |
-| Node.js version management | ✅ Via `useNodeVersion` setting |
-| Long-term viability | ✅ Core pnpm feature, actively maintained |
-| Complexity | ✅ Minimal — just `packageManager` in `package.json` |
+| Prevents wrong package manager | ✅ Via `packageManagerStrict` (default true)                |
+| No external tools needed       | ✅ Built into pnpm itself                                   |
+| Works without Corepack         | ✅ Since pnpm v9.0.0                                        |
+| Self-update mechanism          | ✅ `pnpm self-update`                                       |
+| CI support                     | ✅ `pnpm/action-setup` reads `packageManager`               |
+| Node.js version management     | ✅ Via `useNodeVersion` setting                             |
+| Long-term viability            | ✅ Core pnpm feature, actively maintained                   |
+| Complexity                     | ✅ Minimal — just `packageManager` in `package.json`        |
 
 ## Verdict: Best Option for pnpm-Only Projects
 
@@ -288,14 +288,14 @@ proto install pnpm # install pinned pnpm
 
 ## Assessment
 
-| Aspect | Status |
-|---|---|
-| Manages pnpm versions | ✅ Native support |
-| Per-project pinning | ✅ `.prototools` |
-| Active development | ✅ 226 releases, actively maintained |
-| Complexity | ⚠️ Additional tool, but lighter than mise |
-| Also manages Node.js | ✅ |
-| Stars | 1.2k (smaller community than mise) |
+| Aspect                | Status                                    |
+| --------------------- | ----------------------------------------- |
+| Manages pnpm versions | ✅ Native support                         |
+| Per-project pinning   | ✅ `.prototools`                          |
+| Active development    | ✅ 226 releases, actively maintained      |
+| Complexity            | ⚠️ Additional tool, but lighter than mise |
+| Also manages Node.js  | ✅                                        |
+| Stars                 | 1.2k (smaller community than mise)        |
 
 ## Verdict: Viable Alternative
 
@@ -305,11 +305,11 @@ Lighter than mise, more focused. Good option if you want a dedicated toolchain m
 
 # Summary
 
-| Tool | Status | Viable? |
-|---|---|---|
-| **Corepack** | Removed from Node.js 25+, uncertain future | ❌ |
-| **Volta** | Archived, unmaintained | ❌ |
-| **mise** | Active, but heavy for pnpm-only | ⚠️ Overkill |
-| **pnpm self-management** | Built-in, actively maintained | ✅ Recommended |
+| Tool                     | Status                                     | Viable?        |
+| ------------------------ | ------------------------------------------ | -------------- |
+| **Corepack**             | Removed from Node.js 25+, uncertain future | ❌             |
+| **Volta**                | Archived, unmaintained                     | ❌             |
+| **mise**                 | Active, but heavy for pnpm-only            | ⚠️ Overkill    |
+| **pnpm self-management** | Built-in, actively maintained              | ✅ Recommended |
 
 **Recommendation**: Use `packageManager` field in `package.json` + `packageManagerStrictVersion: true` in `pnpm-workspace.yaml`. No external tooling needed.

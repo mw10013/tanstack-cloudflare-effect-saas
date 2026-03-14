@@ -24,22 +24,23 @@
 ```
 
 Custom rules:
+
 - `no-unused-vars`: off (uses `@typescript-eslint/no-unused-vars` with `argsIgnorePattern: "^_"`)
 - `@typescript-eslint/prefer-string-starts-ends-with`: `allowSingleElementEquality: "always"`
 - `@typescript-eslint/prefer-regexp-exec`: off
 
 ## Oxlint Native Plugin Coverage
 
-| ESLint Plugin | Oxlint Native Plugin | Default On |
-|---|---|---|
-| `@eslint/js` | `eslint` | ✅ |
-| `typescript-eslint` | `typescript` | ✅ |
-| `eslint-plugin-react` + `react-hooks` | `react` | ❌ (enable) |
-| `eslint-plugin-unicorn` | `unicorn` | ✅ |
-| `eslint-plugin-import` | `import` | ❌ |
-| `eslint-plugin-jsx-a11y` | `jsx-a11y` | ❌ |
-| `@tanstack/eslint-plugin-router` | ❌ (JS Plugin) | — |
-| `@tanstack/eslint-plugin-query` | ❌ (JS Plugin) | — |
+| ESLint Plugin                         | Oxlint Native Plugin | Default On  |
+| ------------------------------------- | -------------------- | ----------- |
+| `@eslint/js`                          | `eslint`             | ✅          |
+| `typescript-eslint`                   | `typescript`         | ✅          |
+| `eslint-plugin-react` + `react-hooks` | `react`              | ❌ (enable) |
+| `eslint-plugin-unicorn`               | `unicorn`            | ✅          |
+| `eslint-plugin-import`                | `import`             | ❌          |
+| `eslint-plugin-jsx-a11y`              | `jsx-a11y`           | ❌          |
+| `@tanstack/eslint-plugin-router`      | ❌ (JS Plugin)       | —           |
+| `@tanstack/eslint-plugin-query`       | ❌ (JS Plugin)       | —           |
 
 ## Migration Steps
 
@@ -56,6 +57,7 @@ npx @oxlint/migrate --type-aware
 ```
 
 This reads `eslint.config.js` and generates `.oxlintrc.json` with:
+
 - Converted rules + severities
 - File/path-specific overrides
 - `globals`/`env` conversions
@@ -114,6 +116,7 @@ The `react` plugin covers both `eslint-plugin-react` and `eslint-plugin-react-ho
 ```
 
 Or, if running both during incremental migration:
+
 ```json
 {
   "scripts": {
@@ -139,6 +142,7 @@ Converts `// eslint-disable-next-line ...` → `// oxlint-disable-next-line ...`
 Install [oxc.oxc-vscode](https://marketplace.visualstudio.com/items?itemName=oxc.oxc-vscode) (130k+ installs).
 
 Features:
+
 - Inline diagnostics (warnings/errors)
 - Quick fixes
 - JSON schema validation for `.oxlintrc.json`
@@ -169,17 +173,17 @@ Already have `oxc.oxc-vscode` as default formatter (for oxfmt). Linter features 
 
 ### Extension Settings Reference
 
-| Setting | Default | Description |
-|---|---|---|
-| `oxc.enable` | `null` | Enable/disable extension |
-| `oxc.enable.oxlint` | `true` | Enable linter |
-| `oxc.configPath` | `null` | Custom config path |
-| `oxc.lint.run` | `onType` | `onSave` or `onType` |
-| `oxc.typeAware` | `null` | Enable type-aware linting |
-| `oxc.fixKind` | `safe_fix` | `safe_fix`, `safe_fix_or_suggestion`, `dangerous_fix`, `all`, `none` |
-| `oxc.requireConfig` | `false` | Require config file to lint |
-| `oxc.unusedDisableDirectives` | `null` | `allow`, `warn` |
-| `oxc.disableNestedConfig` | `false` | Disable nested config lookup |
+| Setting                       | Default    | Description                                                          |
+| ----------------------------- | ---------- | -------------------------------------------------------------------- |
+| `oxc.enable`                  | `null`     | Enable/disable extension                                             |
+| `oxc.enable.oxlint`           | `true`     | Enable linter                                                        |
+| `oxc.configPath`              | `null`     | Custom config path                                                   |
+| `oxc.lint.run`                | `onType`   | `onSave` or `onType`                                                 |
+| `oxc.typeAware`               | `null`     | Enable type-aware linting                                            |
+| `oxc.fixKind`                 | `safe_fix` | `safe_fix`, `safe_fix_or_suggestion`, `dangerous_fix`, `all`, `none` |
+| `oxc.requireConfig`           | `false`    | Require config file to lint                                          |
+| `oxc.unusedDisableDirectives` | `null`     | `allow`, `warn`                                                      |
+| `oxc.disableNestedConfig`     | `false`    | Disable nested config lookup                                         |
 
 ## Configuration Format
 
@@ -189,19 +193,20 @@ Already have `oxc.oxc-vscode` as default formatter (for oxfmt). Linter features 
 
 Oxlint groups rules into **categories**. Use categories to bulk-enable rules instead of listing them individually:
 
-| Category | Description | Recommended |
-|---|---|---|
-| `correctness` | Definitely wrong or useless code | `"error"` |
-| `suspicious` | Likely wrong or useless | `"warn"` |
-| `pedantic` | Stricter rules, occasional false positives | `"warn"` |
-| `style` | Idiomatic and consistent code style | `"warn"` |
-| `perf` | Runtime performance | off (opt-in) |
+| Category      | Description                                                              | Recommended      |
+| ------------- | ------------------------------------------------------------------------ | ---------------- |
+| `correctness` | Definitely wrong or useless code                                         | `"error"`        |
+| `suspicious`  | Likely wrong or useless                                                  | `"warn"`         |
+| `pedantic`    | Stricter rules, occasional false positives                               | `"warn"`         |
+| `style`       | Idiomatic and consistent code style                                      | `"warn"`         |
+| `perf`        | Runtime performance                                                      | off (opt-in)     |
 | `restriction` | Bans specific patterns — **must not be bulk-enabled**, case-by-case only | individual rules |
-| `nursery` | Under development, may change | off |
+| `nursery`     | Under development, may change                                            | off              |
 
 Categories apply across **all loaded plugins**. So enabling `"correctness": "error"` activates correctness rules from eslint, typescript, react, jsx-a11y, unicorn, etc.
 
 Only use explicit `rules` entries for:
+
 - Rules with **custom options** (e.g., `no-unused-vars` with ignore patterns)
 - **Restriction** category rules (must be individually enabled)
 - **Overrides** to turn off noisy/inapplicable rules
@@ -233,6 +238,7 @@ The `settings.react.linkComponents` setting tells rules like `no-unsafe-target-b
 ### Import Plugin
 
 The `import` plugin is **not** about import ordering (oxfmt handles that). It provides multi-file analysis rules:
+
 - `import/no-cycle` — circular dependencies
 - `import/no-self-import` — file importing itself
 - `import/named` — verifies named imports exist
@@ -245,10 +251,12 @@ Not enabled by default because it requires building a module graph (perf cost). 
 ## React Rules
 
 The `react` plugin provides native Rust implementations of:
+
 - `eslint-plugin-react` rules (recommended)
 - `eslint-plugin-react-hooks` rules (hooks/rules-of-hooks, hooks/exhaustive-deps)
 
 Enable:
+
 ```json
 { "plugins": ["react"] }
 ```
@@ -258,10 +266,12 @@ Additional react plugin: `react-perf` (from `eslint-plugin-react-perf`).
 ## Type-Aware Linting
 
 Supports 59/61 type-aware rules from typescript-eslint. Requires:
+
 1. `oxlint-tsgolint` package installed
 2. `options.typeAware: true` in config or `--type-aware` CLI flag
 
 Can also replace `tsc --noEmit` in CI:
+
 ```bash
 oxlint --type-aware --type-check
 ```
