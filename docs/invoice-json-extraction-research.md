@@ -121,23 +121,104 @@ Add a var for the gateway ID in `wrangler.jsonc`:
 }
 ```
 
-Need more research here for the gateway id. scan refs/tca to see how that project does it. I'm not sure if we can reuse its gateway or we should create a new one in cloudflare. probably a new one but then we need the tokens and all that shit. Do research.
-
-We want to use the gateway cache to save on dev costs.
-
 No new binding needed — the existing `"ai": { "binding": "AI" }` already supports gateway routing.
+
+### Gateway ID explained
+
+The gateway ID **is the name you give the gateway in the Cloudflare dashboard**. There is no separate internal UUID — the slug you choose becomes the `{gateway_id}` in the URL `https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/...`.
+
+From `refs/cloudflare-docs/src/content/docs/ai-gateway/configuration/manage-gateway.mdx:16`:
+
+> AI Gateway can automatically create a gateway for you. When you use `default` as a gateway ID and no gateway with that ID exists in your account, AI Gateway creates it on the first authenticated request.
+
+From `refs/cloudflare-docs/src/content/docs/ai-gateway/configuration/manage-gateway.mdx:32`:
+
+> Auto-creation only applies to the gateway ID `default`. Using any other gateway ID requires creating the gateway first.
+
+### Should we reuse tca's gateway or create a new one?
+
+`refs/tca` uses `AI_GATEWAY_ID: "saas-ai-gateway"` (from `refs/tca/wrangler.jsonc:20`). Both projects share the same `account_id` (`1422451be59cc2401532ad67d92ae773`), so they share the same gateway namespace.
+
+**Recommendation: create a separate gateway `tcei-gateway`** in the Cloudflare dashboard.
+
+Why:
+
+- Separate logging/analytics — invoice extraction logs won't mix with tca's classification logs
+- Independent rate limiting and caching config
+- If we reuse `saas-ai-gateway`, tca's cache settings and rate limits would apply to invoice extraction too
+
+AI gateway named `tcei-ai-gateway` exists in Cloudflare already.
+AI_GATEWAY_ID defined already in wrangler config as environment var.
+AI_GATEWAY_TOKEN and WORKERS_AI_API_TOKEN are defined in .env
+The types should be up to date.
+We may need all of these in the future.
+
+### No tokens needed for the binding path
+
+`refs/tca` has two gateway usage patterns:
+
+1. **Binding path** (`env.AI.run` with `gateway.id`) — from `refs/tca/src/organization-agent.ts:258`:
+   ```ts
+   const response = await this.env.AI.run(
+     "@cf/microsoft/resnet-50",
+     { image: bytes },
+     { gateway: { id: this.env.AI_GATEWAY_ID, skipCache: false, cacheTtl: 7 * 24 * 60 * 60 } },
+   );
+   ```
+   **No token needed.** Auth is automatic via the worker binding.
+
+2. **URL path** (`env.AI.gateway().getUrl()` with OpenAI SDK) — from `refs/tca/src/organization-agent.ts:939`:
+   ```ts
+   const gatewayUrl = await this.env.AI.gateway(this.env.AI_GATEWAY_ID).getUrl("workers-ai");
+   const openai = createOpenAI({
+     baseURL: `${gatewayUrl}/v1`,
+     apiKey: this.env.WORKERS_AI_API_TOKEN,
+     headers: { "cf-aig-authorization": `Bearer ${this.env.AI_GATEWAY_TOKEN}` },
+   });
+   ```
+   **Requires both `WORKERS_AI_API_TOKEN` and `AI_GATEWAY_TOKEN`.**
+
+We use path 1 (binding). So: **no `AI_GATEWAY_TOKEN` or `WORKERS_AI_API_TOKEN` needed**. Just `AI_GATEWAY_ID` as a var.
+
+### Gateway setup steps
+
+1. Go to Cloudflare Dashboard → AI → AI Gateway → Create Gateway
+2. Name it `tcei-gateway`
+3. Enable logging (on by default)
+4. Enable caching with a TTL (e.g., 3600s = 1 hour)
+5. Add `"AI_GATEWAY_ID": "tcei-gateway"` to wrangler vars (both top-level and production)
 
 ### What AI Gateway provides
 
 - **Logging** — every request/response is logged in the dashboard, useful for debugging extraction quality
-- **Caching** — can cache identical requests (useful if retrying the same invoice)
+- **Caching** — cache identical requests to save on dev costs during iteration
 - **Rate limiting** — protect against runaway costs
 - **Analytics** — token usage, latency, error rates per model
 
-For invoice extraction, **skip cache** since each invoice is unique:
+### Caching strategy
+
+From `refs/cloudflare-docs/src/content/docs/ai-gateway/features/caching.mdx:12`:
+
+> AI Gateway can cache responses from your AI model providers, serving them directly from Cloudflare's cache for identical requests.
+
+From `refs/cloudflare-docs/src/content/docs/ai-gateway/features/caching.mdx:22`:
+
+> Currently caching is supported only for text and image responses, and it applies only to identical requests.
+
+**For dev: enable caching.** During development, we'll re-upload the same test PDFs repeatedly. The markdown extraction is deterministic, so the same markdown → same prompt → cache hit on the JSON extraction call. This saves on dev costs.
+
+**For production: also keep caching on.** If a workflow retries (e.g., the `save-invoice-json` step fails after `extract-invoice-json` succeeds), the retry will re-run `extract-invoice-json` with the same prompt and hit cache.
+
+Use `skipCache: false` with a reasonable TTL:
 
 ```ts
-{ gateway: { id: env.AI_GATEWAY_ID, skipCache: true } }
+{
+  gateway: {
+    id: this.env.AI_GATEWAY_ID,
+    skipCache: false,
+    cacheTtl: 7 * 24 * 60 * 60, // 1 week
+  },
+}
 ```
 
 ### Additional gateway binding methods
@@ -338,7 +419,8 @@ const invoiceJson = await step.do("extract-invoice-json", async () => {
     {
       gateway: {
         id: this.env.AI_GATEWAY_ID,
-        skipCache: true,
+        skipCache: false,
+        cacheTtl: 7 * 24 * 60 * 60,
       },
     },
   );
@@ -391,9 +473,11 @@ applyInvoiceJson(input: {
 }
 ```
 
-### 5. Update `applyInvoiceMarkdown` to not set `status = 'ready'`
+### 5. Update `applyInvoiceMarkdown` to set `status = 'extracted_markdown'`
 
-Since extraction now continues after markdown, `applyInvoiceMarkdown` should set an intermediate status like `'extracted_markdown'` or just leave status as `'extracting'`. Only `applyInvoiceJson` sets `'ready'`.
+Since extraction now continues after markdown, `applyInvoiceMarkdown` sets `status = 'extracted_markdown'` and broadcasts `invoice_markdown_complete`. Only `applyInvoiceJson` sets `'ready'`.
+
+Update `onInvoiceUpload` to set `status = 'extracting_markdown'` (instead of `'extracting'`) when starting the workflow.
 
 ### 6. Update error handling
 
@@ -437,9 +521,9 @@ New workflow:
 
 1. `load-pdf` — R2 fetch
 2. `convert-pdf-to-markdown` — `env.AI.toMarkdown`
-3. `save-markdown` — agent RPC (status stays `'extracting'`)
-4. `extract-invoice-json` — `env.AI.run` with JSON mode through gateway
-5. `save-invoice-json` — agent RPC (sets status `'ready'`)
+3. `save-markdown` — agent RPC (status → `'extracted_markdown'`, broadcasts `invoice_markdown_complete`)
+4. `extract-invoice-json` — `env.AI.run` with JSON mode through gateway (agent sets status → `'extracting_json'`, broadcasts `invoice_json_started` before the call)
+5. `save-invoice-json` — agent RPC (status → `'ready'`, broadcasts `invoice_extraction_complete`)
 
 Why save markdown before extracting JSON:
 
@@ -447,24 +531,73 @@ Why save markdown before extracting JSON:
 - If the JSON extraction step fails and retries, the markdown step result is already persisted via the workflow step checkpointing
 - The user can see markdown appear first, then JSON follows — better incremental UX
 
-## Open Questions
+## Resolved Questions
 
-1. **Schema complexity vs model capability** — should we start with a simpler schema (just invoiceNumber, date, total, lineItems) and expand later?
+### 1. Schema complexity — keep full schema, make more fields `NullOr`
 
-Let's try with more properties, but maybe make more of them optional so we can get something back if the model cannot fully populate.
+Decision: try with more properties but make more of them `NullOr` so the model can return partial results.
 
-2. **Status granularity** — should there be separate statuses for markdown-done-json-pending (e.g., `'extracting_json'`), or is `'extracting'` sufficient throughout?
+Updated schema approach: every field except `lineItems` is `NullOr`. Even `lineItems` uses `NullOr` for individual item fields like `quantity`, `unitPrice`. The model can always return `null` for anything it can't find — we get partial extraction rather than failure.
 
-Separate statuses and would be helpful if they were broadcast. The route component for invoices probably needs a way to display the broadcast messages. Maybe there could be a local cache in tanstack query that accumulates the messages and a ui component displays them. we don't need to persist these messages across page loads.
+### 2. Status granularity — separate statuses, broadcast each transition
 
-3. **Retry on schema validation failure** — if `decodeInvoiceData` fails (model returned valid JSON but wrong shape), should we retry the AI call within the step, or let the workflow-level retry handle it?
+Decision: use separate statuses and broadcast each one.
 
-What do you recommend and why?
+Statuses:
 
-4. **Effect Schema `NullOr` vs `optionalKey`** — `NullOr` forces the LLM to always include the key with null. `optionalKey` makes the key optional. Which produces better LLM compliance? (Recommendation: `NullOr` for explicitness with LLMs.)
+- `uploaded` — file uploaded, no processing yet
+- `extracting_markdown` — markdown conversion in progress
+- `extracted_markdown` — markdown done, JSON extraction pending
+- `extracting_json` — JSON extraction in progress
+- `ready` — JSON extraction complete
+- `extract_error` — any step failed
 
-NullOr
+Broadcast events:
 
-5. **Gateway name** — what should the gateway be named? Suggestion: `tcei-gateway` or just use `default`.
+- `invoice_extraction_started` — workflow kicked off
+- `invoice_markdown_complete` — markdown saved
+- `invoice_json_started` — JSON extraction step beginning
+- `invoice_extraction_complete` — JSON saved, fully done
+- `invoice_extraction_error` — any failure
 
-Is this the name of the gateway in cloudflare admin dashboard? or is this internal name for gateway?
+#### Route broadcast message display
+
+The route component needs a way to show these broadcast messages as a live activity feed. Approach:
+
+- Use a TanStack Query `queryClient.setQueryData` call to accumulate broadcast messages into a client-side query key like `["invoice-activity", organizationId]`
+- Messages are ephemeral — they live only in the query cache, not persisted
+- A small UI component (e.g., a toast stack or a collapsible activity log panel) reads from this query key and displays recent messages
+- On page load, the list starts empty — no persistence needed
+- The existing websocket `onmessage` handler that calls `router.invalidate()` can also push messages into this query cache
+
+This keeps the implementation simple: no new server state, no new API, just client-side accumulation of websocket events.
+
+### 3. Retry on schema validation failure — let workflow-level retry handle it
+
+Recommendation: **let the workflow retry handle it** (throw from the step).
+
+Why:
+
+- The `step.do` callback is the retry boundary. If `decodeInvoiceData` throws, the step fails and the workflow retries the step from scratch.
+- The workflow step result is checkpointed only on success (from `refs/cloudflare-docs/src/content/docs/workflows/get-started/durable-agents.mdx:216`: "step.do executes code and persists the result"). A failed step is not persisted, so retry is clean.
+- Adding in-step retry logic (e.g., retry 3 times within the step) adds complexity and masks problems. If the model consistently returns bad JSON for a given invoice, we want the workflow to error out and surface it, not silently retry 3 times and then error anyway.
+- With caching enabled on the gateway, a retry of the same prompt would hit cache and return the same bad result anyway. A workflow-level retry with a fresh attempt is more likely to get a different response (cache may have expired or the step may re-run with slightly different timing).
+
+If we see frequent schema validation failures in practice, we can add in-step retry with a modified prompt (e.g., append "Please ensure all fields match the schema exactly") as a second attempt before throwing.
+
+### 4. Effect Schema `NullOr` vs `optionalKey` — use `NullOr`
+
+Decision: `NullOr` for all nullable fields.
+
+`NullOr` produces `{ "anyOf": [{ "type": "string" }, { "type": "null" }] }` which requires the key to always be present. This is better for LLMs because:
+
+- Explicit key presence means the model must consider each field
+- Optional keys (`optionalKey`) let the model silently skip fields, making it harder to distinguish "model couldn't find it" from "model forgot to include it"
+
+### 5. Gateway name — `tcei-gateway`, created in Cloudflare dashboard
+
+Decision: create `tcei-gateway` in the Cloudflare dashboard. This is the dashboard name and the API slug — they are the same thing.
+
+See "Gateway ID explained" and "Gateway setup steps" sections above for details.
+
+name is `tcei-ai-gateway`
