@@ -113,13 +113,13 @@ So when using the binding path (`env.AI.run` with `gateway.id`), auth is automat
 
 ### Wrangler changes
 
-Add a var for the gateway ID in `wrangler.jsonc`:
+`AI_GATEWAY_ID` is already configured in `wrangler.jsonc:19` (and `:109` for production):
 
 ```jsonc
-"vars": {
-  "AI_GATEWAY_ID": "tcei-gateway"
-}
+"AI_GATEWAY_ID": "tcei-ai-gateway"
 ```
+
+`AI_GATEWAY_TOKEN` and `WORKERS_AI_API_TOKEN` are already in `.env` and typed in `worker-configuration.d.ts`. Not needed for the binding path but available for future use (e.g., URL path with AI SDK).
 
 No new binding needed — the existing `"ai": { "binding": "AI" }` already supports gateway routing.
 
@@ -139,19 +139,12 @@ From `refs/cloudflare-docs/src/content/docs/ai-gateway/configuration/manage-gate
 
 `refs/tca` uses `AI_GATEWAY_ID: "saas-ai-gateway"` (from `refs/tca/wrangler.jsonc:20`). Both projects share the same `account_id` (`1422451be59cc2401532ad67d92ae773`), so they share the same gateway namespace.
 
-**Recommendation: create a separate gateway `tcei-gateway`** in the Cloudflare dashboard.
+**Already done: `tcei-ai-gateway` exists in the Cloudflare dashboard** as a separate gateway from tca's `saas-ai-gateway`.
 
-Why:
+Why separate:
 
 - Separate logging/analytics — invoice extraction logs won't mix with tca's classification logs
 - Independent rate limiting and caching config
-- If we reuse `saas-ai-gateway`, tca's cache settings and rate limits would apply to invoice extraction too
-
-AI gateway named `tcei-ai-gateway` exists in Cloudflare already.
-AI_GATEWAY_ID defined already in wrangler config as environment var.
-AI_GATEWAY_TOKEN and WORKERS_AI_API_TOKEN are defined in .env
-The types should be up to date.
-We may need all of these in the future.
 
 ### No tokens needed for the binding path
 
@@ -180,13 +173,13 @@ We may need all of these in the future.
 
 We use path 1 (binding). So: **no `AI_GATEWAY_TOKEN` or `WORKERS_AI_API_TOKEN` needed**. Just `AI_GATEWAY_ID` as a var.
 
-### Gateway setup steps
+### Gateway setup (already complete)
 
-1. Go to Cloudflare Dashboard → AI → AI Gateway → Create Gateway
-2. Name it `tcei-gateway`
-3. Enable logging (on by default)
-4. Enable caching with a TTL (e.g., 3600s = 1 hour)
-5. Add `"AI_GATEWAY_ID": "tcei-gateway"` to wrangler vars (both top-level and production)
+- Gateway `tcei-ai-gateway` exists in Cloudflare dashboard
+- `AI_GATEWAY_ID: "tcei-ai-gateway"` is in wrangler vars (both top-level and production)
+- `AI_GATEWAY_TOKEN` and `WORKERS_AI_API_TOKEN` are in `.env`
+- Types are up to date in `worker-configuration.d.ts`
+- Enable caching in the dashboard if not already on (set TTL e.g. 3600s)
 
 ### What AI Gateway provides
 
@@ -386,6 +379,8 @@ const invoiceDataJsonSchema = Schema.toJsonSchemaDocument(InvoiceDataSchema).sch
 
 ### 2. Add `invoiceJson` and `invoiceJsonError` columns to `Invoice` table
 
+get rid of any alter's both new and existing. we don't need to migrate the database and will reset it from scratch.
+
 Similar pattern to `markdown` / `markdownError`:
 
 ```sql
@@ -485,15 +480,9 @@ Update `onInvoiceUpload` to set `status = 'extracting_markdown'` (instead of `'e
 
 Alternatively, keep it simple: any workflow error sets `status = 'extract_error'` and stores the error message. The workflow is atomic — if JSON extraction fails, the whole workflow errors.
 
-### 7. Add `AI_GATEWAY_ID` var to `wrangler.jsonc`
+### 7. `AI_GATEWAY_ID` var (already in `wrangler.jsonc`)
 
-```jsonc
-"vars": {
-  "AI_GATEWAY_ID": "tcei-gateway"
-}
-```
-
-Add to both top-level and `env.production` vars.
+Already configured as `"tcei-ai-gateway"` in both top-level and production vars. No changes needed.
 
 ### 8. Display in route
 
@@ -594,10 +583,8 @@ Decision: `NullOr` for all nullable fields.
 - Explicit key presence means the model must consider each field
 - Optional keys (`optionalKey`) let the model silently skip fields, making it harder to distinguish "model couldn't find it" from "model forgot to include it"
 
-### 5. Gateway name — `tcei-gateway`, created in Cloudflare dashboard
+### 5. Gateway name — `tcei-ai-gateway`, already exists
 
-Decision: create `tcei-gateway` in the Cloudflare dashboard. This is the dashboard name and the API slug — they are the same thing.
+Gateway `tcei-ai-gateway` already exists in the Cloudflare dashboard. `AI_GATEWAY_ID` is already configured in wrangler. The dashboard name and the API slug are the same thing.
 
-See "Gateway ID explained" and "Gateway setup steps" sections above for details.
-
-name is `tcei-ai-gateway`
+See "Gateway ID explained" and "Gateway setup" sections above for details.
