@@ -7,7 +7,7 @@ Question: after `onInvoiceUpload` upserts into `Invoice` in `src/organization-ag
 Yes. This fits the current architecture, with a few updates from your annotations.
 
 - `onInvoiceUpload` already runs inside the per-organization agent, owns the `Invoice` SQLite table, and already broadcasts websocket messages from the same place.
-- Cloudflare exposes two markdown-conversion paths: `env.AI.toMarkdown(...)` via binding, and the Workers AI REST markdown endpoint. Both return markdown text in `data` on success.
+- For this spike, use the Workers AI binding path: `env.AI.toMarkdown(...)`.
 - Agents + Workflows fit the orchestration well: start workflow from agent with `runWorkflow()`, do R2 read and markdown conversion in `step.do(...)`, then call back into the agent to persist the result.
 - For the spike, keep naming around `invoice extraction`, not `markdown conversion`, since markdown is just the current artifact.
 - For the route, simplest is raw markdown only for debugging: return it from `getInvoices()` and show it in a detail panel or `<pre>`.
@@ -83,21 +83,6 @@ From `refs/cloudflare-docs/src/content/docs/workers-ai/features/markdown-convers
 
 Important implication: for PDFs, this is not a custom OCR pipeline we need to assemble. The built-in markdown-conversion API is the first thing to spike.
 
-### Workers AI REST path
-
-From `refs/cloudflare-docs/src/content/docs/workers-ai/features/markdown-conversion/usage/rest-api.mdx:10` and `:21`:
-
-```md
-You can also use the Markdown Conversion REST API to convert your documents into Markdown.
-curl https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/tomarkdown \
-  -H 'Authorization: Bearer {API_TOKEN}'
-```
-
-Important implication: because this repo now has `WORKERS_AI_API_TOKEN`, the spike has two viable integration paths:
-
-- `env.AI.toMarkdown(...)` via Workers AI binding
-- direct REST call to `/accounts/{accountId}/ai/tomarkdown`
-
 ### Workflows + agents
 
 From `refs/cloudflare-docs/src/content/docs/agents/api-reference/run-workflows.mdx:232`:
@@ -155,12 +140,9 @@ const gatewayUrl = await this.env.AI.gateway(this.env.AI_GATEWAY_ID).getUrl(
 );
 ```
 
-But I did not find grounding that markdown conversion itself is supported through AI Gateway. The markdown docs only ground:
+But I did not find grounding that markdown conversion itself is supported through AI Gateway.
 
-- Workers binding `env.AI.toMarkdown(...)`
-- Workers AI REST `/ai/tomarkdown`
-
-So I would not make `AI_GATEWAY_TOKEN` part of the initial spike path unless we verify a supported gateway route first.
+So I would not make `AI_GATEWAY_TOKEN` part of the initial spike path.
 
 ### Local dev caveat
 
@@ -360,8 +342,7 @@ Inside workflow:
    - build `Blob` with `type: "application/pdf"`
 
 2. `step.do("convert-pdf-to-markdown", ...)`
-   - path A: `this.env.AI.toMarkdown({ name: fileName, blob }, { conversionOptions: { pdf: { metadata: false } } })`
-   - path B: direct REST `fetch("https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/tomarkdown", ...)` with `Authorization: Bearer ${this.env.WORKERS_AI_API_TOKEN}`
+   - `this.env.AI.toMarkdown({ name: fileName, blob }, { conversionOptions: { pdf: { metadata: false } } })`
    - if result `format === "error"`, throw with `error`
    - otherwise return `data`
 
@@ -385,7 +366,10 @@ Current `wrangler.jsonc` already has:
 - `R2`
 - queue bindings
 
-It does not yet have a workflow binding.
+It does not yet have:
+
+- Workers AI binding
+- workflow binding
 
 ### Option A - add Workers AI binding
 
@@ -399,20 +383,9 @@ Based on `refs/cloudflare-docs/src/content/docs/workers-ai/features/markdown-con
 
 This keeps the workflow code simpler because it can call `this.env.AI.toMarkdown(...)` directly.
 
-### Option B - use existing `WORKERS_AI_API_TOKEN`
+This is the required path for the spike.
 
-Based on `refs/cloudflare-docs/src/content/docs/workers-ai/features/markdown-conversion/usage/rest-api.mdx:21`:
-
-```bash
-curl https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/tomarkdown \
-  -H 'Authorization: Bearer {API_TOKEN}'
-```
-
-This avoids adding the Workers AI binding, since the token already exists in env.
-
-My current read: Option B is the smaller spike if the goal is only proving invoice PDF -> markdown conversion.
-
-Either way, the workflow entry still needs to be added:
+The workflow entry also needs to be added:
 
 ```jsonc
 "workflows": [
@@ -484,8 +457,8 @@ So: Effect at app boundaries, simple async inside workflow steps is a good fit f
 1. Make invoice upload PDF-only.
 2. Keep `markdown` and `markdownError` on `Invoice`; storing full markdown there is fine for the spike.
 3. Name workflow/events/statuses around `invoice extraction`, not `markdown`, because markdown is just the current extraction artifact.
-4. Prefer the existing `WORKERS_AI_API_TOKEN` + Workers AI REST markdown endpoint for the first spike, unless you specifically want to add an `AI` binding now.
-5. Do not involve `AI_GATEWAY_TOKEN` in the first spike unless we confirm a supported gateway route for `toMarkdown`.
+4. Add an `AI` binding and use `this.env.AI.toMarkdown(...)` inside the workflow.
+5. Do not involve `WORKERS_AI_API_TOKEN` or `AI_GATEWAY_TOKEN` in the first spike.
 6. Show raw markdown only in the route for debugging.
 
 ## Recommended Spike Plan
@@ -493,9 +466,9 @@ So: Effect at app boundaries, simple async inside workflow steps is a good fit f
 1. Restrict the invoice route to PDF upload only.
 2. Add `markdown` and `markdownError` columns to `Invoice`, keep `status` + `processedAt`.
 3. Add `InvoiceExtractionWorkflow` beside `OrganizationAgent`.
-4. Add workflow binding in `wrangler.jsonc`.
+4. Add `AI` binding and workflow binding in `wrangler.jsonc`.
 5. In `onInvoiceUpload`, start workflow using `INVOICE_EXTRACTION_WORKFLOW`.
-6. In the workflow, call Workers AI markdown conversion either via `env.AI.toMarkdown(...)` or REST; given current env, REST looks slightly smaller.
+6. In the workflow, call Workers AI markdown conversion via `this.env.AI.toMarkdown(...)`.
 7. Add agent methods like `applyInvoiceMarkdown(...)` and `applyInvoiceMarkdownError(...)`.
 8. Broadcast small `invoice_extraction_*` events and invalidate the invoices route on those events.
 9. In the route, show raw markdown in a simple detail panel.
