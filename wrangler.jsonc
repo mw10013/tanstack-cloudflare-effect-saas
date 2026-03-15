@@ -23,6 +23,9 @@
   "observability": {
     "enabled": true
   },
+  "ai": {
+    "binding": "AI"
+  },
   "durable_objects": {
     "bindings": [
       {
@@ -35,6 +38,13 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["OrganizationAgent"]
+    }
+  ],
+  "workflows": [
+    {
+      "name": "invoice-extraction-workflow",
+      "binding": "INVOICE_EXTRACTION_WORKFLOW",
+      "class_name": "InvoiceExtractionWorkflow"
     }
   ],
   "d1_databases": [
@@ -153,10 +163,20 @@
           }
         ]
       },
+      "ai": {
+        "binding": "AI"
+      },
       "migrations": [
         {
           "tag": "v1",
           "new_sqlite_classes": ["OrganizationAgent"]
+        }
+      ],
+      "workflows": [
+        {
+          "name": "invoice-extraction-workflow",
+          "binding": "INVOICE_EXTRACTION_WORKFLOW",
+          "class_name": "InvoiceExtractionWorkflow"
         }
       ],
       "triggers": {

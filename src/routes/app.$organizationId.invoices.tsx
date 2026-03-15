@@ -68,8 +68,33 @@ const deleteInvoiceSchema = Schema.Struct({
 });
 
 const invoiceMessageSchema = Schema.Struct({
-  type: Schema.Literals(["invoice_uploaded", "invoice_deleted"]),
+  type: Schema.Literals([
+    "invoice_uploaded",
+    "invoice_deleted",
+    "invoice_extraction_started",
+    "invoice_extraction_complete",
+    "invoice_extraction_error",
+  ]),
 });
+
+const getStatusVariant = (
+  status: string,
+): "default" | "destructive" | "secondary" => {
+  if (status === "ready") return "default";
+  if (status === "extract_error") return "destructive";
+  return "secondary";
+};
+
+const getMarkdownSizeLabel = (invoice: {
+  readonly markdown: string | null;
+  readonly status: string;
+  readonly contentType: string;
+}): string => {
+  if (invoice.markdown) return `${String(Math.round(invoice.markdown.length / 1024))} KB`;
+  if (invoice.contentType !== "application/pdf") return "Skipped";
+  if (invoice.status === "extract_error") return "Error";
+  return "Pending";
+};
 
 const getInvoices = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
@@ -221,6 +246,24 @@ function RouteComponent() {
   const invoices = Route.useLoaderData();
   const router = useRouter();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | null>(
+    null,
+  );
+  const selectedInvoice =
+    invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0] ?? null;
+
+  React.useEffect(() => {
+    if (selectedInvoiceId === null && invoices[0]) {
+      setSelectedInvoiceId(invoices[0].id);
+      return;
+    }
+    if (
+      selectedInvoiceId !== null &&
+      !invoices.some((invoice) => invoice.id === selectedInvoiceId)
+    ) {
+      setSelectedInvoiceId(invoices[0]?.id ?? null);
+    }
+  }, [invoices, selectedInvoiceId]);
 
   useAgent<OrganizationAgent, unknown>({
     agent: "organization-agent",
@@ -252,13 +295,46 @@ function RouteComponent() {
     },
   });
 
+  const selectedInvoiceContent = (() => {
+    if (selectedInvoice === null) {
+      return <p className="text-sm text-muted-foreground">No invoice selected.</p>;
+    }
+    if (selectedInvoice.status === "extract_error") {
+      return (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Extraction failed</AlertTitle>
+          <AlertDescription>
+            {selectedInvoice.markdownError ?? "Unknown extraction error"}
+          </AlertDescription>
+        </Alert>
+      );
+    }
+    if (selectedInvoice.contentType !== "application/pdf") {
+      return (
+        <p className="text-sm text-muted-foreground">
+          Markdown extraction currently runs only for PDF invoices.
+        </p>
+      );
+    }
+    if (selectedInvoice.markdown) {
+      return (
+        <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-xs leading-5">
+          {selectedInvoice.markdown}
+        </pre>
+      );
+    }
+    return (
+      <p className="text-sm text-muted-foreground">Extraction in progress.</p>
+    );
+  })();
+
   return (
     <div className="flex flex-col gap-6 p-6">
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
         <p className="text-sm text-muted-foreground">
-          Upload and manage invoices. Supported formats: PDF, PNG, JPEG, WEBP,
-          GIF (up to 10MB).
+          Upload invoices and inspect extracted markdown debugging output for PDFs.
         </p>
       </header>
 
@@ -269,7 +345,7 @@ function RouteComponent() {
             Upload Invoice
           </CardTitle>
           <CardDescription>
-            Select a file to upload as an invoice.
+            Select a PDF or image invoice up to 10MB. Extraction currently runs for PDFs only.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -310,76 +386,94 @@ function RouteComponent() {
       </Card>
 
       {invoices.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {invoices.length} Invoice{invoices.length !== 1 && "s"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>File</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Uploaded</TableHead>
-                  <TableHead className="w-25" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoices.map((invoice) => (
-                  <TableRow key={invoice.id}>
-                    <TableCell className="flex items-center gap-2 font-medium">
-                      <FileText className="size-4 shrink-0 text-muted-foreground" />
-                      <a
-                        href={invoice.viewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="truncate hover:underline"
-                      >
-                        {invoice.fileName}
-                      </a>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {invoice.contentType.split("/")[1]?.toUpperCase() ??
-                        invoice.contentType}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          invoice.status === "uploaded"
-                            ? "secondary"
-                            : "default"
-                        }
-                      >
-                        {invoice.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(invoice.createdAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          deleteMutation.mutate({
-                            invoiceId: invoice.id,
-                            r2ObjectKey: invoice.r2ObjectKey,
-                          });
-                        }}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </TableCell>
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {invoices.length} Invoice{invoices.length !== 1 && "s"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>File</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Uploaded</TableHead>
+                    <TableHead>Markdown</TableHead>
+                    <TableHead className="w-35" />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {invoices.map((invoice) => (
+                    <TableRow key={invoice.id}>
+                      <TableCell className="flex items-center gap-2 font-medium">
+                        <FileText className="size-4 shrink-0 text-muted-foreground" />
+                        <a
+                          href={invoice.viewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="truncate hover:underline"
+                        >
+                          {invoice.fileName}
+                        </a>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusVariant(invoice.status)}>
+                          {invoice.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(invoice.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getMarkdownSizeLabel(invoice)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedInvoiceId(invoice.id);
+                            }}
+                          >
+                            Inspect
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              deleteMutation.mutate({
+                                invoiceId: invoice.id,
+                                r2ObjectKey: invoice.r2ObjectKey,
+                              });
+                            }}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Extracted Markdown</CardTitle>
+              <CardDescription>
+                {selectedInvoice?.fileName ?? "Select an invoice to inspect extraction output."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {selectedInvoiceContent}
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );

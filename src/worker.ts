@@ -25,7 +25,7 @@ import { Request as AppRequest } from "@/lib/Request";
 import { Stripe } from "@/lib/Stripe";
 import { extractAgentInstanceName } from "./organization-agent";
 
-export { OrganizationAgent } from "./organization-agent";
+export { InvoiceExtractionWorkflow, OrganizationAgent } from "./organization-agent";
 
 const makeEnvLayer = (env: Env) =>
   Layer.succeedServices(
@@ -189,6 +189,17 @@ const formatQueueError = (error: unknown) =>
     ? `${error.name}: ${error.message}\n${error.stack ?? ""}`
     : String(error);
 
+const getOrganizationAgentStub = async (env: Env, organizationId: string) => {
+  const id = env.ORGANIZATION_AGENT.idFromName(organizationId);
+  const stub = env.ORGANIZATION_AGENT.get(id);
+  // Queue handlers create stubs directly. Unlike routeAgentRequest(), that path
+  // does not populate the Agents SDK instance name, so name-dependent features
+  // like workflows can throw until we set it explicitly. See
+  // https://github.com/cloudflare/workerd/issues/2240.
+  await stub.setName(organizationId);
+  return stub;
+};
+
 const handleInvoiceDelete = async ({
   env,
   message,
@@ -206,9 +217,8 @@ const handleInvoiceDelete = async ({
     message.ack();
     return;
   }
-  const id = env.ORGANIZATION_AGENT.idFromName(parsed.organizationId);
-  const stub = env.ORGANIZATION_AGENT.get(id);
   try {
+    const stub = await getOrganizationAgentStub(env, parsed.organizationId);
     await stub.onInvoiceDelete({
       invoiceId: parsed.invoiceId,
       eventTime: notification.eventTime,
@@ -263,9 +273,8 @@ const handleInvoiceUpload = async ({
     fileName,
     contentType,
   } = metadataResult.value;
-  const id = env.ORGANIZATION_AGENT.idFromName(organizationId);
-  const stub = env.ORGANIZATION_AGENT.get(id);
   try {
+    const stub = await getOrganizationAgentStub(env, organizationId);
     await stub.onInvoiceUpload({
       invoiceId,
       eventTime: notification.eventTime,
