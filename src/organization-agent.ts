@@ -3,6 +3,11 @@ import { AgentWorkflow } from "agents/workflows";
 import type { AgentWorkflowEvent, AgentWorkflowStep } from "agents/workflows";
 import * as Schema from "effect/Schema";
 
+import {
+  decodeSimpleInvoiceProbe,
+  simpleInvoiceProbeJsonSchema,
+} from "@/lib/invoice-ai";
+
 export interface OrganizationAgentState {
   readonly message: string;
 }
@@ -26,7 +31,11 @@ const InvoiceRowSchema = Schema.Struct({
   processedAt: Schema.NullOr(Schema.Number),
   markdown: Schema.NullOr(Schema.String),
   markdownError: Schema.NullOr(Schema.String),
+  invoiceJson: Schema.NullOr(Schema.String),
+  invoiceJsonError: Schema.NullOr(Schema.String),
 });
+
+const extractInvoiceJsonErrorPrefix = "extract-invoice-json:";
 
 const activeWorkflowStatuses = new Set(["queued", "running", "waiting"]);
 type InvoiceRow = typeof InvoiceRowSchema.Type;
@@ -60,15 +69,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       status text not null default 'uploaded',
       processedAt integer,
       markdown text,
-      markdownError text
+      markdownError text,
+      invoiceJson text,
+      invoiceJsonError text
     )`;
-    const columns = this.sql<{ name: string }>`pragma table_info(Invoice)`;
-    if (!columns.some(({ name }) => name === "markdown")) {
-      void this.sql`alter table Invoice add column markdown text`;
-    }
-    if (!columns.some(({ name }) => name === "markdownError")) {
-      void this.sql`alter table Invoice add column markdownError text`;
-    }
   }
 
   @callable()
@@ -104,36 +108,24 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       existing?.idempotencyKey === upload.idempotencyKey &&
       (existing.markdown !== null ||
         existing.processedAt !== null ||
-        existing.status === "extracting" ||
+        existing.status === "extracting_markdown" ||
+        existing.status === "extracted_markdown" ||
+        existing.status === "extracting_json" ||
         existing.status === "ready")
     ) {
       return;
     }
     void this.sql`
       insert into Invoice (
-        id,
-        fileName,
-        contentType,
-        createdAt,
-        eventTime,
-        idempotencyKey,
-        r2ObjectKey,
-        status,
-        processedAt,
-        markdown,
-        markdownError
+        id, fileName, contentType, createdAt, eventTime,
+        idempotencyKey, r2ObjectKey, status,
+        processedAt, markdown, markdownError,
+        invoiceJson, invoiceJsonError
       ) values (
-        ${upload.invoiceId},
-        ${upload.fileName},
-        ${upload.contentType},
-        ${eventTime},
-        ${eventTime},
-        ${upload.idempotencyKey},
-        ${upload.r2ObjectKey},
-        'uploaded',
-        null,
-        null,
-        null
+        ${upload.invoiceId}, ${upload.fileName}, ${upload.contentType},
+        ${eventTime}, ${eventTime}, ${upload.idempotencyKey},
+        ${upload.r2ObjectKey}, 'uploaded',
+        null, null, null, null, null
       )
       on conflict(id) do update set
         fileName = excluded.fileName,
@@ -144,7 +136,9 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         status = 'uploaded',
         processedAt = null,
         markdown = null,
-        markdownError = null
+        markdownError = null,
+        invoiceJson = null,
+        invoiceJsonError = null
     `;
     this.broadcast(
       JSON.stringify({
@@ -171,7 +165,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     );
     void this.sql`
       update Invoice
-      set status = 'extracting'
+      set status = 'extracting_markdown'
       where id = ${upload.invoiceId} and idempotencyKey = ${upload.idempotencyKey}
     `;
     this.broadcast(
@@ -215,7 +209,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     const processedAt = Date.now();
     const updated = this.sql<{ id: string; fileName: string }>`
       update Invoice
-      set status = 'ready',
+      set status = 'extracted_markdown',
           processedAt = ${processedAt},
           markdown = ${input.markdown},
           markdownError = null
@@ -225,6 +219,31 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     if (updated.length === 0) {
       return;
     }
+    this.broadcast(
+      JSON.stringify({
+        type: "invoice_markdown_complete",
+        invoiceId: updated[0].id,
+        fileName: updated[0].fileName,
+      }),
+    );
+  }
+
+  applyInvoiceJson(input: {
+    invoiceId: string;
+    idempotencyKey: string;
+    invoiceJson: string;
+  }) {
+    const processedAt = Date.now();
+    const updated = this.sql<{ id: string; fileName: string }>`
+      update Invoice
+      set status = 'ready',
+          processedAt = ${processedAt},
+          invoiceJson = ${input.invoiceJson},
+          invoiceJsonError = null
+      where id = ${input.invoiceId} and idempotencyKey = ${input.idempotencyKey}
+      returning id, fileName
+    `;
+    if (updated.length === 0) return;
     this.broadcast(
       JSON.stringify({
         type: "invoice_extraction_complete",
@@ -243,13 +262,17 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") {
       return;
     }
+    const invoiceJsonError = error.startsWith(extractInvoiceJsonErrorPrefix)
+      ? error.slice(extractInvoiceJsonErrorPrefix.length).trim()
+      : null;
+    const markdownError = invoiceJsonError === null ? error : null;
     const processedAt = Date.now();
     const updated = this.sql<{ id: string; fileName: string }>`
       update Invoice
       set status = 'extract_error',
           processedAt = ${processedAt},
-          markdown = null,
-          markdownError = ${error}
+          markdownError = ${markdownError},
+          invoiceJsonError = ${invoiceJsonError}
       where idempotencyKey = ${workflowId}
       returning id, fileName
     `;
@@ -299,6 +322,12 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
       if (result.format === "error") {
         throw new Error(result.error);
       }
+      console.log("invoice markdown ready", {
+        invoiceId: event.payload.invoiceId,
+        fileName: event.payload.fileName,
+        tokens: result.tokens,
+        length: result.data.length,
+      });
       return result.data;
     });
     await step.do("save-markdown", async () => {
@@ -306,6 +335,86 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
         invoiceId: event.payload.invoiceId,
         idempotencyKey: event.payload.idempotencyKey,
         markdown,
+      });
+    });
+    const invoiceJsonModel = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+    const runExtractInvoiceJson = async ({ attempt }: { readonly attempt: number }) => {
+      console.log("invoice extract json start", {
+        invoiceId: event.payload.invoiceId,
+        fileName: event.payload.fileName,
+        attempt,
+        environment: this.env.ENVIRONMENT,
+        markdownLength: markdown.length,
+        model: invoiceJsonModel,
+      });
+      try {
+        const result = await this.env.AI.run(
+          invoiceJsonModel,
+          {
+            prompt: `Determine whether the following markdown is an invoice and extract only the total if present. Reply with JSON only.\n\n${markdown}`,
+            response_format: {
+              type: "json_schema" as const,
+              json_schema: simpleInvoiceProbeJsonSchema,
+            },
+            max_tokens: 256,
+            temperature: 0,
+          },
+          {
+            gateway: {
+              id: this.env.AI_GATEWAY_ID,
+              skipCache: true,
+              cacheTtl: 7 * 24 * 60 * 60,
+            },
+          },
+        );
+        console.log("invoice extract json raw result", {
+          invoiceId: event.payload.invoiceId,
+          attempt,
+          resultType: typeof result,
+          hasResponse:
+            typeof result === "object" && result !== null && "response" in result,
+          preview:
+            typeof result === "string"
+              ? result.slice(0, 1000)
+              : JSON.stringify(result).slice(0, 1000),
+        });
+        const invoiceJson = (() => {
+          if (typeof result === "string") {
+            return decodeSimpleInvoiceProbe(JSON.parse(result) as unknown);
+          }
+          if (!("response" in result) || !result.response) {
+            throw new Error("No response from AI model");
+          }
+          return decodeSimpleInvoiceProbe(
+            typeof result.response === "string"
+              ? (JSON.parse(result.response) as unknown)
+              : result.response,
+          );
+        })();
+        console.log("invoice extract json success", {
+          invoiceId: event.payload.invoiceId,
+          attempt,
+        });
+        return invoiceJson;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("invoice extract json failed", {
+          invoiceId: event.payload.invoiceId,
+          fileName: event.payload.fileName,
+          attempt,
+          environment: this.env.ENVIRONMENT,
+          markdownLength: markdown.length,
+          message,
+        });
+        throw new Error(`${extractInvoiceJsonErrorPrefix} ${message}`, { cause: error });
+      }
+    };
+    const invoiceJson = await step.do("extract-invoice-json", runExtractInvoiceJson);
+    await step.do("save-invoice-json", async () => {
+      await this.agent.applyInvoiceJson({
+        invoiceId: event.payload.invoiceId,
+        idempotencyKey: event.payload.idempotencyKey,
+        invoiceJson: JSON.stringify(invoiceJson),
       });
     });
     return { invoiceId: event.payload.invoiceId };

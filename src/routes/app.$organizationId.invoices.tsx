@@ -12,7 +12,7 @@ import { useAgent } from "agents/react";
 import { Cause, Config, Effect, Redacted } from "effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
-import { AlertCircle, FileText, Trash2, Upload } from "lucide-react";
+import { AlertCircle, Copy, FileText, Trash2, Upload } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +72,8 @@ const invoiceMessageSchema = Schema.Struct({
     "invoice_uploaded",
     "invoice_deleted",
     "invoice_extraction_started",
+    "invoice_markdown_complete",
+    "invoice_json_started",
     "invoice_extraction_complete",
     "invoice_extraction_error",
   ]),
@@ -91,6 +93,17 @@ const getMarkdownSizeLabel = (invoice: {
   readonly contentType: string;
 }): string => {
   if (invoice.markdown) return `${String(Math.round(invoice.markdown.length / 1024))} KB`;
+  if (invoice.contentType !== "application/pdf") return "Skipped";
+  if (invoice.status === "extract_error") return "Error";
+  return "Pending";
+};
+
+const getJsonSizeLabel = (invoice: {
+  readonly invoiceJson: string | null;
+  readonly status: string;
+  readonly contentType: string;
+}): string => {
+  if (invoice.invoiceJson) return `${String(Math.round(invoice.invoiceJson.length / 1024))} KB`;
   if (invoice.contentType !== "application/pdf") return "Skipped";
   if (invoice.status === "extract_error") return "Error";
   return "Pending";
@@ -249,8 +262,19 @@ function RouteComponent() {
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | null>(
     null,
   );
+  const [copiedField, setCopiedField] = React.useState<"markdown" | "json" | null>(
+    null,
+  );
   const selectedInvoice =
     invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0] ?? null;
+
+  const copyText = React.useCallback(async (value: string, field: "markdown" | "json") => {
+    await navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => {
+      setCopiedField((current) => (current === field ? null : current));
+    }, 2000);
+  }, []);
 
   React.useEffect(() => {
     if (selectedInvoiceId === null && invoices[0]) {
@@ -299,33 +323,74 @@ function RouteComponent() {
     if (selectedInvoice === null) {
       return <p className="text-sm text-muted-foreground">No invoice selected.</p>;
     }
-    if (selectedInvoice.status === "extract_error") {
-      return (
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertTitle>Extraction failed</AlertTitle>
-          <AlertDescription>
-            {selectedInvoice.markdownError ?? "Unknown extraction error"}
-          </AlertDescription>
-        </Alert>
-      );
-    }
     if (selectedInvoice.contentType !== "application/pdf") {
       return (
         <p className="text-sm text-muted-foreground">
-          Markdown extraction currently runs only for PDF invoices.
+          Extraction currently runs only for PDF invoices.
         </p>
       );
     }
-    if (selectedInvoice.markdown) {
-      return (
-        <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-xs leading-5">
-          {selectedInvoice.markdown}
-        </pre>
-      );
-    }
     return (
-      <p className="text-sm text-muted-foreground">Extraction in progress.</p>
+      <div className="flex flex-col gap-4">
+        {selectedInvoice.status === "extract_error" && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertTitle>Extraction failed</AlertTitle>
+            <AlertDescription>
+              {selectedInvoice.markdownError ?? selectedInvoice.invoiceJsonError ?? "Unknown extraction error"}
+            </AlertDescription>
+          </Alert>
+        )}
+        {selectedInvoice.markdown && (
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-medium">Markdown</h4>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedInvoice.markdown) {
+                    void copyText(selectedInvoice.markdown, "markdown");
+                  }
+                }}
+              >
+                <Copy className="size-4" />
+                {copiedField === "markdown" ? "Copied" : "Copy Markdown"}
+              </Button>
+            </div>
+            <pre className="max-h-144 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-xs leading-5">
+              {selectedInvoice.markdown}
+            </pre>
+          </div>
+        )}
+        {selectedInvoice.invoiceJson && (
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-medium">Extracted JSON</h4>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedInvoice.invoiceJson) {
+                    void copyText(selectedInvoice.invoiceJson, "json");
+                  }
+                }}
+              >
+                <Copy className="size-4" />
+                {copiedField === "json" ? "Copied" : "Copy JSON"}
+              </Button>
+            </div>
+            <pre className="max-h-144 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-xs leading-5">
+              {JSON.stringify(JSON.parse(selectedInvoice.invoiceJson), null, 2)}
+            </pre>
+          </div>
+        )}
+        {!selectedInvoice.markdown && !selectedInvoice.invoiceJson && (
+          <p className="text-sm text-muted-foreground">Extraction in progress.</p>
+        )}
+      </div>
     );
   })();
 
@@ -401,6 +466,7 @@ function RouteComponent() {
                     <TableHead>Status</TableHead>
                     <TableHead>Uploaded</TableHead>
                     <TableHead>Markdown</TableHead>
+                    <TableHead>JSON</TableHead>
                     <TableHead className="w-35" />
                   </TableRow>
                 </TableHeader>
@@ -428,6 +494,9 @@ function RouteComponent() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {getMarkdownSizeLabel(invoice)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getJsonSizeLabel(invoice)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
@@ -464,7 +533,7 @@ function RouteComponent() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Extracted Markdown</CardTitle>
+              <CardTitle>Extraction Output</CardTitle>
               <CardDescription>
                 {selectedInvoice?.fileName ?? "Select an invoice to inspect extraction output."}
               </CardDescription>

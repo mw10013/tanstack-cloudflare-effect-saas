@@ -379,14 +379,7 @@ const invoiceDataJsonSchema = Schema.toJsonSchemaDocument(InvoiceDataSchema).sch
 
 ### 2. Add `invoiceJson` and `invoiceJsonError` columns to `Invoice` table
 
-get rid of any alter's both new and existing. we don't need to migrate the database and will reset it from scratch.
-
-Similar pattern to `markdown` / `markdownError`:
-
-```sql
-alter table Invoice add column invoiceJson text
-alter table Invoice add column invoiceJsonError text
-```
+Add columns directly to the `create table` statement. Remove all `alter table` migrations (both existing `markdown`/`markdownError` alters and new ones) — database will be reset from scratch.
 
 Store the extracted JSON as a serialized string. Decode with `JSON.parse` + `decodeInvoiceData` when reading.
 

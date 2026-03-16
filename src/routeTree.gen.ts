@@ -12,12 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as MagicLinkRouteImport } from './routes/magic-link'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as AiDirectRouteImport } from './routes/ai-direct'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as MktRouteImport } from './routes/_mkt'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as MktIndexRouteImport } from './routes/_mkt.index'
 import { Route as AppOrganizationIdRouteImport } from './routes/app.$organizationId'
+import { Route as ApiAiProbeRouteImport } from './routes/api/ai-probe'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminSubscriptionsRouteImport } from './routes/admin.subscriptions'
 import { Route as AdminSessionsRouteImport } from './routes/admin.sessions'
@@ -28,6 +30,7 @@ import { Route as AppOrganizationIdMembersRouteImport } from './routes/app.$orga
 import { Route as AppOrganizationIdInvoicesRouteImport } from './routes/app.$organizationId.invoices'
 import { Route as AppOrganizationIdInvitationsRouteImport } from './routes/app.$organizationId.invitations'
 import { Route as AppOrganizationIdBillingRouteImport } from './routes/app.$organizationId.billing'
+import { Route as AppOrganizationIdAiProbeRouteImport } from './routes/app.$organizationId.ai-probe'
 import { Route as AppOrganizationIdAgentRouteImport } from './routes/app.$organizationId.agent'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiOrgOrganizationIdInvoiceInvoiceIdRouteImport } from './routes/api/org.$organizationId.invoice.$invoiceId'
@@ -46,6 +49,11 @@ const LoginRoute = LoginRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AiDirectRoute = AiDirectRouteImport.update({
+  id: '/ai-direct',
+  path: '/ai-direct',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -76,6 +84,11 @@ const AppOrganizationIdRoute = AppOrganizationIdRouteImport.update({
   id: '/$organizationId',
   path: '/$organizationId',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiAiProbeRoute = ApiAiProbeRouteImport.update({
+  id: '/api/ai-probe',
+  path: '/api/ai-probe',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
@@ -131,6 +144,12 @@ const AppOrganizationIdBillingRoute =
     path: '/billing',
     getParentRoute: () => AppOrganizationIdRoute,
   } as any)
+const AppOrganizationIdAiProbeRoute =
+  AppOrganizationIdAiProbeRouteImport.update({
+    id: '/ai-probe',
+    path: '/ai-probe',
+    getParentRoute: () => AppOrganizationIdRoute,
+  } as any)
 const AppOrganizationIdAgentRoute = AppOrganizationIdAgentRouteImport.update({
   id: '/agent',
   path: '/agent',
@@ -156,6 +175,7 @@ const ApiE2eDeleteUserEmailRoute = ApiE2eDeleteUserEmailRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof MktIndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/ai-direct': typeof AiDirectRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/magic-link': typeof MagicLinkRoute
@@ -164,11 +184,13 @@ export interface FileRoutesByFullPath {
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/ai-probe': typeof ApiAiProbeRoute
   '/app/$organizationId': typeof AppOrganizationIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
+  '/app/$organizationId/ai-probe': typeof AppOrganizationIdAiProbeRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRoute
@@ -178,6 +200,7 @@ export interface FileRoutesByFullPath {
   '/api/org/$organizationId/invoice/$invoiceId': typeof ApiOrgOrganizationIdInvoiceInvoiceIdRoute
 }
 export interface FileRoutesByTo {
+  '/ai-direct': typeof AiDirectRoute
   '/login': typeof LoginRoute
   '/magic-link': typeof MagicLinkRoute
   '/pricing': typeof MktPricingRoute
@@ -185,11 +208,13 @@ export interface FileRoutesByTo {
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/ai-probe': typeof ApiAiProbeRoute
   '/': typeof MktIndexRoute
   '/admin': typeof AdminIndexRoute
   '/app': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
+  '/app/$organizationId/ai-probe': typeof AppOrganizationIdAiProbeRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRoute
@@ -202,6 +227,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_mkt': typeof MktRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
+  '/ai-direct': typeof AiDirectRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/magic-link': typeof MagicLinkRoute
@@ -210,12 +236,14 @@ export interface FileRoutesById {
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/ai-probe': typeof ApiAiProbeRoute
   '/app/$organizationId': typeof AppOrganizationIdRouteWithChildren
   '/_mkt/': typeof MktIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
+  '/app/$organizationId/ai-probe': typeof AppOrganizationIdAiProbeRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRoute
@@ -229,6 +257,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/ai-direct'
     | '/app'
     | '/login'
     | '/magic-link'
@@ -237,11 +266,13 @@ export interface FileRouteTypes {
     | '/admin/sessions'
     | '/admin/subscriptions'
     | '/admin/users'
+    | '/api/ai-probe'
     | '/app/$organizationId'
     | '/admin/'
     | '/app/'
     | '/api/auth/$'
     | '/app/$organizationId/agent'
+    | '/app/$organizationId/ai-probe'
     | '/app/$organizationId/billing'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/invoices'
@@ -251,6 +282,7 @@ export interface FileRouteTypes {
     | '/api/org/$organizationId/invoice/$invoiceId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/ai-direct'
     | '/login'
     | '/magic-link'
     | '/pricing'
@@ -258,11 +290,13 @@ export interface FileRouteTypes {
     | '/admin/sessions'
     | '/admin/subscriptions'
     | '/admin/users'
+    | '/api/ai-probe'
     | '/'
     | '/admin'
     | '/app'
     | '/api/auth/$'
     | '/app/$organizationId/agent'
+    | '/app/$organizationId/ai-probe'
     | '/app/$organizationId/billing'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/invoices'
@@ -274,6 +308,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_mkt'
     | '/admin'
+    | '/ai-direct'
     | '/app'
     | '/login'
     | '/magic-link'
@@ -282,12 +317,14 @@ export interface FileRouteTypes {
     | '/admin/sessions'
     | '/admin/subscriptions'
     | '/admin/users'
+    | '/api/ai-probe'
     | '/app/$organizationId'
     | '/_mkt/'
     | '/admin/'
     | '/app/'
     | '/api/auth/$'
     | '/app/$organizationId/agent'
+    | '/app/$organizationId/ai-probe'
     | '/app/$organizationId/billing'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/invoices'
@@ -300,9 +337,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   MktRoute: typeof MktRouteWithChildren
   AdminRoute: typeof AdminRouteWithChildren
+  AiDirectRoute: typeof AiDirectRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   MagicLinkRoute: typeof MagicLinkRoute
+  ApiAiProbeRoute: typeof ApiAiProbeRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiE2eDeleteUserEmailRoute: typeof ApiE2eDeleteUserEmailRoute
   ApiOrgOrganizationIdInvoiceInvoiceIdRoute: typeof ApiOrgOrganizationIdInvoiceInvoiceIdRoute
@@ -329,6 +368,13 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ai-direct': {
+      id: '/ai-direct'
+      path: '/ai-direct'
+      fullPath: '/ai-direct'
+      preLoaderRoute: typeof AiDirectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -372,6 +418,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/$organizationId'
       preLoaderRoute: typeof AppOrganizationIdRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/ai-probe': {
+      id: '/api/ai-probe'
+      path: '/api/ai-probe'
+      fullPath: '/api/ai-probe'
+      preLoaderRoute: typeof ApiAiProbeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/users': {
       id: '/admin/users'
@@ -443,6 +496,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizationIdBillingRouteImport
       parentRoute: typeof AppOrganizationIdRoute
     }
+    '/app/$organizationId/ai-probe': {
+      id: '/app/$organizationId/ai-probe'
+      path: '/ai-probe'
+      fullPath: '/app/$organizationId/ai-probe'
+      preLoaderRoute: typeof AppOrganizationIdAiProbeRouteImport
+      parentRoute: typeof AppOrganizationIdRoute
+    }
     '/app/$organizationId/agent': {
       id: '/app/$organizationId/agent'
       path: '/agent'
@@ -506,6 +566,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface AppOrganizationIdRouteChildren {
   AppOrganizationIdAgentRoute: typeof AppOrganizationIdAgentRoute
+  AppOrganizationIdAiProbeRoute: typeof AppOrganizationIdAiProbeRoute
   AppOrganizationIdBillingRoute: typeof AppOrganizationIdBillingRoute
   AppOrganizationIdInvitationsRoute: typeof AppOrganizationIdInvitationsRoute
   AppOrganizationIdInvoicesRoute: typeof AppOrganizationIdInvoicesRoute
@@ -515,6 +576,7 @@ interface AppOrganizationIdRouteChildren {
 
 const AppOrganizationIdRouteChildren: AppOrganizationIdRouteChildren = {
   AppOrganizationIdAgentRoute: AppOrganizationIdAgentRoute,
+  AppOrganizationIdAiProbeRoute: AppOrganizationIdAiProbeRoute,
   AppOrganizationIdBillingRoute: AppOrganizationIdBillingRoute,
   AppOrganizationIdInvitationsRoute: AppOrganizationIdInvitationsRoute,
   AppOrganizationIdInvoicesRoute: AppOrganizationIdInvoicesRoute,
@@ -540,9 +602,11 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   MktRoute: MktRouteWithChildren,
   AdminRoute: AdminRouteWithChildren,
+  AiDirectRoute: AiDirectRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   MagicLinkRoute: MagicLinkRoute,
+  ApiAiProbeRoute: ApiAiProbeRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiE2eDeleteUserEmailRoute: ApiE2eDeleteUserEmailRoute,
   ApiOrgOrganizationIdInvoiceInvoiceIdRoute:
