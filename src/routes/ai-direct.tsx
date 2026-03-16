@@ -3,6 +3,7 @@ import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
+import * as Schema from "effect/Schema";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  decodeInvoiceExtraction,
+  InvoiceExtractionScheme,
   SAMPLE_INVOICE_MARKDOWN,
   InvoiceExtractionJsonSchema,
 } from "@/lib/invoice-extraction";
@@ -69,16 +70,14 @@ const extractInvoice = createServerFn({ method: "POST" })
           },
         },
       );
-      const response =
-        typeof raw === "string" ? raw : (raw as { response: unknown }).response;
-      const parsed = decodeInvoiceExtraction(
-        typeof response === "string" ? (JSON.parse(response) as unknown) : response,
-      );
+      const { response } = Schema.decodeUnknownSync(
+        Schema.Struct({ response: InvoiceExtractionScheme }),
+      )(raw);
       return {
         ok: true,
         model,
         elapsedMs: Date.now() - startedAt,
-        parsed,
+        parsed: response,
         raw,
       } satisfies AiSuccess;
     } catch (error) {
