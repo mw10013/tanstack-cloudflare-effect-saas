@@ -113,16 +113,13 @@ No one has reported a complex `json_schema` causing error 1031 specifically. But
 
 ## Recommended Next Steps
 
-### Step 1: Try Llama 4 Scout
+### Step 1: Try Llama 4 Scout — DONE, still 1031
 
-Switch to `@cf/meta/llama-4-scout-17b-16e-instruct`. It has:
-- `response_format` with `json_schema` per its API schema
-- 131K context window (eliminates any context pressure)
-- Potentially better structured output handling (newer model, function calling support)
+Switched to `@cf/meta/llama-4-scout-17b-16e-instruct`. Same `InferenceUpstreamError: error code: 1031`. This **rules out the model-specific theory** — the problem is the schema complexity or Workers AI's JSON mode implementation, not the model.
 
-This tests whether the problem is model-specific. If it works, we're done. If it also returns 1031, the problem is the schema or Workers AI's JSON mode implementation.
+Server log confirmed Scout received the request and failed identically to llama-3.3-70b.
 
-### Step 2: If Llama 4 fails too — flatten the schema
+### Step 2: Flatten the schema — IN PROGRESS
 
 Remove nested structs but keep all fields:
 
