@@ -125,9 +125,17 @@ Removed nested `AddressSchema` structs, replaced with flat string fields (`vendo
 
 **This means even without nested `NullOr(Struct)`, the `NullOr(Array(Struct))` for lineItems (or possibly the total field count + `anyOf` unions from `NullOr`) is enough to trigger 1031.**
 
-### Step 3: Remove lineItems array entirely — IN PROGRESS
+### Step 3: Remove lineItems array entirely — DONE, still 1031
 
-Testing with a completely flat schema (all `NullOr(String)` fields, no arrays, no nested objects). If this works, it confirms the array-of-objects is the trigger. LineItems will need a separate extraction pass.
+Removed `lineItems` entirely. Schema was completely flat: 1 boolean + 14 `NullOr(String)` fields. No arrays, no nested objects. **Still 1031.**
+
+Logged the actual JSON schema sent to the API. Every `NullOr(String)` generates `anyOf: [{type: "string"}, {type: "null"}]`. The original working schema (just `isInvoice: Boolean` + `total: String`) had no `anyOf` at all.
+
+**Root cause identified: Workers AI's JSON mode does not support `anyOf` in schemas.** The `NullOr` combinator in Effect Schema produces `anyOf` unions which Workers AI cannot handle. This is undocumented — the Cloudflare docs only show simple types in their JSON schema examples.
+
+### Step 4: Drop NullOr entirely, use plain String — IN PROGRESS
+
+Replace all `NullOr(String)` with `String`. Missing values become empty string `""` instead of `null`. This eliminates all `anyOf` from the generated JSON schema.
 
 Original Step 2 proposed schema (for reference):
 

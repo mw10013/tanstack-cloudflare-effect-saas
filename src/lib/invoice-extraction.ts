@@ -10,21 +10,21 @@ import * as Schema from "effect/Schema";
 
 export const InvoiceExtractionSchema = Schema.Struct({
   isInvoice: Schema.Boolean,
-  invoiceNumber: Schema.NullOr(Schema.String),
-  invoiceDate: Schema.NullOr(Schema.String),
-  dueDate: Schema.NullOr(Schema.String),
-  currency: Schema.NullOr(Schema.String),
-  vendorName: Schema.NullOr(Schema.String),
-  vendorEmail: Schema.NullOr(Schema.String),
-  vendorAddress: Schema.NullOr(Schema.String),
-  billToName: Schema.NullOr(Schema.String),
-  billToEmail: Schema.NullOr(Schema.String),
-  billToAddress: Schema.NullOr(Schema.String),
+  invoiceNumber: Schema.String,
+  invoiceDate: Schema.String,
+  dueDate: Schema.String,
+  currency: Schema.String,
+  vendorName: Schema.String,
+  vendorEmail: Schema.String,
+  vendorAddress: Schema.String,
+  billToName: Schema.String,
+  billToEmail: Schema.String,
+  billToAddress: Schema.String,
   // lineItems: Schema.NullOr(Schema.Array(LineItemSchema)),
-  subtotal: Schema.NullOr(Schema.String),
-  tax: Schema.NullOr(Schema.String),
-  total: Schema.NullOr(Schema.String),
-  amountDue: Schema.NullOr(Schema.String),
+  subtotal: Schema.String,
+  tax: Schema.String,
+  total: Schema.String,
+  amountDue: Schema.String,
 });
 
 export const decodeInvoiceExtraction = Schema.decodeUnknownSync(
@@ -71,12 +71,12 @@ Analyze the document and extract structured invoice data according to the provid
 
 Rules:
 - Set isInvoice to true only if the document is clearly an invoice.
-- If isInvoice is false, set all other fields to null.
+- If isInvoice is false, set all other fields to empty string "".
 - Extract only information explicitly present in the document. Never infer or guess values.
-- Set fields to null when the information is not found in the document.
+- Set fields to empty string "" when the information is not found in the document.
 - Keep amounts as strings exactly as they appear in the document, including currency symbols (e.g., "$5.39", "$0.011 per 1,000").
 - Keep dates as strings in whatever format appears in the document.
-- For addresses, concatenate all address components into a single string (e.g., "101 Townsend Street, San Francisco, California 94107, United States"). Set to null if no address is found.
+- For addresses, concatenate all address components into a single string (e.g., "101 Townsend Street, San Francisco, California 94107, United States"). Set to empty string "" if no address is found.
 
 Document:
 
