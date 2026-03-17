@@ -36,7 +36,7 @@ export const InvoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(
 ).schema;
 
 export const INVOICE_EXTRACTION_MODEL: keyof AiModels =
-  "@cf/qwen/qwen3-30b-a3b-fp8";
+  "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 const AiResponseSchema = Schema.Struct({
   response: Schema.Union([
@@ -47,31 +47,17 @@ const AiResponseSchema = Schema.Struct({
 
 const decodeAiResponse = Schema.decodeUnknownSync(AiResponseSchema);
 
-export const runInvoiceExtraction = async ({
-  ai,
-  gatewayId,
-  markdown,
-}: {
-  readonly ai: Ai;
-  readonly gatewayId: string;
-  readonly markdown: string;
-}) => {
-  console.log("[invoice-extraction] starting", {
-    model: INVOICE_EXTRACTION_MODEL,
-    gatewayId,
-    markdownLength: markdown.length,
-  });
-  console.log(
-    "[invoice-extraction] json_schema",
-    JSON.stringify(InvoiceExtractionJsonSchema, null, 2),
-  );
-  let raw: unknown;
-  const startedAt = Date.now();
-  try {
-    raw = await ai.run(
-      INVOICE_EXTRACTION_MODEL,
-      {
-        prompt: `You are an invoice data extraction assistant. You will receive markdown converted from a PDF document.
+const AiGatewayErrorSchema = Schema.Struct({
+  name: Schema.String,
+  internalCode: Schema.Number,
+  httpCode: Schema.Number,
+  message: Schema.String,
+  description: Schema.String,
+  requestId: Schema.String,
+});
+
+const buildPrompt = (markdown: string) =>
+  `You are an invoice data extraction assistant. You will receive markdown converted from a PDF document.
 
 Analyze the document and extract structured invoice data according to the provided JSON schema.
 
@@ -87,16 +73,42 @@ Rules:
 
 Document:
 
-${markdown}`,
-        response_format: {
-          type: "json_schema" as const,
-          json_schema: InvoiceExtractionJsonSchema,
-        },
-        // Workers AI default is 256 tokens — far too small for structured JSON
-        // with line items. A 40-item invoice needs ~3500 tokens. Set to 8192
-        // to handle large invoices (100+ line items) without truncation.
-        max_tokens: 8192,
-        temperature: 0,
+${markdown}`;
+
+const buildRequestBody = (markdown: string) => ({
+  prompt: buildPrompt(markdown),
+  response_format: {
+    type: "json_schema" as const,
+    json_schema: InvoiceExtractionJsonSchema,
+  },
+  // Workers AI default is 256 tokens — far too small for structured JSON
+  // with line items. A 40-item invoice needs ~3500 tokens. Set to 8192
+  // to handle large invoices (100+ line items) without truncation.
+  max_tokens: 8192,
+  temperature: 0,
+});
+
+export const runInvoiceExtraction = async ({
+  ai,
+  gatewayId,
+  markdown,
+}: {
+  readonly ai: Ai;
+  readonly gatewayId: string;
+  readonly markdown: string;
+}) => {
+  console.log("[invoice-extraction] starting via ai.run()", {
+    model: INVOICE_EXTRACTION_MODEL,
+    gatewayId,
+    markdownLength: markdown.length,
+  });
+  let raw: unknown;
+  const startedAt = Date.now();
+  try {
+    raw = await ai.run(
+      INVOICE_EXTRACTION_MODEL,
+      {
+        ...buildRequestBody(markdown),
       },
       {
         gateway: {
@@ -110,7 +122,6 @@ ${markdown}`,
     console.error("[invoice-extraction] ai.run threw", {
       elapsedMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
     });
     throw error;
   }
@@ -125,6 +136,82 @@ ${markdown}`,
   } catch (error) {
     console.error("[invoice-extraction] decode failed", {
       raw: JSON.stringify(raw),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+};
+
+// Gateway timeout for REST API calls. The ai.run() binding has a hard ~60s
+// timeout that cannot be configured. The REST API lets us set a custom timeout
+// via cf-aig-request-timeout header. 120s gives llama-3.3-70b enough time
+// to generate ~40 structured line items with constrained JSON decoding.
+const GATEWAY_REQUEST_TIMEOUT_MS = 120_000;
+
+export const runInvoiceExtractionViaGateway = async ({
+  accountId,
+  gatewayId,
+  workersAiApiToken,
+  aiGatewayToken,
+  markdown,
+}: {
+  readonly accountId: string;
+  readonly gatewayId: string;
+  readonly workersAiApiToken: string;
+  readonly aiGatewayToken: string;
+  readonly markdown: string;
+}) => {
+  const url = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/${INVOICE_EXTRACTION_MODEL}`;
+  console.log("[invoice-extraction] starting via gateway REST API", {
+    model: INVOICE_EXTRACTION_MODEL,
+    url,
+    timeoutMs: GATEWAY_REQUEST_TIMEOUT_MS,
+    markdownLength: markdown.length,
+  });
+  const startedAt = Date.now();
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${workersAiApiToken}`,
+      "cf-aig-authorization": `Bearer ${aiGatewayToken}`,
+      "cf-aig-request-timeout": String(GATEWAY_REQUEST_TIMEOUT_MS),
+    },
+    body: JSON.stringify(buildRequestBody(markdown)),
+  });
+  const elapsedMs = Date.now() - startedAt;
+  const body: unknown = await response.json();
+  if (!response.ok) {
+    const parsed = Schema.decodeUnknownOption(AiGatewayErrorSchema)(body);
+    if (parsed._tag === "Some") {
+      console.error("[invoice-extraction] gateway error", {
+        elapsedMs,
+        ...parsed.value,
+      });
+      throw new Error(
+        `AiGatewayError ${String(parsed.value.internalCode)}: ${parsed.value.description} (${parsed.value.requestId})`,
+      );
+    }
+    console.error("[invoice-extraction] gateway error (unstructured)", {
+      elapsedMs,
+      status: response.status,
+      body: JSON.stringify(body),
+    });
+    throw new Error(
+      `AI Gateway ${String(response.status)}: ${JSON.stringify(body)}`,
+    );
+  }
+  console.log("[invoice-extraction] gateway returned", {
+    elapsedMs,
+    raw: JSON.stringify(body),
+  });
+  try {
+    const decoded = decodeAiResponse(body);
+    console.log("[invoice-extraction] decoded", decoded);
+    return decoded.response;
+  } catch (error) {
+    console.error("[invoice-extraction] decode failed", {
+      raw: JSON.stringify(body),
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;

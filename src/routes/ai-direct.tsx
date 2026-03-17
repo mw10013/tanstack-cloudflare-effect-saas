@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   INVOICE_EXTRACTION_MODEL,
   SAMPLE_INVOICE_MARKDOWN,
-  runInvoiceExtraction,
+  runInvoiceExtractionViaGateway,
 } from "@/lib/invoice-extraction";
 
 const beforeLoadServerFn = createServerFn().handler(
@@ -31,9 +31,11 @@ const extractInvoice = createServerFn({ method: "POST" })
   .handler(async ({ data: { markdown }, context: { env } }) => {
     const startedAt = Date.now();
     try {
-      const parsed = await runInvoiceExtraction({
-        ai: env.AI,
+      const parsed = await runInvoiceExtractionViaGateway({
+        accountId: env.CF_ACCOUNT_ID,
         gatewayId: env.AI_GATEWAY_ID,
+        workersAiApiToken: env.WORKERS_AI_API_TOKEN,
+        aiGatewayToken: env.AI_GATEWAY_TOKEN,
         markdown,
       });
       return {
