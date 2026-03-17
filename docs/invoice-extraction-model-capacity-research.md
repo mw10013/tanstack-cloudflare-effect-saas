@@ -145,8 +145,20 @@ What this means:
 
 Important caution:
 
+- The AI Gateway dashboard suggests this successful run was likely served from cache.
+- That means `~536ms` is not a trustworthy uncached model-latency number.
 - We have not yet proven this is consistently reliable across repeated runs.
 - The earlier malformed-output run still matters. Current evidence is now mixed but much more promising.
+
+### Cache caveat
+
+The first meaningful uncached-looking `gpt-oss-120b` run took about `67,879ms`, while later very fast runs appear to be cache hits.
+
+From Cloudflare's AI Gateway caching docs in `refs/cloudflare-docs/src/content/docs/ai-gateway/features/caching.mdx:80`:
+
+> You can use the header **cf-aig-skip-cache** to bypass the cached version of the request.
+
+So for further latency research, the REST path should explicitly send `cf-aig-skip-cache: true`. Without that, dashboard timings and UI timings are too easy to misread.
 
 ## Findings
 
@@ -155,7 +167,7 @@ Important caution:
 - A 70B official JSON-mode model still times out on the full schema.
 - A 32B reasoning model can run for 9+ minutes and still fail schema satisfaction.
 - Faster non-official models are not a clean comparison because they appear not to do constrained decoding reliably.
-- `@cf/openai/gpt-oss-120b` has now shown both behaviors: one fast-but-malformed run, and one very fast successful decode at ~536ms.
+- `@cf/openai/gpt-oss-120b` has now shown both behaviors: one uncached-looking ~68s run and one cached-looking very fast successful decode.
 
 If this were only about model size, the 70B official model would be more convincing than it currently is. Instead, the results point to a harder interaction between model capability, constrained decoding, large array-of-object output, and noisy markdown input.
 
@@ -179,7 +191,7 @@ The stronger signal is Cloudflare's own JSON mode warning that the model may not
 
 ### 4. REST is the right experimentation path
 
-The binding path collapses too much useful error detail. The REST path gives us structured provider errors and request IDs, which makes the next experiments much more interpretable.
+The binding path collapses too much useful error detail. The REST path gives us structured provider errors and request IDs, and lets us force uncached requests with `cf-aig-skip-cache`, which makes the next experiments much more interpretable.
 
 ### 5. `@cf/openai/gpt-oss-120b` changes the shape of the problem
 
@@ -203,8 +215,8 @@ My read today:
 So far the strongest updated read is:
 
 - older Workers AI JSON-mode path: often too slow or cannot satisfy the schema
-- `gpt-oss-120b` Responses path: dramatically faster and now demonstrably capable of decoding into the full schema on at least one run
-- remaining question: consistency, not basic capability
+- `gpt-oss-120b` Responses path: promising, and demonstrably capable of decoding into the full schema on at least one run
+- remaining questions: uncached latency and consistency
 
 ## Recommended next experiments
 
@@ -217,16 +229,17 @@ Why:
 - strongest of the two OSS OpenAI models on Workers AI
 - tests whether a different model family on the same provider performs better
 - keeps the rest of the system mostly unchanged apart from the request/response shape Cloudflare requires for this model family
+- can now be measured more cleanly through REST with explicit cache bypass
 
 What we want to learn:
 
 - does `gpt-oss-120b` keep returning valid schema-conforming JSON for the full invoice across repeated runs?
-- is it consistently faster than the earlier official JSON-mode models on this task? Current evidence strongly says yes.
+- is its uncached latency consistently acceptable? Right now the best grounded number is still about `67,879ms`.
 - when it fails, does it fail as malformed JSON, schema drift, or extraction-quality error?
 
 Immediate follow-up if it fails:
 
-- run the same extraction several more times with `skipCache: true`
+- run the same extraction several more times with REST + `cf-aig-skip-cache: true`
 - compare decoded outputs for stability and completeness
 - if failures recur, capture whether they are malformed JSON or content-quality misses
 - then try header-only extraction

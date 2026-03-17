@@ -78,7 +78,7 @@ function RouteComponent() {
           Invoice Extraction Test
         </h1>
         <p className="text-sm text-muted-foreground">
-          Extract structured invoice data via Workers AI with gateway caching.
+          Extract structured invoice data via Workers AI through the REST gateway experiment path.
         </p>
       </header>
 
@@ -86,8 +86,8 @@ function RouteComponent() {
         <CardHeader>
           <CardTitle>Run</CardTitle>
           <CardDescription>
-            Uses {INVOICE_EXTRACTION_MODEL} with json_schema response format via
-            AI Gateway (skipCache, cacheTtl 7d).
+            Uses {INVOICE_EXTRACTION_MODEL} via Workers AI REST through AI
+            Gateway with skip-cache enabled for uncached experiments.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">

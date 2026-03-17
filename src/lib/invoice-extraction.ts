@@ -212,6 +212,8 @@ export const runInvoiceExtraction = async ({
 
 const GATEWAY_REQUEST_TIMEOUT_MS = 300_000;
 
+const GATEWAY_SKIP_CACHE = true;
+
 export const runInvoiceExtractionViaGateway = async ({
   accountId,
   gatewayId,
@@ -230,6 +232,7 @@ export const runInvoiceExtractionViaGateway = async ({
     model: INVOICE_EXTRACTION_MODEL,
     url,
     timeoutMs: GATEWAY_REQUEST_TIMEOUT_MS,
+    skipCache: GATEWAY_SKIP_CACHE,
     markdownLength: markdown.length,
   });
   const startedAt = Date.now();
@@ -240,6 +243,7 @@ export const runInvoiceExtractionViaGateway = async ({
       Authorization: `Bearer ${workersAiApiToken}`,
       "cf-aig-authorization": `Bearer ${aiGatewayToken}`,
       "cf-aig-request-timeout": String(GATEWAY_REQUEST_TIMEOUT_MS),
+      "cf-aig-skip-cache": String(GATEWAY_SKIP_CACHE),
     },
     body: JSON.stringify(buildRequestBody(markdown)),
   });
