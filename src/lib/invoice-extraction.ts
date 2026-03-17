@@ -1,12 +1,12 @@
 import * as Schema from "effect/Schema";
 
-// const LineItemSchema = Schema.Struct({
-//   description: Schema.String,
-//   quantity: Schema.String,
-//   unitPrice: Schema.String,
-//   amount: Schema.String,
-//   period: Schema.String,
-// });
+const LineItemSchema = Schema.Struct({
+  description: Schema.String,
+  quantity: Schema.String,
+  unitPrice: Schema.String,
+  amount: Schema.String,
+  period: Schema.String,
+});
 
 export const InvoiceExtractionSchema = Schema.Struct({
   isInvoice: Schema.Boolean,
@@ -20,7 +20,7 @@ export const InvoiceExtractionSchema = Schema.Struct({
   billToName: Schema.String,
   billToEmail: Schema.String,
   billToAddress: Schema.String,
-  // lineItems: Schema.Array(LineItemSchema),
+  lineItems: Schema.Array(LineItemSchema),
   subtotal: Schema.String,
   tax: Schema.String,
   total: Schema.String,
@@ -36,7 +36,7 @@ export const InvoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(
 ).schema;
 
 export const INVOICE_EXTRACTION_MODEL: keyof AiModels =
-  "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+  "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
 
 const AiResponseSchema = Schema.Struct({
   response: Schema.Union([

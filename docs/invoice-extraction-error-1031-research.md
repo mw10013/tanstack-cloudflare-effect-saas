@@ -255,9 +255,30 @@ Must stick with Workers AI binding.
 
 max_tokens is a ceiling, not a reservation. Removing it would just truncate output. The 504 is caused by generation time on the 70B model, not token budget.
 
-#### Option F: Try DeepSeek R1 Distill Qwen 32B — NEXT
+#### Option F: Try DeepSeek R1 Distill Qwen 32B — DONE, 504 at 60,212ms
 
-Switch to `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` with lineItems re-enabled. It's on the official JSON Mode list (constrained decoding), 32B params (should generate ~2x faster than 70B), 80K context. If 31s for flat schema on 70B, the full schema with lineItems on 32B might complete in ~45-50s — tight but potentially within the ~60s timeout.
+Same 504 Gateway Time-out. 60,212ms — hit the ~60s ceiling exactly. The 32B size advantage is negated by DeepSeek R1 being a reasoning model (more compute per token for chain-of-thought). No faster than llama-3.3-70b for this workload.
+
+### Updated Timing Results
+
+| Config | Model | lineItems | Result | Time |
+|---|---|---|---|---|
+| llama-3.3-70b | 70B dense | yes (40 items) | 504 Gateway Time-out | ~60s (timeout) |
+| llama-3.3-70b | 70B dense | no | Success | 31,309ms |
+| deepseek-r1-qwen-32b | 32B reasoning | yes (40 items) | 504 Gateway Time-out | 60,212ms |
+
+**The ~60s gateway timeout is a hard wall.** No model on the official JSON Mode list can generate ~40 structured line items within 60s. The flat schema (no lineItems) takes 31s on llama-3.3-70b, leaving only ~29s headroom — not enough for ~40 line items at ~0.7-1s per item with constrained decoding.
+
+### Remaining Options
+
+All the "simple" options are exhausted. The fundamental constraint is: **constrained JSON decoding on Workers AI is too slow for large structured output, and the gateway timeout is too short.**
+
+Possible paths:
+1. **Accept the limitation** — extract without lineItems for now, add them when Cloudflare improves model speed or timeout limits
+2. **Revisit two-pass** — first call for header fields (31s), second call for just lineItems with minimal schema
+3. **Revisit REST API approach** — bypass binding to set custom timeout via AI Gateway Universal Endpoint
+4. **Use an external model** — route through AI Gateway to OpenAI/Anthropic which handle structured output faster
+5. **Request Cloudflare increase the timeout** — file a feature request / support ticket
 
 ### Code State
 
