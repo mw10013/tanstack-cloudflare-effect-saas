@@ -36,7 +36,7 @@ export const InvoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(
 ).schema;
 
 export const INVOICE_EXTRACTION_MODEL: keyof AiModels =
-  "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
+  "@cf/qwen/qwen3-30b-a3b-fp8";
 
 const AiResponseSchema = Schema.Struct({
   response: Schema.Union([
