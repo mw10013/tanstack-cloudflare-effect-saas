@@ -160,6 +160,26 @@ From Cloudflare's AI Gateway caching docs in `refs/cloudflare-docs/src/content/d
 
 So for further latency research, the REST path should explicitly send `cf-aig-skip-cache: true`. Without that, dashboard timings and UI timings are too easy to misread.
 
+### Run 3 - uncached decode failure from truncation
+
+The latest uncached run failed again, but with a more specific signal.
+
+Grounding from `logs/server.log`:
+
+- request started with `skipCache: true`
+- gateway returned in `elapsedMs: 73,533`
+- payload included `incomplete_details: { reason: "max_output_tokens" }`
+- local decode failed with `SyntaxError: Unterminated string in JSON at position 10434`
+
+What this means:
+
+- this was not a timeout failure
+- this was not a cache-hit result
+- the model output was truncated because it hit the `max_output_tokens` ceiling
+- the truncation cut the JSON mid-string, so decode failed exactly as expected
+
+This is a better explanation than generic unreliability for this run: the response was incomplete, not merely malformed.
+
 ## Findings
 
 ### 1. This does not look like just an underpowered-model problem
@@ -167,7 +187,7 @@ So for further latency research, the REST path should explicitly send `cf-aig-sk
 - A 70B official JSON-mode model still times out on the full schema.
 - A 32B reasoning model can run for 9+ minutes and still fail schema satisfaction.
 - Faster non-official models are not a clean comparison because they appear not to do constrained decoding reliably.
-- `@cf/openai/gpt-oss-120b` has now shown both behaviors: one uncached-looking ~68s run and one cached-looking very fast successful decode.
+- `@cf/openai/gpt-oss-120b` has now shown three relevant behaviors: one uncached-looking ~68s run, one cached-looking very fast successful decode, and one uncached ~73.5s run truncated by `max_output_tokens`.
 
 If this were only about model size, the 70B official model would be more convincing than it currently is. Instead, the results point to a harder interaction between model capability, constrained decoding, large array-of-object output, and noisy markdown input.
 
@@ -199,9 +219,9 @@ The new experiment suggests a different failure profile:
 
 - not the old upstream timeout wall
 - not the explicit `JSON Mode couldn't be met` path we saw with DeepSeek
-- instead, a mix of very fast successful responses and at least one malformed-output response
+- instead, a mix of cache-inflated fast successes, uncached long responses, and incomplete output when the model hits `max_output_tokens`
 
-That is meaningful. It suggests this model family may avoid the worst constrained-decoding timeout behavior, but reliability still needs repeated validation.
+That is meaningful. It suggests this model family may avoid the worst constrained-decoding timeout behavior, but output length is now a concrete bottleneck.
 
 ## Assessment
 
@@ -211,12 +231,13 @@ My read today:
 - The evidence does support `Workers AI JSON mode struggles with this specific one-shot extraction shape`.
 - Model capability is still part of the story, but the bigger issue seems to be structured-output reliability under a large schema with many line items.
 - `@cf/openai/gpt-oss-120b` now adds a new nuance: stronger/faster models may avoid timeout and can succeed, but output correctness may still vary run to run.
+- For uncached `gpt-oss-120b` runs, output length is now clearly one of the main constraints.
 
 So far the strongest updated read is:
 
 - older Workers AI JSON-mode path: often too slow or cannot satisfy the schema
 - `gpt-oss-120b` Responses path: promising, and demonstrably capable of decoding into the full schema on at least one run
-- remaining questions: uncached latency and consistency
+- remaining questions: uncached latency, consistency, and whether `max_output_tokens` is high enough for the full invoice
 
 ## Recommended next experiments
 
@@ -235,13 +256,13 @@ What we want to learn:
 
 - does `gpt-oss-120b` keep returning valid schema-conforming JSON for the full invoice across repeated runs?
 - is its uncached latency consistently acceptable? Right now the best grounded number is still about `67,879ms`.
-- when it fails, does it fail as malformed JSON, schema drift, or extraction-quality error?
+- when it fails, does it fail as truncation, malformed JSON, schema drift, or extraction-quality error?
 
 Immediate follow-up if it fails:
 
 - run the same extraction several more times with REST + `cf-aig-skip-cache: true`
 - compare decoded outputs for stability and completeness
-- if failures recur, capture whether they are malformed JSON or content-quality misses
+- if failures recur, capture whether they are `max_output_tokens` truncation, malformed JSON, or content-quality misses
 - then try header-only extraction
 - compare full schema vs line-items-only schema
 
