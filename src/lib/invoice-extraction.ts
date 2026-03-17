@@ -1,8 +1,36 @@
 import * as Schema from "effect/Schema";
 
+const LineItemSchema = Schema.Struct({
+  description: Schema.String,
+  quantity: Schema.NullOr(Schema.String),
+  unitPrice: Schema.NullOr(Schema.String),
+  amount: Schema.NullOr(Schema.String),
+  period: Schema.NullOr(Schema.String),
+});
+
+const AddressSchema = Schema.Struct({
+  name: Schema.NullOr(Schema.String),
+  street: Schema.NullOr(Schema.String),
+  city: Schema.NullOr(Schema.String),
+  state: Schema.NullOr(Schema.String),
+  postalCode: Schema.NullOr(Schema.String),
+  country: Schema.NullOr(Schema.String),
+  email: Schema.NullOr(Schema.String),
+});
+
 export const InvoiceExtractionSchema = Schema.Struct({
   isInvoice: Schema.Boolean,
+  invoiceNumber: Schema.NullOr(Schema.String),
+  invoiceDate: Schema.NullOr(Schema.String),
+  dueDate: Schema.NullOr(Schema.String),
+  currency: Schema.NullOr(Schema.String),
+  vendor: Schema.NullOr(AddressSchema),
+  billTo: Schema.NullOr(AddressSchema),
+  lineItems: Schema.NullOr(Schema.Array(LineItemSchema)),
+  subtotal: Schema.NullOr(Schema.String),
+  tax: Schema.NullOr(Schema.String),
   total: Schema.NullOr(Schema.String),
+  amountDue: Schema.NullOr(Schema.String),
 });
 
 export const decodeInvoiceExtraction = Schema.decodeUnknownSync(
@@ -39,12 +67,28 @@ export const runInvoiceExtraction = async ({
     raw = await ai.run(
       INVOICE_EXTRACTION_MODEL,
       {
-        prompt: `Determine whether the following markdown is an invoice and extract only the total if present. Reply with JSON only.\n\n${markdown}`,
+        prompt: `You are an invoice data extraction assistant. You will receive markdown converted from a PDF document.
+
+Analyze the document and extract structured invoice data according to the provided JSON schema.
+
+Rules:
+- Set isInvoice to true only if the document is clearly an invoice.
+- If isInvoice is false, set all other fields to null.
+- Extract only information explicitly present in the document. Never infer or guess values.
+- Set fields to null when the information is not found in the document.
+- Keep amounts as strings exactly as they appear in the document, including currency symbols (e.g., "$5.39", "$0.011 per 1,000").
+- Keep dates as strings in whatever format appears in the document.
+- For line items, include every line item found. Set quantity, unitPrice, or amount to null if not clearly stated for that item.
+- For addresses, extract whatever address components are present. Set missing components to null.
+
+Document:
+
+${markdown}`,
         response_format: {
           type: "json_schema" as const,
           json_schema: InvoiceExtractionJsonSchema,
         },
-        max_tokens: 256,
+        max_tokens: 4096,
         temperature: 0,
       },
       {
