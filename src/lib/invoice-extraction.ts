@@ -1,12 +1,12 @@
 import * as Schema from "effect/Schema";
 
-const LineItemSchema = Schema.Struct({
-  description: Schema.String,
-  quantity: Schema.NullOr(Schema.String),
-  unitPrice: Schema.NullOr(Schema.String),
-  amount: Schema.NullOr(Schema.String),
-  period: Schema.NullOr(Schema.String),
-});
+// const LineItemSchema = Schema.Struct({
+//   description: Schema.String,
+//   quantity: Schema.NullOr(Schema.String),
+//   unitPrice: Schema.NullOr(Schema.String),
+//   amount: Schema.NullOr(Schema.String),
+//   period: Schema.NullOr(Schema.String),
+// });
 
 export const InvoiceExtractionSchema = Schema.Struct({
   isInvoice: Schema.Boolean,
@@ -20,7 +20,7 @@ export const InvoiceExtractionSchema = Schema.Struct({
   billToName: Schema.NullOr(Schema.String),
   billToEmail: Schema.NullOr(Schema.String),
   billToAddress: Schema.NullOr(Schema.String),
-  lineItems: Schema.NullOr(Schema.Array(LineItemSchema)),
+  // lineItems: Schema.NullOr(Schema.Array(LineItemSchema)),
   subtotal: Schema.NullOr(Schema.String),
   tax: Schema.NullOr(Schema.String),
   total: Schema.NullOr(Schema.String),
@@ -72,7 +72,6 @@ Rules:
 - Set fields to null when the information is not found in the document.
 - Keep amounts as strings exactly as they appear in the document, including currency symbols (e.g., "$5.39", "$0.011 per 1,000").
 - Keep dates as strings in whatever format appears in the document.
-- For line items, include every line item found. Set quantity, unitPrice, or amount to null if not clearly stated for that item.
 - For addresses, concatenate all address components into a single string (e.g., "101 Townsend Street, San Francisco, California 94107, United States"). Set to null if no address is found.
 
 Document:

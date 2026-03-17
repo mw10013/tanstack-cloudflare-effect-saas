@@ -119,7 +119,17 @@ Switched to `@cf/meta/llama-4-scout-17b-16e-instruct`. Same `InferenceUpstreamEr
 
 Server log confirmed Scout received the request and failed identically to llama-3.3-70b.
 
-### Step 2: Flatten the schema — IN PROGRESS
+### Step 2: Flatten the schema — DONE, still 1031
+
+Removed nested `AddressSchema` structs, replaced with flat string fields (`vendorName`, `vendorEmail`, `vendorAddress`, `billToName`, `billToEmail`, `billToAddress`). Kept `lineItems: NullOr(Array(LineItemSchema))`. Same error.
+
+**This means even without nested `NullOr(Struct)`, the `NullOr(Array(Struct))` for lineItems (or possibly the total field count + `anyOf` unions from `NullOr`) is enough to trigger 1031.**
+
+### Step 3: Remove lineItems array entirely — IN PROGRESS
+
+Testing with a completely flat schema (all `NullOr(String)` fields, no arrays, no nested objects). If this works, it confirms the array-of-objects is the trigger. LineItems will need a separate extraction pass.
+
+Original Step 2 proposed schema (for reference):
 
 Remove nested structs but keep all fields:
 
