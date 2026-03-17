@@ -5,7 +5,6 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
 import * as Schema from "effect/Schema";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -146,36 +145,22 @@ function RouteComponent() {
             </Button>
           </div>
           {mutation.data && (
-            <p className="text-sm text-muted-foreground">
-              {mutation.data.model} - {mutation.data.elapsedMs}ms
-            </p>
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-muted-foreground">
+                {mutation.data.model} - {mutation.data.elapsedMs}ms
+              </p>
+              {!mutation.data.ok && (
+                <p className="text-sm text-destructive">{mutation.data.error}</p>
+              )}
+              {mutation.data.ok && (
+                <pre className="overflow-auto rounded-md border bg-muted/30 p-3 text-sm leading-5 whitespace-pre-wrap">
+                  {JSON.stringify(mutation.data.parsed, null, 2)}
+                </pre>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
-
-      {mutation.data?.ok === false && (
-        <Alert variant="destructive">
-          <AlertTitle>Request failed</AlertTitle>
-          <AlertDescription>{mutation.data.error}</AlertDescription>
-        </Alert>
-      )}
-
-      {mutation.data?.ok === true && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Response</CardTitle>
-            <CardDescription>Parsed extraction and raw payload</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <pre className="overflow-auto rounded-md border bg-muted/30 p-4 text-sm leading-5 whitespace-pre-wrap">
-              {JSON.stringify(mutation.data.parsed, null, 2)}
-            </pre>
-            <pre className="overflow-auto rounded-md border bg-muted/30 p-4 text-xs leading-5 whitespace-pre-wrap">
-              {JSON.stringify(mutation.data.raw, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
