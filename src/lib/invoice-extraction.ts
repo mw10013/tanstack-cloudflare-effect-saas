@@ -1,23 +1,23 @@
 import * as Schema from "effect/Schema";
 
-export const InvoiceExtractionScheme = Schema.Struct({
+export const InvoiceExtractionSchema = Schema.Struct({
   isInvoice: Schema.Boolean,
   total: Schema.NullOr(Schema.String),
 });
 
 export const decodeInvoiceExtraction = Schema.decodeUnknownSync(
-  InvoiceExtractionScheme,
+  InvoiceExtractionSchema,
 );
 
 export const InvoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(
-  InvoiceExtractionScheme,
+  InvoiceExtractionSchema,
 ).schema;
 
 export const INVOICE_EXTRACTION_MODEL: keyof AiModels =
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 const decodeAiResponse = Schema.decodeUnknownSync(
-  Schema.Struct({ response: InvoiceExtractionScheme }),
+  Schema.Struct({ response: InvoiceExtractionSchema }),
 );
 
 export const runInvoiceExtraction = async ({
