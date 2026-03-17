@@ -8,11 +8,12 @@ Are our invoice extraction failures mainly a timeout/infrastructure problem, or 
 
 Grounded in `src/lib/invoice-extraction.ts`:
 
-- `INVOICE_EXTRACTION_MODEL` is currently `@cf/meta/llama-3.3-70b-instruct-fp8-fast` in `src/lib/invoice-extraction.ts:38`.
+- `INVOICE_EXTRACTION_MODEL` is now `@cf/openai/gpt-oss-120b` in `src/lib/invoice-extraction.ts:38` for the next experiment.
 - The schema includes invoice header fields plus `lineItems: Schema.Array(LineItemSchema)` in `src/lib/invoice-extraction.ts:23`.
 - The prompt explicitly says: `For line items, include every line item found.` in `src/lib/invoice-extraction.ts:71`.
-- The request uses Workers AI JSON mode via `response_format: { type: "json_schema", json_schema: ... }` in `src/lib/invoice-extraction.ts:80`.
-- `max_tokens` is already raised to `8192` in `src/lib/invoice-extraction.ts:87`, so the main failures are not explained by the default 256-token cap.
+- The code now has two request shapes: classic Workers AI text-generation JSON mode for the previous models, and Responses API structured output for the OSS OpenAI models in `src/lib/invoice-extraction.ts:86` and `src/lib/invoice-extraction.ts:97`.
+- The OSS OpenAI path requests structured output via `text.format = { type: "json_schema", name, schema, strict }` and reads `output_text`, then validates against the same invoice schema in `src/lib/invoice-extraction.ts:98` and `src/lib/invoice-extraction.ts:113`.
+- The output token cap remains `8192`, now via `max_output_tokens`, so the main failures are not explained by the old default token cap.
 - We now have both code paths: binding via `runInvoiceExtraction()` and REST via `runInvoiceExtractionViaGateway()` in `src/lib/invoice-extraction.ts:91` and `src/lib/invoice-extraction.ts:151`.
 
 ## Relevant docs grounding
@@ -47,13 +48,17 @@ From `refs/cloudflare-docs/src/content/docs/ai-gateway/configuration/request-han
 
 And the REST path also supports gateway timeout headers, which is why `runInvoiceExtractionViaGateway()` adds `cf-aig-request-timeout` in `src/lib/invoice-extraction.ts:178`.
 
-### OpenAI through AI Gateway
+### Workers AI OSS OpenAI models
 
-From `refs/cloudflare-docs/src/content/docs/ai-gateway/usage/providers/openai.mdx:139`:
+From `refs/cloudflare-docs/src/content/changelog/workers-ai/2025-08-05-openai-open-models.mdx:12`:
 
-`https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/openai/chat/completions`
+> Get started with the new models at `@cf/openai/gpt-oss-120b` and `@cf/openai/gpt-oss-20b`.
 
-This gives us a clean next experiment: keep AI Gateway observability, but swap out Workers AI for an external model.
+From `refs/cloudflare-docs/src/content/changelog/workers-ai/2025-08-05-openai-open-models.mdx:17`:
+
+> Workers Binding, it will accept/return Responses API – `env.AI.run("@cf/openai/gpt-oss-120b")`
+
+This is the important nuance: these models are available on Workers AI, but they do not slot into the older `prompt` + `response_format` path exactly the same way. They use Responses API input/output shapes.
 
 ## Experiments run so far
 
@@ -76,6 +81,22 @@ Using `runInvoiceExtractionViaGateway()` improved observability:
 - DeepSeek R1 ran for about `544,143ms` and then returned `5024: JSON Mode couldn't be met`.
 
 Key implication: increasing the gateway timeout helps us observe the true provider behavior, but it does not remove Workers AI's internal limits.
+
+## Current experiment in code
+
+The code is now set up to test the stronger OSS OpenAI Workers AI model directly:
+
+- model: `@cf/openai/gpt-oss-120b`
+- transport: same `env.AI.run(...)` / Workers AI path
+- request shape: Responses API, not classic text-generation JSON mode
+- structured output request: `text.format.type = "json_schema"`
+- decoder path: `output_text` -> invoice schema validation
+
+Why this is a good next experiment:
+
+- keeps the provider as Workers AI
+- changes the model family and API surface together, as Cloudflare intends for these models
+- avoids the mistaken assumption that `gpt-oss-120b` can be tested by only swapping the old model name under the old request shape
 
 ## Findings
 
@@ -121,29 +142,27 @@ So yes, testing OpenAI is worth doing, but not just because it may be a bigger o
 
 ## Recommended next experiments
 
-### A. Best next experiment: OpenAI via AI Gateway
+### A. Best next experiment: Workers AI `@cf/openai/gpt-oss-120b`
 
-Run the same invoice markdown through the AI Gateway OpenAI endpoint first, not a new local integration path.
+This is now the active experiment.
 
 Why:
 
-- keeps gateway logging and request IDs
-- removes Workers AI as the provider variable
-- tests whether the failure is provider-specific or task-intrinsic
+- strongest of the two OSS OpenAI models on Workers AI
+- tests whether a different model family on the same provider performs better
+- keeps the rest of the system mostly unchanged apart from the request/response shape Cloudflare requires for this model family
 
-Suggested first pass:
+What we want to learn:
 
-| Provider | Model | Schema | Goal |
-|---|---|---|---|
-| OpenAI via AI Gateway | `gpt-4o-mini` | current full schema | cheap baseline |
-| OpenAI via AI Gateway | stronger OpenAI model | current full schema | capacity check |
+- does `gpt-oss-120b` return valid schema-conforming JSON for the full invoice?
+- is it faster than the earlier official JSON-mode models on this task?
+- does it fail as a timeout problem, a structured-output problem, or a plain extraction-quality problem?
 
-Success criteria:
+Immediate follow-up if it fails:
 
-- valid structured output
-- all major header fields present
-- materially better line-item extraction than Workers AI
-- latency acceptable enough for synchronous use, or clear signal that async workflow is required
+- try `@cf/openai/gpt-oss-120b` on header-only extraction
+- compare full schema vs line-items-only schema
+- only then decide whether to test non-Workers-AI OpenAI via AI Gateway
 
 ### B. Isolate the expensive part on Workers AI
 
@@ -156,14 +175,14 @@ Before declaring Workers AI unworkable, split the current task into smaller expe
 
 If header extraction keeps succeeding and line-items-only keeps failing, we will have much cleaner evidence that arrays of objects are the real break point.
 
-### C. Compare one-shot JSON mode vs free-form JSON text
+### C. Compare structured Responses API vs free-form JSON text
 
 Try the same Workers AI model without constrained decoding:
 
 - prompt for JSON text
 - parse + validate after the fact
 
-If this succeeds much faster, that strongly suggests constrained decoding is the main bottleneck, not raw comprehension.
+If this succeeds much faster, that strongly suggests structured decoding is the main bottleneck, not raw comprehension.
 
 ## Working hypothesis
 
@@ -176,6 +195,6 @@ The limiting factor is not simply model size. It is the combination of:
 - many `lineItems` as array-of-object output
 - constrained JSON decoding on Workers AI
 
-OpenAI is worth testing next because it can answer the most important question quickly:
+`@cf/openai/gpt-oss-120b` is worth testing next because it can answer the most important question quickly:
 
-Is the task itself too large, or is Workers AI specifically the wrong provider for this extraction shape?
+Is the task itself too large, or were the earlier failures mainly a limitation of the earlier Workers AI model paths we tested?

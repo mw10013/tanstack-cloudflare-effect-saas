@@ -36,7 +36,10 @@ export const InvoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(
 ).schema;
 
 export const INVOICE_EXTRACTION_MODEL: keyof AiModels =
-  "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+  "@cf/openai/gpt-oss-120b";
+
+const isResponsesApiModel = (model: keyof AiModels) =>
+  model === "@cf/openai/gpt-oss-120b" || model === "@cf/openai/gpt-oss-20b";
 
 const AiResponseSchema = Schema.Struct({
   response: Schema.Union([
@@ -46,6 +49,12 @@ const AiResponseSchema = Schema.Struct({
 });
 
 const decodeAiResponse = Schema.decodeUnknownSync(AiResponseSchema);
+
+const ResponsesApiTextSchema = Schema.Struct({
+  output_text: Schema.String,
+});
+
+const decodeResponsesApiText = Schema.decodeUnknownSync(ResponsesApiTextSchema);
 
 const AiGatewayErrorSchema = Schema.Struct({
   name: Schema.String,
@@ -75,18 +84,44 @@ Document:
 
 ${markdown}`;
 
-const buildRequestBody = (markdown: string) => ({
+const buildTextGenerationRequestBody = (markdown: string) => ({
   prompt: buildPrompt(markdown),
   response_format: {
     type: "json_schema" as const,
     json_schema: InvoiceExtractionJsonSchema,
   },
-  // Workers AI default is 256 tokens — far too small for structured JSON
-  // with line items. A 40-item invoice needs ~3500 tokens. Set to 8192
-  // to handle large invoices (100+ line items) without truncation.
   max_tokens: 8192,
   temperature: 0,
 });
+
+const buildResponsesApiRequestBody = (markdown: string): ResponsesInput => ({
+  input: buildPrompt(markdown),
+  text: {
+    format: {
+      type: "json_schema",
+      name: "invoice_extraction",
+      schema: InvoiceExtractionJsonSchema,
+      strict: true,
+    },
+  },
+  max_output_tokens: 8192,
+  reasoning: {
+    effort: "medium",
+  },
+  temperature: 0,
+});
+
+const buildRequestBody = (markdown: string) =>
+  isResponsesApiModel(INVOICE_EXTRACTION_MODEL)
+    ? buildResponsesApiRequestBody(markdown)
+    : buildTextGenerationRequestBody(markdown);
+
+const decodeInvoiceExtractionResponse = (raw: unknown) => {
+  if (isResponsesApiModel(INVOICE_EXTRACTION_MODEL)) {
+    return decodeInvoiceExtraction(decodeResponsesApiText(raw).output_text);
+  }
+  return decodeAiResponse(raw).response;
+};
 
 export const runInvoiceExtraction = async ({
   ai,
@@ -130,9 +165,9 @@ export const runInvoiceExtraction = async ({
     raw: JSON.stringify(raw),
   });
   try {
-    const decoded = decodeAiResponse(raw);
+    const decoded = decodeInvoiceExtractionResponse(raw);
     console.log("[invoice-extraction] decoded", decoded);
-    return decoded.response;
+    return decoded;
   } catch (error) {
     console.error("[invoice-extraction] decode failed", {
       raw: JSON.stringify(raw),
@@ -142,10 +177,6 @@ export const runInvoiceExtraction = async ({
   }
 };
 
-// Gateway timeout for REST API calls. The ai.run() binding has a hard ~60s
-// timeout that cannot be configured. The REST API lets us set a custom timeout
-// via cf-aig-request-timeout header. 120s gives llama-3.3-70b enough time
-// to generate ~40 structured line items with constrained JSON decoding.
 const GATEWAY_REQUEST_TIMEOUT_MS = 300_000;
 
 export const runInvoiceExtractionViaGateway = async ({
@@ -206,9 +237,9 @@ export const runInvoiceExtractionViaGateway = async ({
     raw: JSON.stringify(body),
   });
   try {
-    const decoded = decodeAiResponse(body);
+    const decoded = decodeInvoiceExtractionResponse(body);
     console.log("[invoice-extraction] decoded", decoded);
-    return decoded.response;
+    return decoded;
   } catch (error) {
     console.error("[invoice-extraction] decode failed", {
       raw: JSON.stringify(body),
