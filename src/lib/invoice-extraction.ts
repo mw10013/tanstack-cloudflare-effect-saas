@@ -56,6 +56,10 @@ export const runInvoiceExtraction = async ({
     gatewayId,
     markdownLength: markdown.length,
   });
+  console.log(
+    "[invoice-extraction] json_schema",
+    JSON.stringify(InvoiceExtractionJsonSchema, null, 2),
+  );
   let raw: unknown;
   try {
     raw = await ai.run(
