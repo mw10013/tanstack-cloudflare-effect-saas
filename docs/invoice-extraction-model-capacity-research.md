@@ -81,6 +81,31 @@ Grounding from the latest log entries:
 - another uncached success at `elapsedMs: 57,916` in `logs/server.log:465`
 - both logged decoded invoice objects at `logs/server.log:66` and `logs/server.log:469`
 
+### `@cf/openai/gpt-oss-120b` via Workers AI binding
+
+We now have two binding data points:
+
+| Run | Result | Time | Notes |
+|---|---|---|---|
+| 1 | success | ~51.9s | completed and decoded through `ai.run()` |
+| 2 | failure at caller | ~60.2s | binding returned `504 Gateway Time-out` |
+
+Grounding from `logs/server.log`:
+
+- binding success: `elapsedMs: 51,897` at `logs/server.log:893`
+- binding failure: `ai.run threw` after `elapsedMs: 60,219` at `logs/server.log:1292`
+- failure body was HTML `504 Gateway Time-out` at `logs/server.log:1295`
+
+But the AI Gateway dashboard for that failed binding run shows something more important:
+
+- provider duration about `90,522ms`
+- full Responses payload returned
+- `status: "completed"`
+- `incomplete_details: null`
+- `usage.output_tokens: 8381`
+
+That means the provider finished successfully, but the binding caller timed out first.
+
 ## Findings
 
 ### 1. `gpt-oss-120b` is the first Workers AI path here that looks genuinely viable
@@ -110,11 +135,22 @@ REST gives us:
 
 That makes the results much easier to interpret than the binding path.
 
-### 4. We still do not have clean evidence that binding is safe
+### 4. Binding can fail even when the model run succeeds upstream
+
+The newest binding result is the clearest evidence yet:
+
+- the binding returned a generic `504 Gateway Time-out`
+- the dashboard still shows a completed model response at about `90.5s`
+
+So the failure boundary is not simply `did the model finish?`; it is `did the binding path wait long enough for the model to finish?`
+
+This is exactly the kind of observability problem that makes the binding path risky for this workload.
+
+### 5. We still do not have clean evidence that binding is safe
 
 The best uncached runs are about `57.6s` and `57.9s`.
 
-That is encouraging, but it is too close to the rough timeout boundary we were worried about earlier to assume the binding path will be reliable. Binding is still worth testing for one data point, but it is not yet the safer default.
+That is encouraging, but it is too close to the rough timeout boundary we were worried about earlier to assume the binding path will be reliable. The new 504 result strengthens that concern.
 
 ## Assessment
 
@@ -130,15 +166,15 @@ On binding specifically:
 
 - Is it feasible to test? Yes.
 - Would I switch immediately based on current evidence? No.
-- Why not? Because uncached runs are landing right around the danger zone. A binding experiment is worth doing as a measurement, not as the new default path yet.
+- Why not? Because we now have direct evidence that binding can return a 504 around ~60s even when the upstream model run completes successfully later.
 
 ## Recommendation
 
 Short term:
 
 1. keep REST as the experiment/default path
-2. run one binding experiment with the same model and payload for a clean data point
-3. if binding fails or is flaky, keep REST and move on
+2. treat the binding result as an informative negative data point
+3. keep using REST for any runs where you care about observability or completion beyond ~60s
 
 If the goal is practical reliability today, REST is the better choice.
 
