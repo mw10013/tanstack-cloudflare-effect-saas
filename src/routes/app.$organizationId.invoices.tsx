@@ -98,16 +98,6 @@ const getMarkdownSizeLabel = (invoice: {
   return "Pending";
 };
 
-const getJsonSizeLabel = (invoice: {
-  readonly invoiceJson: string | null;
-  readonly status: string;
-  readonly contentType: string;
-}): string => {
-  if (invoice.invoiceJson) return `${String(Math.round(invoice.invoiceJson.length / 1024))} KB`;
-  if (invoice.contentType !== "application/pdf") return "Skipped";
-  if (invoice.status === "extract_error") return "Error";
-  return "Pending";
-};
 
 const getInvoices = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
@@ -466,7 +456,6 @@ function RouteComponent() {
                     <TableHead>Status</TableHead>
                     <TableHead>Uploaded</TableHead>
                     <TableHead>Markdown</TableHead>
-                    <TableHead>JSON</TableHead>
                     <TableHead className="w-35" />
                   </TableRow>
                 </TableHeader>
@@ -494,9 +483,6 @@ function RouteComponent() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {getMarkdownSizeLabel(invoice)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {getJsonSizeLabel(invoice)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
