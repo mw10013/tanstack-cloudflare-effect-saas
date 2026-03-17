@@ -91,6 +91,10 @@ ${markdown}`,
           type: "json_schema" as const,
           json_schema: InvoiceExtractionJsonSchema,
         },
+        // Workers AI default is 256 tokens — far too small for structured JSON
+        // with line items. A 40-item invoice needs ~3500 tokens. Set to 8192
+        // to handle large invoices (100+ line items) without truncation.
+        max_tokens: 8192,
         temperature: 0,
       },
       {
