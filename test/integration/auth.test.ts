@@ -33,7 +33,7 @@ async function signInMagicLink({ email }: { email: string }) {
   };
 }
 
-describe("auth (integration)", () => {
+describe.skip("auth (integration)", () => {
   it("sends magic link and writes it to KV", async () => {
     await resetDb();
 

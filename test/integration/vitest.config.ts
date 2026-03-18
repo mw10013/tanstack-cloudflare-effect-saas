@@ -3,7 +3,6 @@ import {
   readD1Migrations,
 } from "@cloudflare/vitest-pool-workers";
 import path from "node:path";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig(async () => {
@@ -13,10 +12,8 @@ export default defineConfig(async () => {
 
   return {
     plugins: [
-      tsconfigPaths({
-        projects: [path.resolve(__dirname, "../../tsconfig.json")],
-      }),
       cloudflareTest({
+        main: path.resolve(__dirname, "./test-worker.ts"),
         wrangler: {
           configPath: wranglerConfigPath,
         },
