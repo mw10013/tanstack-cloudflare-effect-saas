@@ -158,63 +158,6 @@ const decodeInvoiceExtractionResponse = (raw: unknown) => {
   return decodeAiResponse(raw).response;
 };
 
-export const INVOICE_EXTRACTION_EXPERIMENT_TRANSPORT = "binding" as const;
-
-export const runInvoiceExtraction = async ({
-  ai,
-  gatewayId,
-  markdown,
-}: {
-  readonly ai: Ai;
-  readonly gatewayId: string;
-  readonly markdown: string;
-}) => {
-  console.log("[invoice-extraction] starting via ai.run()", {
-    model: INVOICE_EXTRACTION_MODEL,
-    transport: INVOICE_EXTRACTION_EXPERIMENT_TRANSPORT,
-    gatewayId,
-    markdownLength: markdown.length,
-  });
-  let raw: unknown;
-  const startedAt = Date.now();
-  try {
-    raw = await ai.run(
-      INVOICE_EXTRACTION_MODEL,
-      {
-        ...buildRequestBody(markdown),
-      },
-      {
-        gateway: {
-          id: gatewayId,
-          skipCache: true,
-          cacheTtl: 7 * 24 * 60 * 60,
-        },
-      },
-    );
-  } catch (error) {
-    console.error("[invoice-extraction] ai.run threw", {
-      elapsedMs: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-  console.log("[invoice-extraction] ai.run returned", {
-    elapsedMs: Date.now() - startedAt,
-    raw: JSON.stringify(raw),
-  });
-  try {
-    const decoded = decodeInvoiceExtractionResponse(raw);
-    console.log("[invoice-extraction] decoded", decoded);
-    return decoded;
-  } catch (error) {
-    console.error("[invoice-extraction] decode failed", {
-      raw: JSON.stringify(raw),
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-};
-
 const GATEWAY_REQUEST_TIMEOUT_MS = 300_000;
 
 const GATEWAY_SKIP_CACHE = true;

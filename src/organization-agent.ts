@@ -4,7 +4,7 @@ import { Agent, callable } from "agents";
 import { AgentWorkflow } from "agents/workflows";
 import * as Schema from "effect/Schema";
 
-import { runInvoiceExtraction } from "@/lib/invoice-extraction";
+import { runInvoiceExtractionViaGateway } from "@/lib/invoice-extraction";
 
 export interface OrganizationAgentState {
   readonly message: string;
@@ -368,9 +368,11 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
     const invoiceJson = await step.do("extract-invoice-json", async () => {
       console.log("[workflow:extract-json] starting extraction");
       try {
-        const result = await runInvoiceExtraction({
-          ai: this.env.AI,
+        const result = await runInvoiceExtractionViaGateway({
+          accountId: this.env.CF_ACCOUNT_ID,
           gatewayId: this.env.AI_GATEWAY_ID,
+          workersAiApiToken: this.env.WORKERS_AI_API_TOKEN,
+          aiGatewayToken: this.env.AI_GATEWAY_TOKEN,
           markdown,
         });
         console.log("[workflow:extract-json] success", result);
