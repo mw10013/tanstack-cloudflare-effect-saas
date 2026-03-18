@@ -13,6 +13,177 @@ The current blocker is real, and the docs/implementation now make the shape of i
 - TanStack Start on Cloudflare is designed around the Cloudflare Vite plugin owning the `ssr` environment
 - our failure sits right at that seam: same-isolate Vitest integration + full-stack SSR framework wiring
 
+## Auxiliary Workers, Plain English
+
+An auxiliary Worker is just: another Worker running in the same local `workerd` process as your tests, but not as the special Vitest runner Worker.
+
+That distinction matters.
+
+- the `main` Worker is special in `vitest-pool-workers`
+- it runs in the same isolate/context as the tests
+- `exports.default.fetch()` talks to that special `main` Worker
+- an auxiliary Worker is a more normal Worker that your tests usually call through a binding like `env.APP.fetch(...)`
+
+Cloudflare docs say auxiliary Workers:
+
+> run in the same `workerd` process as your tests and can be bound to.
+
+Source: `refs/cloudflare-docs/src/content/docs/workers/testing/vitest-integration/configuration.mdx:127`
+
+And the example fixture shows the pattern exactly:
+
+```ts
+serviceBindings: {
+  WORKER: "worker-under-test",
+},
+workers: [
+  {
+    name: "worker-under-test",
+    scriptPath: "./dist/index.js",
+  },
+],
+```
+
+Source: `refs/workers-sdk/fixtures/vitest-pool-workers-examples/basics-integration-auxiliary/vitest.config.ts:19`
+
+Then the test calls the auxiliary Worker via the binding:
+
+```ts
+const response = await env.WORKER.fetch("http://example.com");
+```
+
+Source: `refs/workers-sdk/fixtures/vitest-pool-workers-examples/basics-integration-auxiliary/test/fetch-integration-auxiliary.test.ts:5`
+
+## Mental Model
+
+### Normal `main` Worker integration
+
+```mermaid
+flowchart LR
+  A[Vitest config in Node.js] --> B[workerd process]
+  B --> C[Vitest runner Worker]
+  C --> D[Test file runs here]
+  D --> E[exports.default.fetch]
+  E --> F[main Worker]
+
+  style C fill:#f5f5f5
+  style D fill:#f5f5f5
+  style F fill:#dff3ff
+```
+
+Important part:
+
+- test file and `main` Worker are in the same special test runtime world
+- Cloudflare says this means same context + Vite-shaped module resolution
+
+### Auxiliary Worker integration
+
+```mermaid
+flowchart LR
+  A[Vitest config in Node.js] --> B[workerd process]
+  B --> C[Vitest runner Worker]
+  C --> D[Test file runs here]
+  C --> E[env.APP service binding]
+  E --> F[Auxiliary app Worker]
+
+  style C fill:#f5f5f5
+  style D fill:#f5f5f5
+  style F fill:#dff3ff
+```
+
+Important part:
+
+- tests still run in the special runner Worker
+- routes run in a different Worker
+- that route Worker is closer to a normal Worker execution model
+
+### How this maps to our app
+
+```mermaid
+flowchart TD
+  A[Node.js: Vitest reads config and globalSetup] --> B[workerd process started by vitest-pool-workers]
+  B --> C[Runner Worker]
+  C --> D[Test file]
+  D --> E[env.APP.fetch request]
+  E --> F[Built TanStack Start Worker]
+  F --> G[D1 binding]
+  F --> H[KV binding]
+  F --> I[TanStack Start SSR route handling]
+```
+
+This is the architecture I mean when I say "use an auxiliary Worker to test TanStack Start routes with D1".
+
+## Where The Routes Actually Run
+
+This is the most important confusion to clear up.
+
+### With `exports.default.fetch()`
+
+- the route code runs in the `main` Worker
+- but that `main` Worker is the special same-context Worker used by the Vitest pool
+- that is why Cloudflare warns about different module resolution behavior
+
+### With an auxiliary Worker
+
+- the test code still runs in the Vitest runner Worker
+- the route code runs in the auxiliary app Worker
+- the request crosses a service binding boundary
+- the app Worker can have its own D1/KV bindings just like a regular Worker
+
+So yes: in the auxiliary pattern, the routes would run in the auxiliary app Worker, not in the Vitest runner Worker.
+
+## Why This Seems Better For TanStack Start
+
+The core hypothesis is now simpler:
+
+- TanStack Start route execution is sensitive to the special same-context `main` Worker test mode
+- auxiliary Workers avoid that exact mode
+- therefore auxiliary Workers are the most plausible way to keep route testing inside `vitest-pool-workers`
+
+This is not a proof. It is the best evidence-based next move.
+
+## What Auxiliary Workers Are Not
+
+- not a second Vitest runner
+- not a browser
+- not a completely separate local dev server
+- not a replacement for `vitest-pool-workers`
+
+They are just extra Workers loaded into the same local `workerd` process, usually called through service bindings.
+
+## Practical Consequences For Us
+
+If we go this route, the likely shape is:
+
+1. keep a tiny `main` Worker for tests
+2. build the real TanStack Start Worker to JS
+3. register that built Worker as an auxiliary Worker in `cloudflareTest({ miniflare: { workers: [...] } })`
+4. bind it on the runner Worker, something like `APP: "tanstack-start-app"`
+5. have tests call `env.APP.fetch("http://example.com/")`
+6. give the auxiliary Worker its D1 binding so route code hits the database normally
+
+## Why D1 Still Fits
+
+Your concern here is right: we still want real D1.
+
+Nothing in the auxiliary Worker model prevents that. The docs say auxiliary Workers are just normal Miniflare Workers configured in the same process. That means they can have their own bindings, including D1, as part of their Worker options.
+
+The tradeoff is not "no D1". The tradeoff is:
+
+- more setup
+- built JS artifact required
+- less convenience than `exports.default.fetch()`
+
+## Stronger Bottom Line
+
+If we want to test real TanStack Start routes with D1 while staying inside `vitest-pool-workers`, the clearest next experiment is:
+
+- routes run in an auxiliary app Worker
+- tests run in the Vitest runner Worker
+- tests call the app Worker via a service binding
+
+That is the sharpest version of the recommendation.
+
 ## New Grounded Findings
 
 ### 1. `exports.default.fetch()` is intentionally same-context, and Cloudflare calls out module-resolution differences
