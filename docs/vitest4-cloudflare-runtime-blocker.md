@@ -155,7 +155,7 @@ So the blocker is less "TanStack Start cannot be tested" and more:
 
 ## Stronger Recommendation Now
 
-### Best bet for real route testing: auxiliary Worker strategy
+### Best bet for real route testing inside vitest-pool-workers: auxiliary Worker strategy
 
 Use the current simple `main` Worker as the test runner/control plane, and bind a built TanStack Start Worker as an auxiliary Worker.
 
@@ -172,7 +172,7 @@ Tradeoffs:
 - tests cannot call `cloudflare:test` from inside that auxiliary Worker
 - test ergonomics are worse than `exports.default.fetch()`
 
-### Second-best option: `unstable_startWorker()` for route tests
+### Strong fallback option: `unstable_startWorker()` for route tests
 
 Cloudflare documents `unstable_startWorker()` as a way to run Wrangler's dev server internals directly.
 
@@ -180,12 +180,12 @@ Source: `refs/cloudflare-docs/src/content/docs/workers/testing/unstable_startwor
 
 If the goal is "test real TanStack Start routes running the way local dev does", this may actually be a better route-testing harness than Vitest pool integration for the SSR app itself.
 
-What about bindings, database migration? I thought vitest pool integration was needed for that especially database migration.
+Important nuance: this does not mean vitest-pool-workers becomes unnecessary. It still has real advantages for bindings and test setup, especially D1 migration setup and direct access to Workers test APIs. The likely split is:
 
-That would suggest a split strategy:
+- vitest-pool-workers for Worker-level integration tests, bindings, D1/KV setup, and shared-module tests
+- auxiliary Worker or `unstable_startWorker()` for real TanStack Start route execution
 
-- keep vitest-pool-workers for binding/storage/shared-module tests
-- use `unstable_startWorker()` or Playwright/dev-worker for true app-route tests
+That suggests a split strategy rather than a full replacement.
 
 ### Less promising option: keep forcing `src/worker.ts` through `exports.default.fetch()`
 
@@ -200,7 +200,7 @@ I no longer think this should be the default path unless we can point to a speci
 
 1. Keep the current minimal Worker-pool smoke tests as the stable base.
 2. Add research/experiments for an auxiliary Worker setup that targets a built TanStack Start app Worker.
-3. If auxiliary Worker route testing is too painful, pivot actual route coverage to `unstable_startWorker()` or Playwright.
+3. If auxiliary Worker route testing is too painful, try `unstable_startWorker()` before giving up on direct route tests.
 4. Only revisit `exports.default.fetch()` against the real TanStack Start Worker if we find a concrete, documented incompatibility we can remove.
 
 ## Short Version
