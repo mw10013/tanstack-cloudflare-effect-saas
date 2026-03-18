@@ -72,7 +72,11 @@ const extractResponsesApiOutputText = (raw: unknown): string => {
     throw new Error("Responses API payload missing output_text");
   }
   for (const item of payload.output) {
-    if (isRecord(item) && item.type === "message" && Array.isArray(item.content)) {
+    if (
+      isRecord(item) &&
+      item.type === "message" &&
+      Array.isArray(item.content)
+    ) {
       for (const content of item.content) {
         if (
           isRecord(content) &&
@@ -160,7 +164,7 @@ const decodeInvoiceExtractionResponse = (raw: unknown) => {
 
 const GATEWAY_REQUEST_TIMEOUT_MS = 300_000;
 
-const GATEWAY_SKIP_CACHE = true;
+const GATEWAY_SKIP_CACHE = false;
 
 export const runInvoiceExtractionViaGateway = async ({
   accountId,
@@ -184,15 +188,18 @@ export const runInvoiceExtractionViaGateway = async ({
     markdownLength: markdown.length,
   });
   const startedAt = Date.now();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${workersAiApiToken}`,
+    "cf-aig-authorization": `Bearer ${aiGatewayToken}`,
+    "cf-aig-request-timeout": String(GATEWAY_REQUEST_TIMEOUT_MS),
+  };
+  if (GATEWAY_SKIP_CACHE) {
+    headers["cf-aig-skip-cache"] = "true";
+  }
   const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${workersAiApiToken}`,
-      "cf-aig-authorization": `Bearer ${aiGatewayToken}`,
-      "cf-aig-request-timeout": String(GATEWAY_REQUEST_TIMEOUT_MS),
-      "cf-aig-skip-cache": String(GATEWAY_SKIP_CACHE),
-    },
+    headers,
     body: JSON.stringify(buildRequestBody(markdown)),
   });
   const elapsedMs = Date.now() - startedAt;
