@@ -3,6 +3,206 @@
 > Sources: `src/worker.ts`, `src/router.tsx`, `test/integration/vitest.config.ts`, `refs/cloudflare-docs/src/content/docs/workers/framework-guides/web-apps/tanstack-start.mdx`, `refs/cloudflare-docs/src/content/docs/workers/testing/vitest-integration/test-apis.mdx`  
 > Date: 2026-03-18
 
+## Updated Takeaways After More Source Scanning
+
+The current blocker is real, and the docs/implementation now make the shape of it clearer:
+
+- Cloudflare Vitest integration is designed for two different styles of integration testing:
+  - `main` Worker in the same isolate/context as tests via `exports.default.fetch()`
+  - auxiliary Worker in a more production-like context, with tradeoffs
+- TanStack Start on Cloudflare is designed around the Cloudflare Vite plugin owning the `ssr` environment
+- our failure sits right at that seam: same-isolate Vitest integration + full-stack SSR framework wiring
+
+## New Grounded Findings
+
+### 1. `exports.default.fetch()` is intentionally same-context, and Cloudflare calls out module-resolution differences
+
+Cloudflare docs say:
+
+> When using `exports.default.fetch()` for integration tests, your Worker code runs in the same context as the test runner. This means you can use global mocks to control your Worker, but also means your Worker uses the subtly different module resolution behavior provided by Vite.
+
+Source: `refs/cloudflare-docs/src/content/docs/workers/testing/vitest-integration/write-your-first-test.mdx:192`
+
+This matches what we observed: the simple test Worker works, but the full TanStack Start route path is sensitive to this Vite-driven execution model.
+
+### 2. Cloudflare explicitly recommends an auxiliary Worker when you want behavior closer to production
+
+Immediately after the quote above, Cloudflare says:
+
+> Usually this is not a problem, but to run your Worker in a fresh environment that is as close to production as possible, you can use an auxiliary Worker.
+
+Source: `refs/cloudflare-docs/src/content/docs/workers/testing/vitest-integration/write-your-first-test.mdx:193`
+
+This is the strongest doc signal so far that our next serious route-testing attempt should likely use an auxiliary Worker, not `exports.default.fetch()` against the main Worker.
+
+### 3. Auxiliary Workers use normal Worker module resolution, but they must be built JS
+
+Cloudflare's config docs say auxiliary Workers:
+
+- cannot have TypeScript entrypoints
+- must be compiled to JavaScript first
+- use regular Workers module resolution semantics
+- cannot access `cloudflare:test`
+- are not affected by global mocks
+
+Source: `refs/cloudflare-docs/src/content/docs/workers/testing/vitest-integration/configuration.mdx:127`
+
+This matters a lot for TanStack Start routes:
+
+- it avoids the exact same-isolate/same-module-instance behavior that is currently biting us
+- but it means we need a built artifact and a different test shape, probably via a service binding from the runner Worker to the auxiliary app Worker
+
+### 4. Cloudflare documents a known issue directly related to integration handlers
+
+Known issues say:
+
+> Dynamic `import()` statements do not work inside `export default { ... }` handlers when writing integration tests with `exports.default.fetch()` ... You must import and call your handlers directly, or use static `import` statements in the global scope.
+
+Source: `refs/cloudflare-docs/src/content/docs/workers/testing/vitest-integration/known-issues.mdx:22`
+
+This does not prove TanStack Start is using dynamic `import()` in exactly the wrong place, but it is highly relevant. TanStack Start server/runtime behavior absolutely involves runtime SSR/server-function module loading. That means our current failure is consistent with a known limitation area, not a random repo-only bug.
+
+### 5. TanStack Start route handling really does center the server entrypoint
+
+TanStack Start docs say:
+
+> the `server.ts` file is the entry point for doing all SSR-related work as well as for handling server routes and server function requests.
+
+Source: `refs/tan-start/docs/start/framework/react/guide/server-entry-point.md:36`
+
+And custom handlers are expected via:
+
+```ts
+import {
+  createStartHandler,
+  defaultStreamHandler,
+  defineHandlerCallback,
+} from '@tanstack/react-start/server'
+import { createServerEntry } from '@tanstack/react-start/server-entry'
+```
+
+Source: `refs/tan-start/docs/start/framework/react/guide/server-entry-point.md:43`
+
+This gives us a plausible next tactic: test a custom server entry that keeps TanStack Start in the loop but strips our extra Worker concerns down to the minimum needed for route handling.
+
+### 6. TanStack Start on Cloudflare wants the Vite plugin to own `ssr`
+
+Cloudflare Vite plugin docs say for full-stack frameworks:
+
+> If you are using the Cloudflare Vite plugin with TanStack Start ... your Worker is used for server-side rendering and tightly integrated with the framework.
+> To support this, you should assign it to the `ssr` environment by setting `viteEnvironment.name` in the plugin config.
+
+Source: `refs/cloudflare-docs/src/content/docs/workers/vite-plugin/reference/vite-environments.mdx:68`
+
+This explains why route testing gets ugly inside plain Vitest config. The framework-supported path wants `cloudflare({ viteEnvironment: { name: "ssr" } })`, but the Cloudflare Vite plugin rejects worker environments with `resolve.external`, and Vitest's environment config currently trips that validation.
+
+### 7. The vitest pool plugin itself confirms the split
+
+The implementation of `cloudflareTest()` does three relevant things:
+
+- forces Worker-oriented resolve conditions: `workerd`, `worker`, `module`, `browser`
+- inlines deps for the test server
+- sets `ssr.target = "webworker"`
+
+Source: `refs/workers-sdk/packages/vitest-pool-workers/src/pool/plugin.ts:37`, `:76`, `:92`
+
+That is enough for many Workers, but not enough to recreate the full Cloudflare Vite plugin + TanStack Start SSR environment contract.
+
+### 8. The Cloudflare Vite plugin intentionally rejects Worker envs with `resolve.external`
+
+The implementation says:
+
+```ts
+if (resolve.external === true || resolve.external.length) {
+  disallowedEnvironmentOptions.resolveExternal = resolve.external;
+}
+```
+
+and then throws:
+
+> avoid setting `resolve.external` in your Cloudflare Worker environments.
+
+Source: `refs/workers-sdk/packages/vite-plugin-cloudflare/src/vite-config.ts:33`
+
+This confirms our earlier failure was expected plugin behavior, not us misreading an error.
+
+### 9. The vitest pool runtime itself is doing Durable Object gymnastics to keep tests alive
+
+The pool implementation comments:
+
+> vitest-pool-workers runs all test files within the same Durable Object, so promise resolution regularly crosses request boundaries
+
+and enables:
+
+`"no_handle_cross_request_promise_resolution"`
+
+Source: `refs/workers-sdk/packages/vitest-pool-workers/src/pool/index.ts:293`
+
+This is another clue that same-context integration is a special execution model. A complex SSR framework that lazily loads modules during request handling is more likely to hit sharp edges here than a straightforward Worker.
+
+## Revised Interpretation
+
+The evidence now points to this:
+
+1. `exports.default.fetch()` against `main` is the easy integration path, but it is explicitly same-context and Vite-shaped.
+2. TanStack Start routes on Cloudflare are explicitly `ssr`-environment + Cloudflare-Vite-plugin territory.
+3. Our repo is trying to test that full-stack SSR path inside the simpler Vitest same-context mode.
+4. That mismatch is probably the real issue.
+
+So the blocker is less "TanStack Start cannot be tested" and more:
+
+"Testing full TanStack Start route handling through `exports.default.fetch()` on the `main` Worker is likely the wrong test harness for this app."
+
+## Stronger Recommendation Now
+
+### Best bet for real route testing: auxiliary Worker strategy
+
+Use the current simple `main` Worker as the test runner/control plane, and bind a built TanStack Start Worker as an auxiliary Worker.
+
+Why this is now my top recommendation:
+
+- Cloudflare explicitly suggests auxiliary Workers for a more production-like environment in integration tests
+- auxiliary Workers use regular Worker module resolution semantics
+- this sidesteps the same-isolate `exports.default.fetch()` path that currently hangs
+- it lets us test actual route responses from a real built app Worker
+
+Tradeoffs:
+
+- auxiliary Worker must be built JS, not TS
+- tests cannot call `cloudflare:test` from inside that auxiliary Worker
+- test ergonomics are worse than `exports.default.fetch()`
+
+### Second-best option: `unstable_startWorker()` for route tests
+
+Cloudflare documents `unstable_startWorker()` as a way to run Wrangler's dev server internals directly.
+
+Source: `refs/cloudflare-docs/src/content/docs/workers/testing/unstable_startworker.mdx:21`
+
+If the goal is "test real TanStack Start routes running the way local dev does", this may actually be a better route-testing harness than Vitest pool integration for the SSR app itself.
+
+What about bindings, database migration? I thought vitest pool integration was needed for that especially database migration.
+
+That would suggest a split strategy:
+
+- keep vitest-pool-workers for binding/storage/shared-module tests
+- use `unstable_startWorker()` or Playwright/dev-worker for true app-route tests
+
+### Less promising option: keep forcing `src/worker.ts` through `exports.default.fetch()`
+
+This is still possible in theory, but the docs and implementation now suggest we are fighting the intended tool boundary.
+
+I no longer think this should be the default path unless we can point to a specific fix such as:
+
+- removing a known dynamic `import()` edge
+- providing a narrower custom TanStack server entry that avoids the problematic runtime path
+
+## Updated Practical Plan
+
+1. Keep the current minimal Worker-pool smoke tests as the stable base.
+2. Add research/experiments for an auxiliary Worker setup that targets a built TanStack Start app Worker.
+3. If auxiliary Worker route testing is too painful, pivot actual route coverage to `unstable_startWorker()` or Playwright.
+4. Only revisit `exports.default.fetch()` against the real TanStack Start Worker if we find a concrete, documented incompatibility we can remove.
+
 ## Short Version
 
 The Vitest 3 -> 4 migration is mostly done. TypeScript is green. The remaining problem is not the migration API anymore.
