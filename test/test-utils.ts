@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 
 export async function resetDb(resetFn?: (db: D1Database) => Promise<void>) {
   await env.D1.batch([

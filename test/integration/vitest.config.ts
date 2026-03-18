@@ -1,49 +1,33 @@
-/* oxlint-disable */
 import {
-  defineWorkersProject,
+  cloudflareTest,
   readD1Migrations,
-} from "@cloudflare/vitest-pool-workers/config";
+} from "@cloudflare/vitest-pool-workers";
 import path from "node:path";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { defineConfig } from "vitest/config";
 
-export default defineWorkersProject(async () => {
+export default defineConfig(async () => {
   const migrationsPath = path.join(__dirname, "../../migrations");
   const migrations = await readD1Migrations(migrationsPath);
+  const wranglerConfigPath = path.resolve(__dirname, "../../wrangler.jsonc");
 
   return {
     plugins: [
       tsconfigPaths({
         projects: [path.resolve(__dirname, "../../tsconfig.json")],
       }),
+      cloudflareTest({
+        wrangler: {
+          configPath: wranglerConfigPath,
+        },
+        miniflare: {
+          bindings: { TEST_MIGRATIONS: migrations },
+        },
+      }),
     ],
-    resolve: {
-      alias: {
-        "@": path.resolve(__dirname, "../../src"),
-      },
-      conditions: ["workerd", "worker", "browser"],
-    },
-    ssr: {
-      target: "webworker" as const,
-      resolve: {
-        conditions: ["workerd", "worker", "browser"],
-      },
-    },
     test: {
       include: ["test/integration/*.test.ts"],
       setupFiles: ["test/apply-migrations.ts"],
-      poolOptions: {
-        workers: {
-          main: path.resolve(__dirname, "../../dist/server/index.js"),
-          isolatedStorage: false,
-          singleWorker: true,
-          wrangler: {
-            configPath: "../../wrangler.jsonc",
-          },
-          miniflare: {
-            bindings: { TEST_MIGRATIONS: migrations },
-          },
-        },
-      },
     },
   };
 });

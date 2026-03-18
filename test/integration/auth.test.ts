@@ -1,4 +1,4 @@
-import { env, SELF } from "cloudflare:test";
+import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import { extractSessionCookie, resetDb } from "../test-utils";
@@ -6,7 +6,7 @@ import { extractSessionCookie, resetDb } from "../test-utils";
 async function signInMagicLink({ email }: { email: string }) {
   await env.KV.delete("demo:magicLink");
 
-  const response = await SELF.fetch(
+  const response = await exports.default.fetch(
     "http://example.com/api/auth/sign-in/magic-link",
     {
       method: "POST",
@@ -27,7 +27,7 @@ async function signInMagicLink({ email }: { email: string }) {
 
   return {
     magicLink: magicLink.replace(
-      process.env.BETTER_AUTH_URL,
+      env.BETTER_AUTH_URL,
       "http://example.com",
     ),
   };
@@ -48,7 +48,7 @@ describe("auth (integration)", () => {
 
     const { magicLink } = await signInMagicLink({ email: "u2@example.com" });
 
-    const verifyResponse = await SELF.fetch(magicLink, {
+    const verifyResponse = await exports.default.fetch(magicLink, {
       redirect: "manual",
       headers: { Host: "example.com" },
     });
@@ -57,7 +57,7 @@ describe("auth (integration)", () => {
 
     const sessionCookie = extractSessionCookie(verifyResponse);
 
-    const magicLinkRouteResponse = await SELF.fetch(
+    const magicLinkRouteResponse = await exports.default.fetch(
       "http://example.com/magic-link",
       {
         redirect: "manual",
@@ -74,14 +74,14 @@ describe("auth (integration)", () => {
 
     const { magicLink } = await signInMagicLink({ email: "u3@example.com" });
 
-    const verifyResponse = await SELF.fetch(magicLink, {
+    const verifyResponse = await exports.default.fetch(magicLink, {
       redirect: "manual",
       headers: { Host: "example.com" },
     });
 
     const sessionCookie = extractSessionCookie(verifyResponse);
 
-    const magicLinkRouteResponse = await SELF.fetch(
+    const magicLinkRouteResponse = await exports.default.fetch(
       "http://example.com/magic-link",
       {
         redirect: "manual",
@@ -99,14 +99,14 @@ describe("auth (integration)", () => {
 
     const { magicLink } = await signInMagicLink({ email: "u4@example.com" });
 
-    const verifyResponse = await SELF.fetch(magicLink, {
+    const verifyResponse = await exports.default.fetch(magicLink, {
       redirect: "manual",
       headers: { Host: "example.com" },
     });
 
     const sessionCookie = extractSessionCookie(verifyResponse);
 
-    const signOutResponse = await SELF.fetch(
+    const signOutResponse = await exports.default.fetch(
       "http://example.com/api/auth/sign-out",
       {
         method: "POST",

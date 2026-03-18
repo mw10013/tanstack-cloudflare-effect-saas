@@ -109,9 +109,7 @@ singleWorker: true,
 
 Those options no longer exist. The new model is per-file storage isolation by default.
 
-Impact: we need to decide whether this suite really needs shared storage across files. If yes, use CLI flags. If not, delete these options and keep per-file isolation.
-
-We do not need shared storage across files.
+Impact: we do not need shared storage across files here, so these options should be deleted and we should keep per-file isolation.
 
 ### 5. Some manual worker-resolution config is probably obsolete
 
@@ -148,9 +146,7 @@ Both test files reset or avoid persistent state:
 - `test/integration/auth.test.ts:38`, `:47`, `:73`, `:98` call `resetDb()` per test.
 - `test/integration/smoke.test.ts` is stateless.
 
-This suggests the old `isolatedStorage: false` / `singleWorker: true` settings may be legacy, not required. Per-file isolation is likely fine.
-
-per-file isolation is fine.
+This suggests the old `isolatedStorage: false` / `singleWorker: true` settings are legacy, not required. Per-file isolation is fine.
 
 ### The biggest repo-specific question is the `main` entrypoint
 
@@ -173,9 +169,7 @@ This is the main migration decision:
 - keep testing the built app bundle via `dist/server/index.js`
 - or switch to `src/worker.ts` and see if the suite can run without a prebuild
 
-I would default to keeping the built entrypoint first, then revisit once tests pass.
-
-Agreed. but let's not forget to revisit.
+Decision: keep the built entrypoint first, then revisit after the suite is green.
 
 ## Recommended Migration Plan
 
@@ -298,23 +292,12 @@ That is not the new recommended env access path. Since Vitest 4 moves test env a
 
 This is not the main breaking change, but it is worth cleaning up during the migration.
 
-## Open Questions
+## Decisions
 
-1. `main` entrypoint: should we keep `dist/server/index.js` for parity with the built app, or try `src/worker.ts` and remove the prebuild? My default: keep `dist/server/index.js` first.
-
-ok
-
-2. Storage model: do we actually need cross-file shared storage anywhere, or can we accept Cloudflare's new per-file default? My default: use per-file isolation.
-
-ok with your default.
-
-3. Assets: do we need integration coverage for static assets? If yes, `exports.default.fetch()` is not enough and we may need `startDevWorker()` for that slice.
-
-i don't think we currently need.
-
-4. Env access: should test code stop using `process.env.BETTER_AUTH_URL` and use `env.BETTER_AUTH_URL` instead? My default: yes.
-
-ok
+1. Keep `dist/server/index.js` as the `main` entrypoint for now, then revisit after the migration is green.
+2. Use Cloudflare's default per-file isolation. We do not need shared cross-file storage.
+3. Do not add asset-specific integration coverage in this migration.
+4. Replace `process.env.BETTER_AUTH_URL` in tests with `env.BETTER_AUTH_URL`.
 
 ## Short Checklist For The Actual Migration PR
 
