@@ -154,24 +154,85 @@ Important distinction:
 - `vitest-pool-workers` gives us `readD1Migrations()` and `applyD1Migrations()` helpers designed for its test runtime
 - `unstable_startWorker()` is not that runtime
 
+Grounded migration pattern from Cloudflare D1 docs:
+
+```sh
+wrangler d1 migrations apply your-database --local
+```
+
+Source: `refs/cloudflare-docs/src/content/docs/d1/best-practices/local-development.mdx:197`
+
+The same doc shows the intended testing pattern with Wrangler dev APIs:
+
+- run local migrations first
+- then start the Worker
+
+Source: `refs/cloudflare-docs/src/content/docs/d1/best-practices/local-development.mdx:205`
+
+Wrangler's `unstable_startWorker()` also supports explicit local persistence via `dev.persist`, and Wrangler resolves that to a local persistence path.
+
+Source: `refs/workers-sdk/packages/wrangler/src/api/startDevWorker/types.ts:148`, `refs/workers-sdk/packages/wrangler/src/api/startDevWorker/ConfigController.ts:155`, `refs/workers-sdk/packages/wrangler/src/dev/get-local-persistence-path.ts:14`
+
 So the question is not "can it have D1?". It almost certainly can.
 
 The real question is:
 
 - how do we ensure the D1 database is migrated before route assertions?
 
-Most likely answers:
+Best current answer:
 
-1. pre-apply migrations with Wrangler before starting the worker
-2. start the worker against a test/local DB that is already migrated
-3. see if Wrangler dev startup already handles the desired local D1 state for our setup
+1. choose a persistence directory
+2. run `wrangler d1 migrations apply d1-local --local --persist-to <same-dir>`
+3. start `unstable_startWorker()` with `dev.persist: <same-dir>`
 
-I have not verified which of those is best yet.
+That should make the started Worker see the same migrated local D1 state.
+
+## `unstable_startWorker()` Prototype Result
+
+Two variants mattered.
+
+### Variant 1: source entrypoint
+
+```ts
+unstable_startWorker({
+  config: wrangler.jsonc,
+  entrypoint: src/worker.ts,
+  dev: { persist: .wrangler/state },
+})
+```
+
+Result:
+
+- migrations succeeded
+- local D1/KV bindings were visible
+- route requests hung and timed out
+
+### Variant 2: built server entrypoint
+
+```ts
+unstable_startWorker({
+  config: dist/server/wrangler.json,
+  entrypoint: dist/server/index.js,
+  dev: { persist: .wrangler/state },
+})
+```
+
+Result:
+
+- `/login` responded `200`
+- `/` responded `200`
+- SSR HTML came back correctly
+
+Meaning:
+
+- `unstable_startWorker()` plus migrated local D1 does work for real route tests here
+- the failing path is specifically the source-entrypoint/dev-style route execution path
+- the built server artifact is currently the viable harness for route testing
 
 ## Current Recommendation
 
 - keep `vitest-pool-workers` for D1/shared-module/Worker-level tests
 - do not keep pushing `exports.default.fetch()` for real TanStack Start routes
 - next research/implementation target should be one of:
-  1. make auxiliary Worker work with a Miniflare-friendly TanStack Start bundle
-  2. prototype route tests with `unstable_startWorker()` and a migrated local D1 workflow
+  1. use `unstable_startWorker()` with the built server entrypoint for route tests
+  2. only revisit auxiliary Worker if we specifically want those tests inside `vitest-pool-workers`
