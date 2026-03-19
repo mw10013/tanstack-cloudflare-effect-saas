@@ -171,75 +171,97 @@ const GeminiResponseSchema = Schema.Struct({
 
 ### 6. `run()` integration
 
-The `step.do` callbacks remain async (Agents framework requirement). The Effect program runs inside the `"extract-invoice"` step:
+Build a `runtimeLayer` and run the entire `run()` body as a single Effect. `step.do` calls wrap in `Effect.tryPromise`. The `"extract-invoice"` step uses a nested `Effect.runPromise` since `runInvoiceExtraction` is itself an Effect that needs `HttpClient` — the step boundary must own the promise for durable execution.
+
+See full sketch in "Design: Whole `run()` as Effect" section below.
+
+## Design: Whole `run()` as Effect
+
+### Approach: build a runtimeLayer, run one Effect
+
+Same pattern as `makeScheduledRunEffect` in `worker.ts:59-67` — build a layer from `this.env`, run the entire body as a single Effect. The `step.do` calls are just promises, wrappable with `Effect.promise`/`Effect.tryPromise` inside `Effect.gen`.
 
 ```ts
 async run(event, step) {
-  const fileBytes = await step.do("load-file", async () => {
-    const object = await this.env.R2.get(event.payload.r2ObjectKey)
-    if (!object) throw new Error(`Invoice file not found: ${event.payload.r2ObjectKey}`)
-    return new Uint8Array(await object.arrayBuffer())
-  })
-
-  const extractedJson = await step.do("extract-invoice", async () =>
-    Effect.runPromise(
-      runInvoiceExtraction({
-        accountId: this.env.CF_ACCOUNT_ID,
-        gatewayId: this.env.AI_GATEWAY_ID,
-        googleAiStudioApiKey: this.env.GOOGLE_AI_STUDIO_API_KEY,
-        aiGatewayToken: this.env.AI_GATEWAY_TOKEN,
-        fileBytes,
-        contentType: event.payload.contentType,
-      }).pipe(Effect.provide(FetchHttpClient.layer)),
-    ),
+  const runtimeLayer = Layer.mergeAll(
+    FetchHttpClient.layer,
+    // could add logger layer, etc.
   )
 
-  await step.do("save-extracted-json", async () => {
-    await this.agent.saveExtractedJson({
-      invoiceId: event.payload.invoiceId,
-      idempotencyKey: event.payload.idempotencyKey,
-      extractedJson: JSON.stringify(extractedJson),
-    })
-  })
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      yield* Effect.logInfo("workflow.started", {
+        invoiceId: event.payload.invoiceId,
+      })
 
-  return { invoiceId: event.payload.invoiceId }
+      const fileBytes = yield* Effect.tryPromise(() =>
+        step.do("load-file", async () => {
+          const object = await this.env.R2.get(event.payload.r2ObjectKey)
+          if (!object) throw new Error(`Not found: ${event.payload.r2ObjectKey}`)
+          return new Uint8Array(await object.arrayBuffer())
+        }),
+      )
+
+      const extractedJson = yield* Effect.tryPromise(() =>
+        step.do("extract-invoice", () =>
+          Effect.runPromise(runInvoiceExtraction({ ... })),
+        ),
+      )
+
+      yield* Effect.tryPromise(() =>
+        step.do("save-extracted-json", async () => {
+          await this.agent.saveExtractedJson({ ... })
+        }),
+      )
+
+      yield* Effect.logInfo("workflow.complete", {
+        invoiceId: event.payload.invoiceId,
+      })
+      return { invoiceId: event.payload.invoiceId }
+    }).pipe(Effect.provide(runtimeLayer)),
+  )
 }
 ```
 
-## Design Decisions
+### Benefits
 
-### Why not wrap the entire `run()` in Effect.gen?
+- **Structured logging** via `Effect.logInfo`/`Effect.logError` instead of `console.log` — consistent with `worker.ts` scheduled handler (`worker.ts:368, 375`) and all services (`D1.ts:79`, `R2.ts:66`)
+- **Unified error channel** — errors from any step flow through Effect's error type
+- **Layer provision once** — `FetchHttpClient.layer` (and potentially a logger layer) provided at the top, available to all steps
+- **Consistent pattern** — mirrors `makeScheduledRunEffect` / `makeHttpRunEffect` boundary pattern
 
-The `step.do` calls are Agents framework primitives that provide durable execution (idempotency, replay). They must remain as-is. Effect wraps the **computation inside** each step, not the step orchestration itself.
+### Nested `Effect.runPromise` question
 
-### Why `HttpClient.execute` (module accessor) vs `client.execute` (instance)?
+The `"extract-invoice"` step has a sub-problem: `runInvoiceExtraction` is itself an Effect (needs `HttpClient`). Two options:
 
-`HttpClient.execute(request)` is the module-level accessor that reads `HttpClient.HttpClient` from context. This is the simpler pattern when you don't need a preconfigured client instance — single request, no shared middleware.
-
-Source: `refs/effect4/packages/effect/src/unstable/http/HttpClient.ts:130-132`
-
-### Why not use the R2 Effect service for `load-file`?
-
-The workflow class only has `this.env.R2` (raw Cloudflare R2 binding), not the Effect `R2` service layer. The Effect services (`R2`, `D1`, `KV`) are composed in `worker.ts` layers for the HTTP request path. The AgentWorkflow runs in a different context (Durable Object). Wrapping a single `R2.get` call in Effect within a `step.do` adds ceremony without benefit.
-
-### Error handling pattern: `tryStripe`/`tryD1`/`tryR2` → `catchTag`
-
-The codebase services use a `try*` helper to wrap promises in Effect with typed errors:
-
+**Option A: Nested `Effect.runPromise`** — the `step.do` callback is async, so run the inner Effect there:
 ```ts
-// src/lib/D1.ts:71-79
-const tryD1 = <A>(evaluate: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: evaluate,
-    catch: (cause) =>
-      new D1Error({
-        message: cause instanceof Error ? cause.message : String(cause),
-        cause,
-      }),
-  }).pipe(Effect.tapError((error) => Effect.logError(error)));
+const extractedJson = yield* Effect.tryPromise(() =>
+  step.do("extract-invoice", () =>
+    Effect.runPromise(
+      runInvoiceExtraction(params).pipe(Effect.provide(FetchHttpClient.layer)),
+    ),
+  ),
+)
 ```
 
-For the extraction workflow, the HttpClient pipeline already produces typed errors (`HttpClientError`, `SchemaError`). We map them to `InvoiceExtractionError` via `Effect.catchTag` — same error-mapping pattern, different source.
+**Option B: Flatten** — don't wrap `step.do` in Effect for this step, just yield the Effect directly. But this breaks the `step.do` durable execution guarantee — the step boundary must own the promise.
+
+**Option A is correct.** The `step.do` boundary is the Agents framework's durability contract. The inner Effect runs within that boundary. The `FetchHttpClient.layer` can be provided either at the inner level or at the outer level if the outer Effect's context flows through.
+
+Actually — since the outer `Effect.gen` already has `FetchHttpClient.layer` provided, we could avoid the nested `runPromise` by running `runInvoiceExtraction` directly in the outer gen, but then it wouldn't be inside `step.do`'s durable boundary. **The step boundary must wrap the entire operation**, so nested `runPromise` is the right call.
+
+### Error handling
+
+```ts
+// Typed error, same pattern as D1Error/R2Error/StripeError
+class InvoiceExtractionError extends Schema.TaggedErrorClass<InvoiceExtractionError>()(
+  "InvoiceExtractionError",
+  { message: Schema.String, cause: Schema.Defect },
+) {}
+```
+
+HttpClient pipeline errors (`HttpClientError`, `SchemaError`) map to `InvoiceExtractionError` via `Effect.catchTag` — same error-mapping pattern as the `try*` helpers in `D1.ts:71-79`, `R2.ts:57-71`.
 
 ## Codebase Effect Patterns
 
