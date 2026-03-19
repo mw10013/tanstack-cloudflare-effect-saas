@@ -28,6 +28,7 @@ Relevant primitives:
 - `Effect.services()` — get the current `ServiceMap`: `refs/effect4/packages/effect/src/Effect.ts:5524`
 - `Effect.servicesWith(...)` — derive work from the current `ServiceMap`: `refs/effect4/packages/effect/src/Effect.ts:5570`
 - `Effect.provideServices(effect, services)` — re-provide a captured `ServiceMap`: `refs/effect4/packages/effect/src/Effect.ts:5694`
+- `Config.string("NAME")` / `Config.redacted("NAME")` — read string config and secrets from the configured provider: `refs/effect4/ai-docs/src/01_effect/04_resources/10_acquire-release.ts:25-26`, `refs/effect4/packages/effect/src/Config.ts:1161`
 
 That means the correct mental model is:
 
@@ -124,7 +125,14 @@ async run(event, step) {
   const env = this.env;
   const agent = this.agent;
 
-  const envLayer = Layer.succeedServices(ServiceMap.make(CloudflareEnv, env));
+  const envLayer = Layer.succeedServices(
+    ServiceMap.make(CloudflareEnv, env).pipe(
+      ServiceMap.add(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromUnknown(env),
+      ),
+    ),
+  );
   const r2Layer = Layer.provideMerge(R2.layer, envLayer);
   const invoiceExtractionLayer = Layer.provideMerge(
     InvoiceExtraction.layer,
@@ -191,8 +199,16 @@ This gives you:
 
 Existing useful services in this repo:
 
-- `CloudflareEnv` — `src/lib/CloudflareEnv.ts:3`
+- `CloudflareEnv` for bindings like `R2`, D1, DO namespaces — `src/lib/CloudflareEnv.ts:3`
 - `R2` — `src/lib/R2.ts:5`
+
+For string env vars and secrets, the better Effect v4 fit is `Config`, not `CloudflareEnv`.
+
+Grounding:
+
+- `Config.string("SMTP_USER")` and `Config.redacted("SMTP_PASS")` are the documented service-construction pattern in `refs/effect4/ai-docs/src/01_effect/04_resources/10_acquire-release.ts:25-26`
+- `Config.redacted` returns a `Redacted` wrapper that hides values in logs and `toString`: `refs/effect4/packages/effect/src/Config.ts:1131-1163`
+- the repo already wires `ConfigProvider.fromUnknown(env)` into the worker env layer in `src/worker.ts:31-39`
 
 Note: `saveExtractedJson` currently exists on the DO agent object, not as an Effect service, so that last step can reasonably stay a closure-based Effect over `agent` for now.
 
@@ -224,7 +240,7 @@ The extraction HTTP/decode logic should be a proper service, not a free function
 Why:
 
 - matches `src/lib/D1.ts:5`, `src/lib/R2.ts:5`, `src/lib/Repository.ts:7`
-- pulls secrets from `CloudflareEnv` rather than from call sites
+- pulls bindings from `CloudflareEnv` and string configuration from `Config`
 - composes naturally with `FetchHttpClient.layer`
 - becomes straightforward to run from `step.do` using captured services
 
@@ -235,7 +251,10 @@ export class InvoiceExtraction extends ServiceMap.Service<InvoiceExtraction>()(
   "InvoiceExtraction",
   {
     make: Effect.gen(function* () {
-      const env = yield* CloudflareEnv;
+      const accountId = yield* Config.string("CF_ACCOUNT_ID");
+      const gatewayId = yield* Config.string("AI_GATEWAY_ID");
+      const googleAiStudioApiKey = yield* Config.redacted("GOOGLE_AI_STUDIO_API_KEY");
+      const aiGatewayToken = yield* Config.redacted("AI_GATEWAY_TOKEN");
       const client = yield* HttpClient.HttpClient;
 
       const extract = Effect.fn("InvoiceExtraction.extract")(function* ({
@@ -245,32 +264,35 @@ export class InvoiceExtraction extends ServiceMap.Service<InvoiceExtraction>()(
         readonly fileBytes: Uint8Array;
         readonly contentType: string;
       }) {
-        const response = yield* HttpClientRequest.post(gatewayUrl(env), {
-          headers: {
-            "content-type": "application/json",
-            "x-goog-api-key": env.GOOGLE_AI_STUDIO_API_KEY,
-            "cf-aig-authorization": `Bearer ${env.AI_GATEWAY_TOKEN}`,
-          },
-          body: HttpBody.jsonUnsafe({
-            contents: [
-              {
-                parts: [
-                  { text: invoiceExtractionPrompt },
-                  {
-                    inlineData: {
-                      mimeType: contentType,
-                      data: Encoding.encodeBase64(fileBytes),
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseJsonSchema: invoiceExtractionJsonSchema,
+        const response = yield* HttpClientRequest.post(
+          gatewayUrl({ accountId, gatewayId }),
+          {
+            headers: {
+              "content-type": "application/json",
+              "x-goog-api-key": Redacted.value(googleAiStudioApiKey),
+              "cf-aig-authorization": `Bearer ${Redacted.value(aiGatewayToken)}`,
             },
-          }),
-        }).pipe(client.execute);
+            body: HttpBody.jsonUnsafe({
+              contents: [
+                {
+                  parts: [
+                    { text: invoiceExtractionPrompt },
+                    {
+                      inlineData: {
+                        mimeType: contentType,
+                        data: Encoding.encodeBase64(fileBytes),
+                      },
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                responseMimeType: "application/json",
+                responseJsonSchema: invoiceExtractionJsonSchema,
+              },
+            }),
+          },
+        ).pipe(client.execute);
 
         return yield* decodeInvoiceExtractionResponse(response);
       });
@@ -282,6 +304,13 @@ export class InvoiceExtraction extends ServiceMap.Service<InvoiceExtraction>()(
   static readonly layer = Layer.effect(this, this.make);
 }
 ```
+
+This is the cleaner split:
+
+- `CloudflareEnv` for runtime bindings / platform objects
+- `Config` for scalar env vars
+- `Config.redacted(...)` for secrets
+- `Redacted.value(...)` only at the narrow boundary where the HTTP header string must be materialized
 
 ## Why `runPromiseWith(services)` Is The Right Bridge
 
@@ -375,6 +404,10 @@ For AI Gateway, the error body is operationally important, so the extraction ser
 3. map to `InvoiceExtractionError` with status + body excerpt
 4. only decode success bodies with `schemaBodyJson`
 
+At the request-construction level, if we want Effect-aware redaction of sensitive headers, note that `HttpClientRequest.bearerToken` accepts `string | Redacted.Redacted`: `refs/effect4/packages/effect/src/unstable/http/HttpClientRequest.ts:303-310`.
+
+That matters more for standard `Authorization` usage than for provider-specific headers like `x-goog-api-key`, but it confirms the broader library pattern: secrets should stay redacted in config/services until the narrowest request-construction boundary.
+
 ### JSON string payload decode
 
 Gemini returns extracted JSON as text. The correct Effect schema tool is:
@@ -427,6 +460,7 @@ Suggested split:
 Build only what the workflow needs:
 
 - `CloudflareEnv`
+- `ConfigProvider.ConfigProvider`
 - `R2`
 - `FetchHttpClient.layer`
 - `InvoiceExtraction.layer`
@@ -435,7 +469,14 @@ Build only what the workflow needs:
 Sketch:
 
 ```ts
-const envLayer = Layer.succeedServices(ServiceMap.make(CloudflareEnv, env));
+const envLayer = Layer.succeedServices(
+  ServiceMap.make(CloudflareEnv, env).pipe(
+    ServiceMap.add(
+      ConfigProvider.ConfigProvider,
+      ConfigProvider.fromUnknown(env),
+    ),
+  ),
+);
 const r2Layer = Layer.provideMerge(R2.layer, envLayer);
 const extractionLayer = Layer.provideMerge(
   InvoiceExtraction.layer,
@@ -481,9 +522,9 @@ That is the main v4 construct this workflow needs.
    - `agent.saveExtractedJson(...)` can stay as a small closure-based Effect unless a dedicated agent service is introduced
 
 4. Retry policy
-   - workflow durability retry via `step.do`
-   - optional transient HTTP retry inside `InvoiceExtraction`
-   - do not retry schema failures / malformed model output
+   - no special Effect-level retry policy is required initially
+   - the workflow already gets durable step boundaries and workflow retry behavior from Cloudflare
+   - add in-effect retry only later if a specific operational gap appears
 
 5. Persisted error format
    - `src/organization-agent.ts:201-227` stores workflow error as string
