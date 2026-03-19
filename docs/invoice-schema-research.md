@@ -1,6 +1,6 @@
-# Invoice Schema Research
+# Invoice Schema Refactor Plan
 
-Current schema (organization-agent.ts L47-59):
+Current schema (organization-agent.ts):
 
 ```sql
 create table if not exists Invoice (
@@ -20,174 +20,138 @@ create table if not exists Invoice (
 
 ---
 
-## `status`
+## `status` → keep column name, new values + type safety
 
-### Current values and where they're set
+### Current values
 
 | Value | Where set | Meaning |
 |---|---|---|
-| `uploaded` | `onInvoiceUpload` — default on insert, reset on upsert (L55, L109, L118) | File landed in R2, row created |
-| `extracting` | `onInvoiceUpload` — after `runWorkflow` succeeds (L146) | Workflow started |
-| `extracting_json` | Only checked in guard (L95), never written | Dead code from prior iteration |
-| `ready` | `applyInvoiceJson` (L190) | Extraction succeeded, invoiceJson populated |
+| `uploaded` | `onInvoiceUpload` — insert/upsert (L109, L118) | File landed in R2 |
+| `extracting` | `onInvoiceUpload` — after `runWorkflow` (L146) | Workflow started |
+| `extracting_json` | Only checked in guard (L95), **never written** | Dead code |
+| `ready` | `applyInvoiceJson` (L190) | Extraction succeeded |
 | `extract_error` | `onWorkflowError` (L221) | Workflow failed |
 
-### UI reads (invoices.tsx)
+### Changes
 
-- `getStatusVariant`: `ready` → default, `extract_error` → destructive, else → secondary (L80-86)
-- Badge renders `invoice.status` raw (L430)
-- `extract_error` shows error alert (L302)
+1. **Remove `extracting_json`** from guard at L95. Dead code from prior iteration.
+2. **Remove `default 'uploaded'`** from DDL. Upsert must be explicit about status.
+3. **Rename `extract_error` → `error`**. Status column already scopes to invoice context.
+4. **Remove `ready`**. After extraction succeeds, status should be `extracted`. No `ready` state until we build a human-review step.
+5. **Final values**: `uploaded`, `extracting`, `extracted`, `error`.
+6. **Add type safety** following existing Domain.ts pattern:
 
-### Issues
+```ts
+// Domain.ts pattern:
+export const InvitationStatusValues = ["pending", "accepted", "rejected", "canceled"] as const;
+export const InvitationStatus = Schema.Literals(InvitationStatusValues);
+export type InvitationStatus = typeof InvitationStatus.Type;
 
-1. `extracting_json` is dead — checked in the guard at L95 but never written anywhere.
-2. `uploaded` as default is misleading — when the row is first created, the workflow is about to start. The status immediately transitions to `extracting` a few lines later. The default only matters if the process crashes between insert and `runWorkflow`.
-3. No enum/literal type — status is a plain `text` column and `Schema.String` in the row schema. No compile-time safety.
+// New:
+export const InvoiceStatusValues = ["uploaded", "extracting", "extracted", "error"] as const;
+export const InvoiceStatus = Schema.Literals(InvoiceStatusValues);
+export type InvoiceStatus = typeof InvoiceStatus.Type;
+```
 
-### Recommendation
+Then use `InvoiceStatus` in `InvoiceRowSchema` instead of `Schema.String`.
 
-- Remove `extracting_json` from guard.
-- Keep `uploaded`, `extracting`, `ready`, `extract_error` as the four states. Consider renaming for clarity:
-  - `uploaded` → `pending`? Or keep `uploaded`.
-  - `extracting` → fine.
-  - `ready` → `extracted`? More descriptive. `ready` is vague.
-  - `extract_error` → `error`? Shorter. Status column already scopes to invoice context.
-- Add `Schema.Literals` for compile-time safety.
+### UI impact
 
----
-
-## `processedAt`
-
-### Usage
-
-| Where | How |
-|---|---|
-| `applyInvoiceJson` (L187-191) | Set to `Date.now()` on success |
-| `onWorkflowError` (L219-224) | Set to `Date.now()` on error |
-| `onInvoiceUpload` upsert (L110, L119) | Reset to `null` |
-| UI | **Never read.** Not displayed anywhere. |
-
-### Analysis
-
-It's set when extraction completes (success or failure) but never consumed. Could be useful for latency tracking (createdAt → processedAt) but currently unused.
-
-### Recommendation
-
-- **Remove** unless we have a near-term plan to display it. Easy to re-add later. Reduces schema noise.
-- Alternative: keep for debugging/admin purposes, but it's invisible to users.
+- `getStatusVariant`: update `ready` → `extracted`, `extract_error` → `error`
+- Badge renders status raw — new values display cleaner
 
 ---
 
-## `eventTime`
+## `processedAt` → remove
 
-### Usage
-
-| Where | How |
-|---|---|
-| R2 queue notification | `notification.eventTime` — the timestamp from the R2 event (worker.ts L171, L225, L281) |
-| Local dev upload/delete | `new Date().toISOString()` — synthetic (invoices.tsx L183, L218) |
-| `onInvoiceUpload` | Parsed, used for out-of-order detection: `if (existing && eventTime < existing.eventTime)` (L85). Also written to both `createdAt` and `eventTime` on insert (L108). |
-| `onInvoiceDelete` | Parsed, used in delete guard: `where eventTime <= ${eventTime}` (L170) |
-
-### Analysis
-
-- **Purpose**: Guards against out-of-order R2 event notifications. If a stale event arrives after a newer one, it's ignored.
-- **Name**: Generic — it's specifically the R2 notification timestamp, not an arbitrary event time.
-- **Dual use**: On first insert, `createdAt = eventTime` (L108). On upsert, only `eventTime` updates; `createdAt` stays from original insert.
-
-### Recommendation
-
-- Rename to `r2EventTime` or `lastEventTime` to clarify its purpose.
-- Keep the column — the out-of-order guard is important for correctness with queue-based event processing.
+Set on extraction success/error but **never read in UI**. Remove from schema, row type, all SQL statements. Easy to re-add if needed.
 
 ---
 
-## `invoiceJsonError`
+## `eventTime` → rename to `r2ActionTime`
 
-### Usage
+### What it actually is
 
-| Where | How |
-|---|---|
-| `onWorkflowError` (L224) | Stored with prefix-stripped error message |
-| `applyInvoiceJson` (L193) | Reset to `null` on success |
-| UI (invoices.tsx L307) | Displayed in alert when `status === "extract_error"` |
-| `extractInvoiceJsonErrorPrefix` | String prefix convention to tag extraction errors in workflow, stripped in `onWorkflowError` |
+From [R2 event notifications docs](refs/cloudflare-docs/src/content/docs/r2/buckets/event-notifications.mdx):
 
-### Analysis
+> `eventTime` — String — The time when the **action** that triggered the event occurred.
 
-- Column name is overly specific (`invoiceJsonError` vs just `error`).
-- The `extractInvoiceJsonErrorPrefix` string-prefix convention couples workflow ↔ agent through fragile string parsing.
-- The column stores errors from any workflow step (file load, extraction, save), not just JSON extraction.
-- `status = 'extract_error'` already conveys "this is an extraction error."
+It's present on **both** `object-create` (`PutObject`) and `object-delete` (`DeleteObject`) notifications. It's the timestamp of the R2 action itself (put/delete), not the notification delivery time, not the queue processing time.
 
-### Recommendation
+### Usage in our code
 
-- Rename to `error` — simpler, and `status` already provides context.
-- Remove `extractInvoiceJsonErrorPrefix` and the prefix-stripping logic. Store the raw error string from `onWorkflowError`.
+- `onInvoiceUpload`: out-of-order guard — `if (existing && eventTime < existing.eventTime)` (L85)
+- `onInvoiceDelete`: delete guard — `where eventTime <= ${eventTime}` (L170)
+- On first insert: `createdAt = eventTime` (L108). On upsert, only `eventTime` updates.
 
----
+### Recommended name: `r2ActionTime`
 
-## `invoiceJson`
-
-### Usage
-
-| Where | How |
-|---|---|
-| `applyInvoiceJson` (L192) | Stored as JSON string on success |
-| UI (invoices.tsx L311-331) | Parsed and pretty-printed in inspection panel |
-| UI (invoices.tsx L320-321) | Copied to clipboard |
-
-### Analysis
-
-- Straightforward. Stores the extracted structured data as a JSON string.
-- Name is fine — `invoiceJson` or `extractionJson` would both work.
-
-### Recommendation
-
-- Keep as-is, or rename to `extractedJson` / `extractionResult` if we want consistency with other renames.
+- `r2EventTime` — still generic ("event" could mean anything)
+- `r2ActionTime` — directly maps to the docs description: "the time when the **action** that triggered the event occurred"
+- Makes clear it's the R2 put/delete action timestamp, used for ordering
 
 ---
 
-## Summary of proposed changes
+## `invoiceJsonError` → rename to `error`
 
-| Column | Action |
-|---|---|
-| `status` | Remove `extracting_json` from guard. Consider `Schema.Literals`. Consider renaming `ready` → `extracted`, `extract_error` → `error`. |
-| `processedAt` | Remove (unused in UI). |
-| `eventTime` | Rename to `r2EventTime` or `lastEventTime`. |
-| `invoiceJsonError` | Rename to `error`. Remove `extractInvoiceJsonErrorPrefix`. |
-| `invoiceJson` | Keep. Maybe rename to `extractedJson`. |
-| `extracting_json` dead code | Remove from guard at L95. |
+- Column stores errors from any workflow step (file load, extraction, save), not just JSON extraction.
+- `status = 'error'` already conveys context.
+- **Remove `extractInvoiceJsonErrorPrefix`** and prefix-stripping logic. Store raw error string from `onWorkflowError`.
+- Remove export from organization-agent.ts, remove import from invoice-extraction-workflow.ts.
 
 ---
 
-## Questions for review
+## `invoiceJson` → rename to `extractedJson`
 
-1. Do we want `processedAt` for future admin/debugging, or remove it now?
+Clearer purpose. Aligns with `extracted` status.
 
-Remove
+---
 
-2. Preferred name for `eventTime`?
+## Final schema
 
-I want `r2` somewhere in the name. `r2EventTime` still seems too generic even though now we know it's about r2. Analyze the code and scan refs/cloudflare-docs. Is this an r2 notification time or is it an r2 time independent of r2 notifications. is this just for r2 put or also for r2 delete?
+```sql
+create table if not exists Invoice (
+  id text primary key,
+  fileName text not null,
+  contentType text not null,
+  createdAt integer not null,
+  r2ActionTime integer not null,
+  idempotencyKey text not null unique,
+  r2ObjectKey text not null,
+  status text not null,
+  extractedJson text,
+  error text
+)
+```
 
-3. Preferred name for `status` values? Keep existing or rename?
+### Changes summary
 
-I don't think we need `extracting_json`, right? so that should be removed.
-`uploaded` is fine. it should not be the default status and there should not be any default status. the upsert must be explicit about it.
+| Before | After | Action |
+|---|---|---|
+| `eventTime` | `r2ActionTime` | Rename |
+| `status default 'uploaded'` | `status` (no default) | Remove default |
+| `processedAt` | — | Remove |
+| `invoiceJson` | `extractedJson` | Rename |
+| `invoiceJsonError` | `error` | Rename |
+| `extracting_json` in guard | — | Remove dead code |
+| `ready` status value | `extracted` | Rename |
+| `extract_error` status value | `error` | Rename |
+| `extractInvoiceJsonErrorPrefix` | — | Remove (both export and import) |
+| `Schema.String` for status | `InvoiceStatus` (Schema.Literals) | Type safety |
 
-`extract_error` should probably be renamed to `error`, right?
+### Files to modify
 
-Yes, I think we need schema type and literals or some such for this. I'm not sure how to go about it and we probably do something similar in Domain.ts
+1. **`src/lib/Domain.ts`** — Add `InvoiceStatusValues`, `InvoiceStatus` type
+2. **`src/organization-agent.ts`** — DDL, row schema, all SQL, remove prefix export, remove `extracting_json` guard
+3. **`src/invoice-extraction-workflow.ts`** — Remove prefix import/usage, update `applyInvoiceJson` → `applyExtractedJson` (or keep method name?)
+4. **`src/routes/app.$organizationId.invoices.tsx`** — Update status checks, field references
+5. **`src/worker.ts`** — Update `eventTime` references in queue handler
 
+### Status vs State naming
 
-4. Rename `invoiceJson` to `extractedJson` or leave it?
+**Recommendation: keep `status`.**
 
-rename.
-
-
-In the UI, I think we show `ready`. I'm not sure we are ready for a `ready` state since we're slowly making our way through the UI workflow. After the invoice is extracted, we should probably just leave it in the extracted state or whatever calling that. At some point, we'll want a state indicating human needs to review extraction.
-
-We use status as the column in the database. I suppose it could also be called state. Not sure which is better in the context of database and backend. Also, in the context of UI where it's displayed. status vs state. tradeoffs, recommendation?
-
-Yes, we want to remove processedAt.
+- `status` is the conventional column name in databases and APIs (HTTP status, Stripe subscription status, our own `InvitationStatus`, `SubscriptionStatus` in Domain.ts).
+- `state` implies a state machine with defined transitions — more formal, more common in backend/systems contexts.
+- For UI display labels, `status` reads more naturally ("Status: extracted" vs "State: extracted").
+- Consistency: we already use `status` for invitations and subscriptions in this codebase.
