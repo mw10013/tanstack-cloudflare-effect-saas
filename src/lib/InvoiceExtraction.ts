@@ -140,6 +140,7 @@ export class InvoiceExtraction extends ServiceMap.Service<InvoiceExtraction>()(
 
       return { extract };
     }).pipe(
+      // Redact custom auth headers from Effect HTTP traces/logs.
       Effect.updateService(Headers.CurrentRedactedNames, (names) =>
         [...names, "x-goog-api-key", "cf-aig-authorization"],
       ),
