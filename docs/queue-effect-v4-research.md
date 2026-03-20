@@ -6,26 +6,17 @@
 
 ## Key Decisions
 
-### 1. Should we create a Queue Effect v4 service?
+### 1. No Queue service
 
-**No.** The queue handler is a top-level entry point (like `fetch`/`scheduled`), not a reusable service dependency. The existing pattern is:
+The queue handler is a top-level entry point (like `fetch`/`scheduled`), not a reusable service dependency. Follow the existing pattern: **`makeQueueRunEffect(env)`** builds a minimal layer stack and returns a `runEffect` helper.
 
-- `makeHttpRunEffect(env, request)` → builds layers, returns `runEffect` helper
-- `makeScheduledRunEffect(env)` → same pattern, fewer layers
+### 2. Layer stack
 
-We should follow the same approach: **`makeQueueRunEffect(env)`** that builds the minimal layer stack needed by queue processing and returns a `runEffect` helper.
+Queue handler accesses:
+- `env.R2.head()` → **R2 service**
+- `env.ORGANIZATION_AGENT` → **CloudflareEnv** binding
+- `console.error/warn` → **Effect.logError / Effect.logWarning**
 
-A `Queue` service would wrap `MessageBatch`/`Message` types, but those are per-invocation values (like `Request` for fetch), not bindings. The `.ack()` / `.retry()` calls are control flow decisions that belong in the handler logic, not behind a service abstraction.
-
-### 2. What services does the queue handler need?
-
-Current queue handler accesses:
-- `env.R2.head()` → should use **R2 service** (already exists)
-- `env.ORGANIZATION_AGENT` (DO namespace) → binding, stays via **CloudflareEnv**
-- `Schema.decodeUnknownExit` → pure, no service needed
-- `console.error/warn` → should become **Effect.logError / Effect.logWarning**
-
-Minimal layer stack:
 ```
 CloudflareEnv (env)
 ├── R2 (for head() call in handleInvoiceUpload)
@@ -34,52 +25,27 @@ CloudflareEnv (env)
 
 No D1, KV, Auth, Stripe, Repository, or Request needed.
 
-### 3. How to handle `message.ack()` / `message.retry()`?
+### 3. Ack/retry: outside Effect via `Exit` inspection
 
-These are imperative side-effects on the CF `Message` object. Two options:
+Keep ack/retry _outside_ Effect in the `queue` handler after inspecting `Exit`. Simpler to start with. Can move inside later if unified logging becomes important.
 
-**Option A: Keep ack/retry outside Effect, call after `runPromiseExit`**
-```ts
-const exit = await runEffect(processMessage(message.body));
-if (Exit.isSuccess(exit)) message.ack();
-else message.retry();
-```
+### 4. `getOrganizationAgentStub` via CloudflareEnv
 
-**Option B: Wrap ack/retry as Effects inside the pipeline**
-```ts
-yield* Effect.sync(() => message.ack());
-// or
-yield* Effect.sync(() => message.retry());
-```
+Access `ORGANIZATION_AGENT` binding through `CloudflareEnv` service. No typed error — let failures be defects. The queue handler's exit-based retry machinery handles it: `Exit.isFailure` → `message.retry()`.
 
-**Recommendation: Option B** — keeps the entire message processing pipeline in Effect, including control flow. Logging, R2 calls, and ack/retry all compose naturally. Errors that escape the pipeline cause automatic retry (CF queue behavior).
+### 5. No string env var changes needed
 
-Yes, we go with this option.
+Queue handler doesn't read string env vars. Only bindings.
 
-### 4. How to handle `getOrganizationAgentStub`?
+### 6. No `ParseError` distinction
 
-Currently calls `env.ORGANIZATION_AGENT.idFromName()`, `.get()`, and `await stub.setName()`. This uses the `ORGANIZATION_AGENT` binding from `env`.
+Don't distinguish bad-queue-body from bad-R2-metadata. Both ack (not retryable). Same as current behavior.
 
-**Approach:** Access via `CloudflareEnv` service and wrap in `Effect.tryPromise`:
-```ts
-const getOrganizationAgentStub = Effect.fn("getOrganizationAgentStub")(
-  function* (organizationId: string) {
-    const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
-    const id = ORGANIZATION_AGENT.idFromName(organizationId);
-    const stub = ORGANIZATION_AGENT.get(id);
-    yield* Effect.tryPromise(() => stub.setName(organizationId));
-    return stub;
-  },
-);
-```
+### 7. `formatQueueError` removed
 
-### 5. String env vars → Config?
+`Cause.pretty` via Effect's structured logging replaces it.
 
-The queue handler doesn't currently read any string env vars. The only env usage is for bindings (`R2`, `ORGANIZATION_AGENT`). The `makeLoggerLayer` does read `env.ENVIRONMENT` — but that already goes through `Schema.decodeUnknownSync` on the raw env, and the `ConfigProvider` is wired into the env layer via `ConfigProvider.fromUnknown(env)` so `Config.nonEmptyString("ENVIRONMENT")` would work.
-
-No changes needed for string env vars in the queue handler specifically.
-
-## Proposed Implementation
+## Implementation Plan
 
 ### `makeQueueRunEffect`
 
@@ -94,7 +60,21 @@ const makeQueueRunEffect = (env: Env) => {
 };
 ```
 
-### Effectified queue handler
+### `getOrganizationAgentStub`
+
+```ts
+const getOrganizationAgentStub = Effect.fn("getOrganizationAgentStub")(
+  function* (organizationId: string) {
+    const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+    const id = ORGANIZATION_AGENT.idFromName(organizationId);
+    const stub = ORGANIZATION_AGENT.get(id);
+    yield* Effect.tryPromise(() => stub.setName(organizationId));
+    return stub;
+  },
+);
+```
+
+### Effectified message processors
 
 ```ts
 const processQueueMessage = Effect.fn("processQueueMessage")(
@@ -165,9 +145,8 @@ async queue(batch, env) {
     if (Exit.isSuccess(exit)) {
       message.ack();
     } else {
-      const cause = Cause.squash(exit.cause);
-      if (cause instanceof ParseError) {
-        // Invalid message body → ack to avoid infinite retry
+      const squashed = Cause.squash(exit.cause);
+      if (squashed instanceof ParseError) {
         message.ack();
       } else {
         message.retry();
@@ -177,20 +156,9 @@ async queue(batch, env) {
 },
 ```
 
-## Open Questions
+## What gets removed
 
-1. **`ParseError` from `Schema.decodeUnknownEffect`**: The current code acks invalid messages (both bad queue bodies and bad R2 metadata). With Effect, `Schema.decodeUnknownEffect` fails with `ParseError`. Should we distinguish bad-queue-body (ack, never retryable) from bad-R2-metadata (also ack currently, but could be a race — maybe retry once?)?
-
-No
-
-2. **Ack/retry inside vs outside Effect**: The proposed approach keeps ack/retry _outside_ Effect (in the `queue` handler after inspecting `Exit`). This is simpler but means the logging for ack/retry decisions happens partly outside Effect's structured logging. Alternative: pass `message` into the Effect pipeline and call `ack`/`retry` inside. Tradeoff: less pure but unified logging.
-
-Let's start with outside for now.
-
-3. **`formatQueueError` removal**: The current `formatQueueError` helper becomes unnecessary — `Cause.pretty` provides richer error formatting via Effect's structured logging.
-
-Ok.
-
-4. **Should `getOrganizationAgentStub` error be typed?**: Could wrap in a `QueueError` tagged error, or let it fail as a defect. Current code uses try/catch → `message.retry()`, so a typed error that maps to retry seems appropriate.
-
-let's not have typed error for now. too granular. it should just fail and the machinery that retries queue messages handles, right?
+- `handleInvoiceDelete` function (replaced by `processInvoiceDelete`)
+- `handleInvoiceUpload` function (replaced by `processInvoiceUpload`)
+- `getOrganizationAgentStub` async function (replaced by Effect.fn version)
+- `formatQueueError` helper
