@@ -66,15 +66,6 @@ const makeScheduledRunEffect = (env: Env) => {
   ) => Effect.runPromise(Effect.provide(effect, runtimeLayer));
 };
 
-const makeQueueRunEffect = (env: Env) => {
-  const envLayer = makeEnvLayer(env);
-  const r2Layer = Layer.provideMerge(R2.layer, envLayer);
-  const runtimeLayer = Layer.merge(r2Layer, makeLoggerLayer(env));
-  return <A, E>(
-    effect: Effect.Effect<A, E, Layer.Success<typeof runtimeLayer>>,
-  ) => Effect.runPromiseExit(Effect.provide(effect, runtimeLayer));
-};
-
 /**
  * Runs an HTTP Effect within the app layer, converting failures to throwable
  * values compatible with TanStack Start's server function error serialization.
@@ -356,19 +347,31 @@ export default {
   },
 
   async queue(batch, env) {
-    const runEffect = makeQueueRunEffect(env);
-    for (const message of batch.messages) {
-      const exit = await runEffect(processQueueMessage(message.body));
-      if (Exit.isSuccess(exit)) {
-        message.ack();
-      } else {
-        const squashed = Cause.squash(exit.cause);
-        if (Schema.isSchemaError(squashed)) {
-          message.ack();
-        } else {
-          message.retry();
-        }
-      }
-    }
+    const envLayer = makeEnvLayer(env);
+    const r2Layer = Layer.provideMerge(R2.layer, envLayer);
+    const runtimeLayer = Layer.merge(r2Layer, makeLoggerLayer(env));
+    const effect = Effect.forEach(
+      // oxlint-disable-next-line unicorn/no-array-method-this-argument -- Effect.forEach is not Array.prototype.forEach
+      batch.messages,
+      (message) =>
+        processQueueMessage(message.body).pipe(
+          Effect.andThen(() =>
+            Effect.sync(() => {
+              message.ack();
+            }),
+          ),
+          Effect.catchTag("SchemaError", () =>
+            Effect.sync(() => {
+              message.ack();
+            }),
+          ),
+          Effect.catch(() =>
+            Effect.sync(() => {
+              message.retry();
+            }),
+          ),
+        ),
+    );
+    await Effect.runPromise(Effect.provide(effect, runtimeLayer));
   },
 } satisfies ExportedHandler<Env>;
