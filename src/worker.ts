@@ -317,30 +317,25 @@ export default {
     const d1Layer = Layer.provideMerge(D1.layer, envLayer);
     const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
     const runtimeLayer = Layer.merge(repositoryLayer, makeLoggerLayer(env));
-    await Effect.runPromise(
-      Effect.provide(
-        Effect.gen(function* () {
-          switch (scheduledEvent.cron) {
-            case "0 0 * * *": {
-              const repository = yield* Repository;
-              const deletedCount = yield* repository.deleteExpiredSessions();
-              yield* Effect.logInfo("session.cleanup.expired", {
-                deletedCount,
-              });
-              break;
-            }
-            default: {
-              yield* Effect.logWarning(
-                "session.cleanup.unexpectedCronSchedule",
-                { cron: scheduledEvent.cron },
-              );
-              break;
-            }
-          }
-        }),
-        runtimeLayer,
-      ),
-    );
+    await Effect.gen(function* () {
+      switch (scheduledEvent.cron) {
+        case "0 0 * * *": {
+          const repository = yield* Repository;
+          const deletedCount = yield* repository.deleteExpiredSessions();
+          yield* Effect.logInfo("session.cleanup.expired", {
+            deletedCount,
+          });
+          break;
+        }
+        default: {
+          yield* Effect.logWarning(
+            "session.cleanup.unexpectedCronSchedule",
+            { cron: scheduledEvent.cron },
+          );
+          break;
+        }
+      }
+    }).pipe(Effect.provide(runtimeLayer), Effect.runPromise);
   },
 
   async queue(batch, env) {
@@ -369,6 +364,6 @@ export default {
           ),
         ),
     );
-    await Effect.runPromise(Effect.provide(effect, runtimeLayer));
+    await effect.pipe(Effect.provide(runtimeLayer), Effect.runPromise);
   },
 } satisfies ExportedHandler<Env>;
