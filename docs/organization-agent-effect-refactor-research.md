@@ -16,7 +16,6 @@ Builds layers from env/request, returns `async (effect) => Promise<A>`. Used per
 
 ```ts
 const runEffect = makeHttpRunEffect(env, request);
-// later:
 const result = await runEffect(someEffect);
 ```
 
@@ -25,148 +24,218 @@ const result = await runEffect(someEffect);
 Extracts services inside an Effect.gen, then creates a `runEffect` that can be called from non-Effect callbacks (better-auth hooks, workflow step callbacks):
 
 ```ts
-// Auth.ts
 const services = yield* Effect.services<KV | Stripe | Repository>();
 const runEffect = Effect.runPromiseWith(services);
-// later in a callback:
 runEffect(Effect.gen(function* () { ... }));
 ```
 
+## What Is AgentContext?
+
+The Agents SDK `Agent` class is a Durable Object. Business logic needs access to its instance capabilities: SQL, broadcast, workflow management. These are methods on `this` — unavailable to free-standing Effect functions.
+
+`AgentContext` is an Effect service that captures these capabilities from the agent instance so that module-level Effect functions can access them via `yield*` without holding a reference to `this`.
+
+```mermaid
+graph TD
+    subgraph "Agent Instance (Durable Object)"
+        A[this.sql]
+        B[this.broadcast]
+        C[this.runWorkflow]
+        D[this.getWorkflow]
+    end
+
+    subgraph "Effect Runtime"
+        AC[AgentContext Service]
+        BL[Business Logic<br/>Effect.fn functions]
+        LL[Logger Layer]
+    end
+
+    A -->|captured in constructor| AC
+    B -->|captured in constructor| AC
+    C -->|captured in constructor| AC
+    D -->|captured in constructor| AC
+    AC -->|yield*| BL
+    LL -->|provides logging| BL
+
+    subgraph "Class Methods (thin boundary)"
+        M1["@callable onInvoiceUpload"]
+        M2["@callable getInvoices"]
+        M3["onWorkflowError"]
+    end
+
+    M1 -->|"this.runEffect(effect)"| BL
+    M2 -->|"this.runEffect(effect)"| BL
+    M3 -->|"this.runEffect(effect)"| BL
+```
+
+In the constructor, we capture `this.sql`, `this.broadcast`, etc. into a `Layer.succeedServices` layer. This layer is baked into `this.runEffect`. Each class method is a one-liner that calls `this.runEffect(someEffect)`, where the real logic lives in module-level `Effect.fn` functions that `yield* AgentContext` to get the capabilities.
+
+## Sync vs Async: Research Findings
+
+**All methods can be async.** Research into the Agents SDK base class confirms:
+
+- `onWorkflowProgress`, `onWorkflowError` — defined as `async`, return `Promise<void>`, awaited by SDK
+- `@callable()` methods — the decorator accepts any return type. Client-side, all RPC calls return `Promise<T>` regardless of whether the server method is sync or async (Cloudflare RPC wraps with `Promisify<T>`)
+- `saveExtractedJson` — called from `invoice-extraction-workflow.ts` via `Effect.tryPromise(() => agent.saveExtractedJson(...))`, already wrapped in a promise boundary
+
+**Conclusion**: Converting all methods to return `Promise` via `this.runEffect` is safe. This is the right call since we want logging, structured errors, and composability across all methods.
+
+## Logger Layer: Extract to Shared Module
+
+`makeLoggerLayer` in worker.ts is a pure function of `env: Env` (reads only `env.ENVIRONMENT`). It's already needed in 3 places within worker.ts and now needed here.
+
+**Plan**: Extract to `src/lib/LoggerLayer.ts`, import from both worker.ts and organization-agent.ts. The agent's `runEffect` layer will include it.
+
+```ts
+// src/lib/LoggerLayer.ts
+import { Layer, Logger, References } from "effect";
+import * as Schema from "effect/Schema";
+import * as Domain from "@/lib/Domain";
+
+export const makeLoggerLayer = (env: Env) => {
+  const environment = Schema.decodeUnknownSync(Domain.Environment)(env.ENVIRONMENT);
+  return Layer.merge(
+    Logger.layer(
+      environment === "production"
+        ? [Logger.consoleJson, Logger.tracerLogger]
+        : [Logger.consolePretty(), Logger.tracerLogger],
+      { mergeWithExisting: false },
+    ),
+    Layer.succeed(References.MinimumLogLevel, environment === "production" ? "Info" : "Debug"),
+  );
+};
+```
+
+## Error Handling: Tagged Errors, Not `Effect.die`
+
+`Effect.die` kills the fiber with an unrecoverable defect — callers cannot catch it. That's too aggressive for validation failures like invalid `r2ActionTime` which are expected-ish (bad caller input, not a bug in our code).
+
+**Plan**: Define a tagged error for the agent's domain:
+
+```ts
+export class OrganizationAgentError extends Schema.TaggedErrorClass<OrganizationAgentError>()(
+  "OrganizationAgentError",
+  { message: Schema.String },
+) {}
+```
+
+Use it for validation failures and SQL errors:
+
+```ts
+const r2ActionTime = Date.parse(upload.r2ActionTime);
+if (!Number.isFinite(r2ActionTime)) {
+  return yield* new OrganizationAgentError({ message: `Invalid r2ActionTime: ${upload.r2ActionTime}` });
+}
+```
+
+Use `Effect.tryPromise` with the same error for async SDK calls:
+
+```ts
+yield* Effect.tryPromise({
+  try: () => runWorkflow("INVOICE_EXTRACTION_WORKFLOW", ...),
+  catch: (cause) => new OrganizationAgentError({
+    message: cause instanceof Error ? cause.message : String(cause),
+  }),
+});
+```
+
+Sync SQL calls (`this.sql`) throw on failure. Wrap in `Effect.try`:
+
+```ts
+yield* Effect.try({
+  try: () => sql`update Invoice set status = 'extracting' where ...`,
+  catch: (cause) => new OrganizationAgentError({
+    message: cause instanceof Error ? cause.message : String(cause),
+  }),
+});
+```
+
+## `this.sql` Binding
+
+`this.sql` is a tagged template literal. `Function.prototype.bind` works for tagged templates — a tagged template call `sql\`...\`` is just `sql(strings, ...values)`, and `.bind(this)` preserves `this` for that call.
+
+To be safe, we can use a wrapper:
+
+```ts
+const sql = <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]) =>
+  this.sql<T>(strings, ...values);
+```
+
+This is explicit and avoids any ambiguity. Recommend this approach.
+
 ## Proposed Approach
 
-### Service: Wrap Agent Capabilities
+### AgentContext Service
 
-The agent has four capabilities that business logic needs:
-1. **SQL** — `this.sql` template tag
-2. **Broadcast** — `this.broadcast(message)`
-3. **Workflow** — `this.runWorkflow(...)`, `this.getWorkflow(...)`
-
-Wrap these as a single service since they're tightly coupled to the agent instance:
+Defined with explicit interface (no circular reference to `OrganizationAgent`):
 
 ```ts
-// Represents the Durable Object agent instance capabilities
-export class AgentContext extends ServiceMap.Service<AgentContext>()("AgentContext", {
-  make: Effect.die("AgentContext must be provided by the agent instance"),
-}) {
-  // Alternative: define as a simple tag since it's always provided externally
-}
-```
-
-Actually — since these capabilities come from the agent instance (not constructed from other services), the simpler pattern is `ServiceMap.Service<Interface>`:
-
-```ts
-export interface AgentContextShape {
-  readonly sql: OrganizationAgent["sql"];
-  readonly broadcast: OrganizationAgent["broadcast"];
+export const AgentContext = ServiceMap.Service<{
+  readonly sql: <T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ) => T[];
+  readonly broadcast: (message: string) => void;
   readonly runWorkflow: OrganizationAgent["runWorkflow"];
   readonly getWorkflow: OrganizationAgent["getWorkflow"];
-}
-
-export const AgentContext = ServiceMap.Service<AgentContextShape>("AgentContext");
+}>("OrganizationAgent/AgentContext");
 ```
 
-Or even simpler — just pass `this` (the agent instance) as a service since all capabilities hang off it. But that's a big interface and couples everything to the Agent class. Explicit shape is better.
+Note: `runWorkflow` and `getWorkflow` types still reference the base class — these are complex/generic signatures from the SDK. We'll use the Agent base class type (not `OrganizationAgent`) to avoid circular deps. Need to verify the exact import.
 
-### Layer Construction
+### All Methods Through Effect — Inline Style
 
-The agent needs CloudflareEnv for queue handlers (already in worker.ts). Inside the agent, the only external service dependency is CloudflareEnv (for `this.env`). But the agent's own methods mostly use `this.sql` and `this.broadcast` directly — no D1/KV/R2 services needed.
-
-So the agent's internal runtime layer is minimal:
-
-```ts
-// In OrganizationAgent constructor or lazy init
-const agentContextLayer = Layer.succeedServices(
-  ServiceMap.make(AgentContext, {
-    sql: this.sql.bind(this),
-    broadcast: this.broadcast.bind(this),
-    runWorkflow: this.runWorkflow.bind(this),
-    getWorkflow: this.getWorkflow.bind(this),
-  })
-);
-```
-
-### Business Logic as Effect.fn Functions
-
-Each operation becomes a named Effect function:
-
-```ts
-const onInvoiceUpload = Effect.fn("OrganizationAgent.onInvoiceUpload")(
-  function* (upload: InvoiceUploadInput) {
-    const { sql, broadcast, runWorkflow, getWorkflow } = yield* AgentContext;
-    const r2ActionTime = Date.parse(upload.r2ActionTime);
-    if (!Number.isFinite(r2ActionTime)) {
-      return yield* Effect.die(new TypeError(`Invalid r2ActionTime: ${upload.r2ActionTime}`));
-    }
-    const existing = decodeInvoiceRow(
-      sql`select * from Invoice where id = ${upload.invoiceId}`[0] ?? null
-    );
-    if (existing && r2ActionTime < existing.r2ActionTime) return;
-    // ...
-  }
-);
-```
-
-### Callable Methods as Thin Boundaries
-
-Each `@callable()` method delegates to the Effect pipeline:
+Per your feedback: no separate named wrapper functions + thin class methods. Instead, inline `Effect.gen` directly in each class method. This is less tedious and keeps logic co-located:
 
 ```ts
 @callable()
-async onInvoiceUpload(upload: InvoiceUploadInput) {
-  return this.runEffect(onInvoiceUploadEffect(upload));
+onInvoiceUpload(upload: { ... }) {
+  return this.runEffect(
+    Effect.gen(function* () {
+      const ctx = yield* AgentContext;
+      const r2ActionTime = Date.parse(upload.r2ActionTime);
+      if (!Number.isFinite(r2ActionTime)) {
+        return yield* new OrganizationAgentError({ message: `Invalid r2ActionTime: ${upload.r2ActionTime}` });
+      }
+      // ... rest of logic
+    }),
+  );
+}
+
+@callable()
+getInvoices() {
+  return this.runEffect(
+    Effect.gen(function* () {
+      const { sql } = yield* AgentContext;
+      return decodeInvoices(sql`select * from Invoice order by createdAt desc`);
+    }),
+  );
 }
 ```
 
-Where `this.runEffect` is set up once (constructor or lazy):
+### Constructor Setup
 
 ```ts
-private runEffect: <A, E>(effect: Effect.Effect<A, E, AgentContext>) => Promise<A>;
-
 constructor(ctx: DurableObjectState, env: Env) {
   super(ctx, env);
-  // table creation stays synchronous (this.sql is sync)
   void this.sql`create table if not exists Invoice (...)`;
-
   const agentContextLayer = Layer.succeedServices(
     ServiceMap.make(AgentContext, {
-      sql: this.sql.bind(this),
+      sql: <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]) =>
+        this.sql<T>(strings, ...values),
       broadcast: this.broadcast.bind(this),
       runWorkflow: this.runWorkflow.bind(this),
       getWorkflow: this.getWorkflow.bind(this),
-    })
+    }),
   );
-  this.runEffect = <A, E>(effect: Effect.Effect<A, E, AgentContext>) =>
-    Effect.runPromise(Effect.provide(effect, agentContextLayer));
+  const runtimeLayer = Layer.merge(agentContextLayer, makeLoggerLayer(env));
+  this.runEffect = (effect) => Effect.runPromise(Effect.provide(effect, runtimeLayer));
 }
 ```
 
-## Key Design Decisions
+### `broadcastActivity` Helper
 
-### 1. Single AgentContext service vs multiple services?
-
-**Recommendation: single service.** The capabilities are all tightly coupled to one agent instance. Splitting into `AgentSql`, `AgentBroadcast`, `AgentWorkflow` adds boilerplate without real benefit — these aren't independently swappable.
-
-### 2. Where to define the Effect functions?
-
-**Option A**: Module-level `const` functions (like `processQueueMessage` in worker.ts).
-**Option B**: Inside the class as private methods returning Effects.
-
-**Recommendation: Option A** — module-level functions. This is more functional, testable (can provide mock AgentContext), and consistent with worker.ts patterns. The class becomes a thin shell.
-
-### 3. Error handling strategy?
-
-Current code throws raw TypeErrors. With Effect, we have options:
-- `Effect.die` for truly unexpected/programmer errors (like invalid r2ActionTime)
-- Tagged errors for expected failures
-- `Effect.tryPromise` for async agent SDK calls (runWorkflow)
-
-**Recommendation**: Keep it simple. `Effect.die` for validation failures (these are bugs in callers). `Effect.tryPromise` for `runWorkflow` (which is async and can fail). SQL operations via `this.sql` are synchronous and throw on failure — wrap in `Effect.try` if we want structured errors, or let them propagate as defects.
-
-### 4. Should `broadcastActivity` become an Effect?
-
-It's currently synchronous and infallible (just serializes + broadcasts). Making it an Effect adds ceremony for no real benefit.
-
-**Recommendation**: Keep as a plain helper, or make it a trivial `Effect.sync` if we want it composable inside Effect pipelines. Slight preference for `Effect.sync` so the whole pipeline is pure:
+Stays as a module-level `Effect.fn` since it's shared across multiple methods:
 
 ```ts
 const broadcastActivity = Effect.fn("broadcastActivity")(
@@ -176,67 +245,72 @@ const broadcastActivity = Effect.fn("broadcastActivity")(
       type: "activity",
       message: { createdAt: new Date().toISOString(), level: input.level, text: input.text },
     } satisfies ActivityEnvelope));
-  }
+  },
 );
 ```
 
-### 5. `onWorkflowProgress` / `onWorkflowError` — these are callbacks from the Agents SDK
-
-These are called by the SDK, not by our code. They're already `async` and imperative.
-
-**Recommendation**: Same pattern — delegate to `this.runEffect(someEffect)`. These become thin boundary methods like the callables.
-
-### 6. Constructor table creation
-
-`void this.sql\`create table if not exists...\`` is synchronous, idempotent, and runs before any method call. No reason to make this effectful.
-
-**Recommendation**: Keep as-is in the constructor.
-
-### 7. Logger layer?
-
-The workflow and worker both set up logger layers. The agent currently has no structured logging.
-
-**Recommendation**: Add a logger layer to the agent's runtime if we want `Effect.logInfo` etc. to work inside the business logic. Use the same `makeLoggerLayer(env)` pattern from worker.ts. This is optional for v1.
-
-We want logging.
-
 ## Proposed File Structure
 
-Keep everything in `src/organization-agent.ts` — no need to split into multiple files. The module would have:
+Keep everything in `src/organization-agent.ts`. Module layout:
 
-1. Schema definitions (unchanged)
-2. `AgentContext` service definition
-3. Module-level Effect functions (business logic)
-4. `OrganizationAgent` class (thin shell with `@callable()` boundaries)
+1. Imports
+2. Schema definitions (unchanged)
+3. `OrganizationAgentError` tagged error
+4. `AgentContext` service definition
+5. `broadcastActivity` shared Effect helper
+6. `OrganizationAgent` class — constructor sets up `runEffect`, each method inlines `Effect.gen`
 
-## Sketch of Refactored Code
+Extract `makeLoggerLayer` to `src/lib/LoggerLayer.ts` (new file, shared with worker.ts).
+
+## Full Sketch
 
 ```ts
 import { Agent, callable } from "agents";
 import { Effect, Layer, ServiceMap } from "effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { ActivityEnvelope, WorkflowProgress } from "@/lib/Activity";
 import { WorkflowProgressSchema } from "@/lib/Activity";
 import { InvoiceStatus } from "@/lib/Domain";
+import { makeLoggerLayer } from "@/lib/LoggerLayer";
 
-// --- Schema (unchanged) ---
+export interface OrganizationAgentState {
+  readonly message: string;
+}
 
-const InvoiceRowSchema = Schema.Struct({ /* ... */ });
+const InvoiceRowSchema = Schema.Struct({
+  id: Schema.String,
+  fileName: Schema.String,
+  contentType: Schema.String,
+  createdAt: Schema.Number,
+  r2ActionTime: Schema.Number,
+  idempotencyKey: Schema.String,
+  r2ObjectKey: Schema.String,
+  status: InvoiceStatus,
+  extractedJson: Schema.NullOr(Schema.String),
+  error: Schema.NullOr(Schema.String),
+});
+
+const activeWorkflowStatuses = new Set(["queued", "running", "waiting"]);
 type InvoiceRow = typeof InvoiceRowSchema.Type;
 const decodeInvoiceRow = Schema.decodeUnknownSync(Schema.NullOr(InvoiceRowSchema));
 const decodeInvoices = Schema.decodeUnknownSync(Schema.Array(InvoiceRowSchema));
 
-// --- AgentContext service ---
+export class OrganizationAgentError extends Schema.TaggedErrorClass<OrganizationAgentError>()(
+  "OrganizationAgentError",
+  { message: Schema.String },
+) {}
 
 export const AgentContext = ServiceMap.Service<{
-  readonly sql: OrganizationAgent["sql"];
+  readonly sql: <T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ) => T[];
   readonly broadcast: (message: string) => void;
-  readonly runWorkflow: OrganizationAgent["runWorkflow"];
-  readonly getWorkflow: OrganizationAgent["getWorkflow"];
+  readonly runWorkflow: Agent<Env, OrganizationAgentState>["runWorkflow"];
+  readonly getWorkflow: Agent<Env, OrganizationAgentState>["getWorkflow"];
 }>("OrganizationAgent/AgentContext");
-
-// --- Business logic as Effect functions ---
 
 const broadcastActivity = Effect.fn("broadcastActivity")(
   function* (input: { level: WorkflowProgress["level"]; text: string }) {
@@ -245,145 +319,283 @@ const broadcastActivity = Effect.fn("broadcastActivity")(
       type: "activity",
       message: { createdAt: new Date().toISOString(), level: input.level, text: input.text },
     } satisfies ActivityEnvelope));
-  }
+  },
 );
 
-const onInvoiceUploadEffect = Effect.fn("onInvoiceUpload")(
-  function* (upload: InvoiceUploadInput) {
-    const { sql, runWorkflow, getWorkflow } = yield* AgentContext;
-    const r2ActionTime = Date.parse(upload.r2ActionTime);
-    if (!Number.isFinite(r2ActionTime)) {
-      return yield* Effect.die(new TypeError(`Invalid r2ActionTime`));
-    }
-    const existing = decodeInvoiceRow(
-      sql`select * from Invoice where id = ${upload.invoiceId}`[0] ?? null
-    );
-    if (existing && r2ActionTime < existing.r2ActionTime) return;
-    const trackedWorkflow = getWorkflow(upload.idempotencyKey);
-    if (trackedWorkflow && activeWorkflowStatuses.has(trackedWorkflow.status)) return;
-    if (
-      existing?.idempotencyKey === upload.idempotencyKey &&
-      (existing.status === "extracting" || existing.status === "extracted")
-    ) return;
-    void sql`insert into Invoice (...) values (...) on conflict(id) do update set ...`;
-    yield* broadcastActivity({ level: "info", text: `Invoice uploaded: ${upload.fileName}` });
-    yield* Effect.tryPromise(() =>
-      runWorkflow("INVOICE_EXTRACTION_WORKFLOW", { /* ... */ }, { /* ... */ })
-    );
-    void sql`update Invoice set status = 'extracting' where ...`;
-  }
-);
-
-// ... similar for onInvoiceDelete, saveExtractedJson, etc.
-
-// --- Agent class (thin shell) ---
+export const extractAgentInstanceName = (request: Request) => {
+  const { pathname } = new URL(request.url);
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length < 3 || segments[0] !== "agents") return null;
+  return segments[2] ?? null;
+};
 
 export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   initialState: OrganizationAgentState = { message: "Organization agent ready" };
-  private declare agentRunEffect: <A, E>(
-    effect: Effect.Effect<A, E, typeof AgentContext["Service"]>
+  private declare runEffect: <A, E>(
+    effect: Effect.Effect<A, E, typeof AgentContext["Service"]>,
   ) => Promise<A>;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    void this.sql`create table if not exists Invoice (...)`;
-    const layer = Layer.succeedServices(
+    void this.sql`create table if not exists Invoice (
+      id text primary key,
+      fileName text not null,
+      contentType text not null,
+      createdAt integer not null,
+      r2ActionTime integer not null,
+      idempotencyKey text not null unique,
+      r2ObjectKey text not null,
+      status text not null,
+      extractedJson text,
+      error text
+    )`;
+    const agentContextLayer = Layer.succeedServices(
       ServiceMap.make(AgentContext, {
-        sql: this.sql.bind(this),
+        sql: <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]) =>
+          this.sql<T>(strings, ...values),
         broadcast: this.broadcast.bind(this),
         runWorkflow: this.runWorkflow.bind(this),
         getWorkflow: this.getWorkflow.bind(this),
-      })
+      }),
     );
-    this.agentRunEffect = (effect) => Effect.runPromise(Effect.provide(effect, layer));
+    const runtimeLayer = Layer.merge(agentContextLayer, makeLoggerLayer(env));
+    this.runEffect = (effect) => Effect.runPromise(Effect.provide(effect, runtimeLayer));
   }
 
   @callable()
-  getTestMessage() { return this.state.message; }
-
-  @callable()
-  onInvoiceUpload(upload: InvoiceUploadInput) {
-    return this.agentRunEffect(onInvoiceUploadEffect(upload));
+  getTestMessage() {
+    return this.runEffect(
+      Effect.gen(function* () {
+        yield* Effect.logDebug("getTestMessage called");
+        // still need `this` for state — but state access doesn't go through AgentContext
+        // this is a question: how to access this.state from inside Effect.gen?
+        // Option: add state to AgentContext, or keep this method as a direct return
+      }),
+    );
   }
 
   @callable()
-  onInvoiceDelete(input: InvoiceDeleteInput) {
-    return this.agentRunEffect(onInvoiceDeleteEffect(input));
+  onInvoiceUpload(upload: {
+    invoiceId: string;
+    r2ActionTime: string;
+    idempotencyKey: string;
+    r2ObjectKey: string;
+    fileName: string;
+    contentType: string;
+  }) {
+    return this.runEffect(
+      Effect.gen(function* () {
+        const { sql, runWorkflow, getWorkflow } = yield* AgentContext;
+        const r2ActionTime = Date.parse(upload.r2ActionTime);
+        if (!Number.isFinite(r2ActionTime)) {
+          return yield* new OrganizationAgentError({
+            message: `Invalid r2ActionTime: ${upload.r2ActionTime}`,
+          });
+        }
+        const existing = decodeInvoiceRow(
+          sql<InvoiceRow>`select * from Invoice where id = ${upload.invoiceId}`[0] ?? null,
+        );
+        if (existing && r2ActionTime < existing.r2ActionTime) return;
+        const trackedWorkflow = getWorkflow(upload.idempotencyKey);
+        if (trackedWorkflow && activeWorkflowStatuses.has(trackedWorkflow.status)) return;
+        if (
+          existing?.idempotencyKey === upload.idempotencyKey &&
+          (existing.status === "extracting" || existing.status === "extracted")
+        ) return;
+        yield* Effect.try({
+          try: () =>
+            void sql`
+              insert into Invoice (
+                id, fileName, contentType, createdAt, r2ActionTime,
+                idempotencyKey, r2ObjectKey, status, extractedJson, error
+              ) values (
+                ${upload.invoiceId}, ${upload.fileName}, ${upload.contentType},
+                ${r2ActionTime}, ${r2ActionTime}, ${upload.idempotencyKey},
+                ${upload.r2ObjectKey}, 'uploaded', null, null
+              )
+              on conflict(id) do update set
+                fileName = excluded.fileName,
+                contentType = excluded.contentType,
+                r2ActionTime = excluded.r2ActionTime,
+                idempotencyKey = excluded.idempotencyKey,
+                r2ObjectKey = excluded.r2ObjectKey,
+                status = 'uploaded',
+                extractedJson = null,
+                error = null
+            `,
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        yield* broadcastActivity({ level: "info", text: `Invoice uploaded: ${upload.fileName}` });
+        yield* Effect.tryPromise({
+          try: () =>
+            runWorkflow(
+              "INVOICE_EXTRACTION_WORKFLOW",
+              {
+                invoiceId: upload.invoiceId,
+                idempotencyKey: upload.idempotencyKey,
+                r2ObjectKey: upload.r2ObjectKey,
+                fileName: upload.fileName,
+                contentType: upload.contentType,
+              },
+              { id: upload.idempotencyKey, metadata: { invoiceId: upload.invoiceId } },
+            ),
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        yield* Effect.try({
+          try: () =>
+            void sql`
+              update Invoice
+              set status = 'extracting'
+              where id = ${upload.invoiceId} and idempotencyKey = ${upload.idempotencyKey}
+            `,
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+      }),
+    );
   }
 
-  saveExtractedJson(input: SaveExtractedJsonInput) {
-    return this.agentRunEffect(saveExtractedJsonEffect(input));
+  @callable()
+  onInvoiceDelete(input: {
+    invoiceId: string;
+    r2ActionTime: string;
+    r2ObjectKey: string;
+  }) {
+    return this.runEffect(
+      Effect.gen(function* () {
+        const { sql } = yield* AgentContext;
+        const r2ActionTime = Date.parse(input.r2ActionTime);
+        if (!Number.isFinite(r2ActionTime)) {
+          return yield* new OrganizationAgentError({
+            message: `Invalid r2ActionTime: ${input.r2ActionTime}`,
+          });
+        }
+        const deleted = yield* Effect.try({
+          try: () =>
+            sql<{ id: string }>`
+              delete from Invoice
+              where id = ${input.invoiceId} and r2ActionTime <= ${r2ActionTime}
+              returning id
+            `,
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        if (deleted.length === 0) return;
+        yield* broadcastActivity({ level: "info", text: "Invoice deleted" });
+      }),
+    );
   }
 
-  async onWorkflowProgress(workflowName: string, _workflowId: string, progress: unknown) {
-    return this.agentRunEffect(onWorkflowProgressEffect(workflowName, progress));
+  saveExtractedJson(input: {
+    invoiceId: string;
+    idempotencyKey: string;
+    extractedJson: string;
+  }) {
+    return this.runEffect(
+      Effect.gen(function* () {
+        const { sql } = yield* AgentContext;
+        const updated = yield* Effect.try({
+          try: () =>
+            sql<{ id: string; fileName: string }>`
+              update Invoice
+              set status = 'extracted',
+                  extractedJson = ${input.extractedJson},
+                  error = null
+              where id = ${input.invoiceId} and idempotencyKey = ${input.idempotencyKey}
+              returning id, fileName
+            `,
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        if (updated.length === 0) return;
+        yield* broadcastActivity({
+          level: "success",
+          text: `Invoice extraction completed: ${updated[0].fileName}`,
+        });
+      }),
+    );
   }
 
-  async onWorkflowError(workflowName: string, workflowId: string, error: string) {
-    return this.agentRunEffect(onWorkflowErrorEffect(workflowName, workflowId, error));
+  async onWorkflowProgress(
+    workflowName: string,
+    _workflowId: string,
+    progress: unknown,
+  ): Promise<void> {
+    return this.runEffect(
+      Effect.gen(function* () {
+        if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") return;
+        const message = Schema.decodeUnknownExit(WorkflowProgressSchema)(progress);
+        if (message._tag === "Failure") return;
+        yield* broadcastActivity(message.value);
+      }),
+    );
+  }
+
+  async onWorkflowError(
+    workflowName: string,
+    workflowId: string,
+    error: string,
+  ): Promise<void> {
+    return this.runEffect(
+      Effect.gen(function* () {
+        if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") return;
+        const { sql } = yield* AgentContext;
+        const updated = yield* Effect.try({
+          try: () =>
+            sql<{ id: string; fileName: string }>`
+              update Invoice
+              set status = 'error',
+                  error = ${error}
+              where idempotencyKey = ${workflowId}
+              returning id, fileName
+            `,
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        if (updated.length === 0) return;
+        yield* broadcastActivity({
+          level: "error",
+          text: `Invoice extraction failed: ${updated[0].fileName}`,
+        });
+      }),
+    );
   }
 
   @callable()
   getInvoices() {
-    return decodeInvoices(this.sql`select * from Invoice order by createdAt desc`);
+    return this.runEffect(
+      Effect.gen(function* () {
+        const { sql } = yield* AgentContext;
+        return decodeInvoices(sql`select * from Invoice order by createdAt desc`);
+      }),
+    );
   }
 }
 ```
 
-## Circular Reference Issue
+## Open Design Detail: `this.state` Access
 
-There's a potential problem: `AgentContext` references `OrganizationAgent["sql"]` etc. for typing, but `OrganizationAgent` uses `AgentContext`. This creates a circular type dependency.
+`getTestMessage` currently returns `this.state.message`. Inside `Effect.gen(function* () { ... })`, `this` is not the agent. Two options:
 
-**Solutions**:
-1. Define the AgentContext interface independently (don't reference `OrganizationAgent` types):
-   ```ts
-   interface AgentContextShape {
-     readonly sql: <T>(strings: TemplateStringsArray, ...values: unknown[]) => T[];
-     readonly broadcast: (message: string) => void;
-     // ...
-   }
-   ```
-2. Use `typeof` on the Agent base class methods instead of OrganizationAgent.
+1. **Capture before entering Effect**: `const message = this.state.message; return this.runEffect(Effect.succeed(message));`
+2. **Add `state` to AgentContext**: makes state accessible inside Effect pipelines
 
-**Recommendation**: Option 1 — define the interface shape explicitly. Cleaner, no circular deps.
+Recommendation: option 1 for simple reads, option 2 if state access becomes common.
 
-## `getWorkflow` and `runWorkflow` Typing
+## `runWorkflow` / `getWorkflow` Typing
 
-These methods come from the Agent base class. Their signatures are complex (generic, overloaded). We need to check exact types.
-
-The `sql` method is a tagged template that returns an array. `broadcast` takes a string. `runWorkflow` and `getWorkflow` have specific signatures from the agents SDK.
-
-**Action item**: Check the exact Agent base class type signatures for these methods before finalizing the AgentContext interface. We may need to import types from `agents`.
-
-## What About `getInvoices`?
-
-`getInvoices` is synchronous — `this.sql` + `decodeInvoices`. Making it an Effect adds overhead for no benefit (no async, no error recovery needed).
-
-**Recommendation**: Keep `getInvoices` as a direct call, not routed through `runEffect`. Same for `getTestMessage`. Only methods with async operations or complex logic benefit from Effect.
-
-## Open Questions
-
-1. **Logger layer**: Should we add structured logging inside the agent's Effect pipelines? Currently the agent has no `Effect.log*` calls. Adding a logger layer means the `runEffect` needs to include it. Worth it?
-
-Yes, can we reuse the one in worker.ts?
-
-2. **`this.sql` binding**: `this.sql` is a tagged template literal. When we do `this.sql.bind(this)`, does that work correctly for tagged templates? Need to verify. Alternative: wrap in a function `(strings, ...values) => this.sql(strings, ...values)`.
-
-3. **Sync vs async `runEffect`**: Some methods (onInvoiceDelete, saveExtractedJson) are currently synchronous. Wrapping in `Effect.runPromise` makes them async. Is that acceptable for the Agent SDK's callback contract? `saveExtractedJson` is called from the workflow — need to check if it expects sync.
-
-oh god, I don't know. do more research. Note that we may add logging and what not in the future and so they need to be effectful.
-
-4. **Testing**: With AgentContext as a service, we can test business logic by providing a mock AgentContext layer. Is that a goal for this refactor?
-
-Not a goal. Testing is a hole can of worms we're not really addressing.
-
-
-I'm not crazy about using Effect.die() unless absolutely necessary since it's a showstopper. Why are we relying on die so much instead of effect errors?
-
-You need to explain AgentContext conceptually. Mermaid diagram may help. You seem to be taking methods from this and binding them to this so they can be used as free standing functions?
-
-this.agentRunEffect should be this.runEffect (rename)
-
-The thin wrappers such as onInvoiceUpload are a little tedious. Why not just inline with Effect.gen?
-
-Let's use effect for everything eg getInvoices. We may need to add logging, retries and whatnot later.
+These are complex generics from the Agent base class. To avoid circular references, type them via `Agent<Env, OrganizationAgentState>["runWorkflow"]` (base class, not our subclass). Need to verify this works without import issues.
