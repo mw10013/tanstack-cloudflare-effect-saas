@@ -25,7 +25,7 @@ export class InvoiceExtractionWorkflowError extends Schema.TaggedErrorClass<Invo
   "InvoiceExtractionWorkflowError",
   {
     message: Schema.String,
-    cause: Schema.Defect,
+    cause: Schema.optional(Schema.Defect),
   },
 ) {}
 
@@ -84,9 +84,6 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
                   if (Option.isNone(object)) {
                     return yield* new InvoiceExtractionWorkflowError({
                       message: `Invoice file not found: ${event.payload.r2ObjectKey}`,
-                      cause: new Error(
-                        `Invoice file not found: ${event.payload.r2ObjectKey}`,
-                      ),
                     });
                   }
                   const bytes = new Uint8Array(

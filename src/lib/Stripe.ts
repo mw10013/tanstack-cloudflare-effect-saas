@@ -228,7 +228,7 @@ export class StripeError extends Schema.TaggedErrorClass<StripeError>()(
   "StripeError",
   {
     message: Schema.String,
-    cause: Schema.Defect,
+    cause: Schema.optional(Schema.Defect),
   },
 ) {}
 
@@ -243,4 +243,4 @@ const tryStripe = <A>(evaluate: () => Promise<A>) =>
   }).pipe(Effect.tapError((error) => Effect.logError(error)));
 
 const failStripe = (message: string) =>
-  Effect.fail(new StripeError({ message, cause: new Error(message) }));
+  Effect.fail(new StripeError({ message }));

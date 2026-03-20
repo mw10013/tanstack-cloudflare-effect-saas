@@ -73,7 +73,7 @@ export class InvoiceExtractionError extends Schema.TaggedErrorClass<InvoiceExtra
   "InvoiceExtractionError",
   {
     message: Schema.String,
-    cause: Schema.Defect,
+    cause: Schema.optional(Schema.Defect),
   },
 ) {}
 
@@ -173,7 +173,6 @@ const decodeInvoiceExtractionResponse = (
           Effect.fail(
             new InvoiceExtractionError({
               message: `AI Gateway ${String(response.status)}: ${body}`,
-              cause: new Error(`AI Gateway ${String(response.status)}`),
             }),
           ),
         ),
