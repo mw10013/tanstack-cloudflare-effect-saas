@@ -10,6 +10,7 @@ import { FetchHttpClient } from "effect/unstable/http";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { InvoiceExtraction } from "@/lib/InvoiceExtraction";
+import type { WorkflowProgress } from "@/lib/Activity";
 import { R2 } from "@/lib/R2";
 
 interface InvoiceExtractionWorkflowParams {
@@ -31,7 +32,7 @@ export class InvoiceExtractionWorkflowError extends Schema.TaggedErrorClass<Invo
 export class InvoiceExtractionWorkflow extends AgentWorkflow<
   OrganizationAgent,
   InvoiceExtractionWorkflowParams,
-  { readonly invoiceId: string }
+  WorkflowProgress
 > {
   async run(
     event: AgentWorkflowEvent<InvoiceExtractionWorkflowParams>,
@@ -39,6 +40,8 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
   ) {
     // Capture instance state before entering nested Effect / step callback boundaries.
     const agent = this.agent;
+    const reportActivity = (progress: WorkflowProgress) =>
+      Effect.tryPromise(() => this.reportProgress(progress));
     const envLayer = Layer.succeedServices(
       ServiceMap.make(CloudflareEnv, this.env).pipe(
         ServiceMap.add(
@@ -56,6 +59,10 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
 
     return Effect.runPromise(
       Effect.gen(function* () {
+        yield* reportActivity({
+          level: "info",
+          text: `Invoice extraction started: ${event.payload.fileName}`,
+        });
         const services = yield* Effect.services<Layer.Success<typeof runtimeLayer>>();
         const runEffect = Effect.runPromiseWith(services);
         yield* Effect.logInfo("invoiceExtractionWorkflow.started", {
@@ -108,6 +115,10 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
           });
         }
         const fileBytes = decodedFileBytes.success;
+        yield* reportActivity({
+          level: "info",
+          text: `Invoice extraction in progress: ${event.payload.fileName}`,
+        });
         const extractedJson = yield* Effect.tryPromise({
           try: () =>
             step.do("extract-invoice", () =>

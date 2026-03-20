@@ -1,6 +1,8 @@
 import { Agent, callable } from "agents";
 import * as Schema from "effect/Schema";
 
+import type { ActivityEnvelope, WorkflowProgress } from "@/lib/Activity";
+import { WorkflowProgressSchema } from "@/lib/Activity";
 import { InvoiceStatus } from "@/lib/Domain";
 
 export interface OrganizationAgentState {
@@ -62,6 +64,22 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.state.message;
   }
 
+  private broadcastActivity(input: {
+    readonly level: WorkflowProgress["level"];
+    readonly text: string;
+  }) {
+    this.broadcast(
+      JSON.stringify({
+        type: "activity",
+        message: {
+          createdAt: new Date().toISOString(),
+          level: input.level,
+          text: input.text,
+        },
+      } satisfies ActivityEnvelope),
+    );
+  }
+
   @callable()
   async onInvoiceUpload(upload: {
     invoiceId: string;
@@ -115,13 +133,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         extractedJson = null,
         error = null
     `;
-    this.broadcast(
-      JSON.stringify({
-        type: "invoice_uploaded",
-        invoiceId: upload.invoiceId,
-        fileName: upload.fileName,
-      }),
-    );
+    this.broadcastActivity({
+      level: "info",
+      text: `Invoice uploaded: ${upload.fileName}`,
+    });
     await this.runWorkflow(
       "INVOICE_EXTRACTION_WORKFLOW",
       {
@@ -141,13 +156,6 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       set status = 'extracting'
       where id = ${upload.invoiceId} and idempotencyKey = ${upload.idempotencyKey}
     `;
-    this.broadcast(
-      JSON.stringify({
-        type: "invoice_extraction_started",
-        invoiceId: upload.invoiceId,
-        fileName: upload.fileName,
-      }),
-    );
   }
 
   @callable()
@@ -166,12 +174,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       returning id
     `;
     if (deleted.length === 0) return;
-    this.broadcast(
-      JSON.stringify({
-        type: "invoice_deleted",
-        invoiceId: input.invoiceId,
-      }),
-    );
+    this.broadcastActivity({ level: "info", text: "Invoice deleted" });
   }
 
   saveExtractedJson(input: {
@@ -188,13 +191,26 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       returning id, fileName
     `;
     if (updated.length === 0) return;
-    this.broadcast(
-      JSON.stringify({
-        type: "invoice_extraction_complete",
-        invoiceId: updated[0].id,
-        fileName: updated[0].fileName,
-      }),
-    );
+    this.broadcastActivity({
+      level: "success",
+      text: `Invoice extraction completed: ${updated[0].fileName}`,
+    });
+  }
+
+  async onWorkflowProgress(
+    workflowName: string,
+    _workflowId: string,
+    progress: unknown,
+  ): Promise<void> {
+    await Promise.resolve();
+    if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") {
+      return;
+    }
+    const message = Schema.decodeUnknownExit(WorkflowProgressSchema)(progress);
+    if (message._tag === "Failure") {
+      return;
+    }
+    this.broadcastActivity(message.value);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -216,14 +232,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     if (updated.length === 0) {
       return;
     }
-    this.broadcast(
-      JSON.stringify({
-        type: "invoice_extraction_error",
-        invoiceId: updated[0].id,
-        fileName: updated[0].fileName,
-        error,
-      }),
-    );
+    this.broadcastActivity({
+      level: "error",
+      text: `Invoice extraction failed: ${updated[0].fileName}`,
+    });
   }
 
   @callable()

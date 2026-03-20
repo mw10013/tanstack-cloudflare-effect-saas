@@ -1,7 +1,7 @@
 import type { OrganizationAgent } from "@/organization-agent";
 
 import * as React from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createFileRoute,
   useHydrated,
@@ -25,6 +25,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
   TableBody,
@@ -34,6 +35,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Auth } from "@/lib/Auth";
+import type { ActivityMessage } from "@/lib/Activity";
+import { ActivityEnvelopeSchema } from "@/lib/Activity";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { R2 } from "@/lib/R2";
 import { Request as AppRequest } from "@/lib/Request";
@@ -67,15 +70,22 @@ const deleteInvoiceSchema = Schema.Struct({
   r2ObjectKey: Schema.NonEmptyString,
 });
 
-const invoiceMessageSchema = Schema.Struct({
-  type: Schema.Literals([
-    "invoice_uploaded",
-    "invoice_deleted",
-    "invoice_extraction_started",
-    "invoice_extraction_complete",
-    "invoice_extraction_error",
-  ]),
-});
+const activityQueryKey = (organizationId: string) =>
+  ["organization", organizationId, "activity"] as const;
+
+const shouldInvalidateForActivity = (text: string) =>
+  text.startsWith("Invoice uploaded:") ||
+  text.startsWith("Invoice extraction completed:") ||
+  text.startsWith("Invoice extraction failed:") ||
+  text === "Invoice deleted";
+
+const getActivityVariant = (
+  level: ActivityMessage["level"],
+): "default" | "destructive" | "secondary" => {
+  if (level === "error") return "destructive";
+  if (level === "success") return "default";
+  return "secondary";
+};
 
 const getStatusVariant = (
   status: string,
@@ -234,11 +244,15 @@ function RouteComponent() {
   const isHydrated = useHydrated();
   const invoices = Route.useLoaderData();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | null>(
     null,
   );
   const [copiedField, setCopiedField] = React.useState<"json" | null>(null);
+  const [activityMessages, setActivityMessages] = React.useState<readonly ActivityMessage[]>(
+    [],
+  );
   const selectedInvoice =
     invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0] ?? null;
 
@@ -249,6 +263,12 @@ function RouteComponent() {
       setCopiedField((current) => (current === field ? null : current));
     }, 2000);
   }, []);
+
+  React.useEffect(() => {
+    setActivityMessages(
+      queryClient.getQueryData(activityQueryKey(organizationId)) ?? [],
+    );
+  }, [organizationId, queryClient]);
 
   React.useEffect(() => {
     if (selectedInvoiceId === null && invoices[0]) {
@@ -268,10 +288,21 @@ function RouteComponent() {
     name: organizationId,
     onMessage: (event) => {
       const result = Schema.decodeUnknownExit(
-        Schema.fromJsonString(invoiceMessageSchema),
+        Schema.fromJsonString(ActivityEnvelopeSchema),
       )(String(event.data));
       if (Exit.isFailure(result)) return;
-      void router.invalidate();
+      const message = result.value.message;
+      const nextMessages = (
+        queryClient.setQueryData(
+          activityQueryKey(organizationId),
+          (current: readonly ActivityMessage[] | undefined) =>
+            [message, ...(current ?? [])].slice(0, 100),
+        ) as readonly ActivityMessage[] | undefined
+      ) ?? [];
+      setActivityMessages(nextMessages);
+      if (shouldInvalidateForActivity(message.text)) {
+        void router.invalidate();
+      }
     },
   });
 
@@ -347,52 +378,89 @@ function RouteComponent() {
         </p>
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="size-5" />
-            Upload Invoice
-          </CardTitle>
-          <CardDescription>
-            Select a PDF or image invoice up to 10MB.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              uploadMutation.mutate(formData);
-            }}
-            className="flex items-end gap-3"
-          >
-            <div className="flex-1">
-              <Input
-                ref={fileInputRef}
-                name="file"
-                type="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
-                disabled={!isHydrated || uploadMutation.isPending}
-              />
-            </div>
-            <Button
-              type="submit"
-              disabled={!isHydrated || uploadMutation.isPending}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Upload className="size-5" />
+              Upload Invoice
+            </CardTitle>
+            <CardDescription>
+              Select a PDF or image invoice up to 10MB.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                uploadMutation.mutate(formData);
+              }}
+              className="flex items-end gap-3"
             >
-              {uploadMutation.isPending ? "Uploading..." : "Upload"}
-            </Button>
-          </form>
-          {uploadMutation.error && (
-            <Alert variant="destructive" className="mt-3">
-              <AlertCircle className="size-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>
-                {uploadMutation.error.message}
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+              <div className="flex-1">
+                <Input
+                  ref={fileInputRef}
+                  name="file"
+                  type="file"
+                  accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+                  disabled={!isHydrated || uploadMutation.isPending}
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={!isHydrated || uploadMutation.isPending}
+              >
+                {uploadMutation.isPending ? "Uploading..." : "Upload"}
+              </Button>
+            </form>
+            {uploadMutation.error && (
+              <Alert variant="destructive" className="mt-3">
+                <AlertCircle className="size-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>
+                  {uploadMutation.error.message}
+                </AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Activity</CardTitle>
+            <CardDescription>Live invoice activity for this organization.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-40 rounded-md border">
+              <div className="flex flex-col gap-3 p-4">
+                {activityMessages.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No activity yet.</p>
+                ) : (
+                  activityMessages.map((message) => (
+                    <div
+                      key={`${message.createdAt}-${message.text}`}
+                      className="flex items-start justify-between gap-3 text-sm"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p>{message.text}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant={getActivityVariant(message.level)}>
+                          {message.level}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(message.createdAt).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
 
       {invoices.length > 0 && (
         <>
