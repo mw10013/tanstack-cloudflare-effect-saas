@@ -12,6 +12,18 @@ import {
 } from "@/lib/OrganizationDomain";
 import { OrganizationRepository } from "@/lib/OrganizationRepository";
 
+const makeRunEffect = (ctx: DurableObjectState, env: Env) => {
+  const sqliteLayer = SqliteClient.layer({ db: ctx.storage.sql });
+  const repoLayer = Layer.provideMerge(
+    OrganizationRepository.layer,
+    sqliteLayer,
+  );
+  const layer = Layer.merge(repoLayer, makeLoggerLayer(env));
+  return <A, E>(
+    effect: Effect.Effect<A, E, Layer.Success<typeof layer>>,
+  ) => Effect.runPromise(Effect.provide(effect, layer));
+};
+
 export interface OrganizationAgentState {
   readonly message: string;
 }
@@ -47,10 +59,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     message: "Organization agent ready",
   };
 
-  // Type-only declaration (no runtime initializer); assigned in constructor.
-  private declare runEffect: <A, E>(
-    effect: Effect.Effect<A, E, OrganizationRepository>,
-  ) => Promise<A>;
+  private declare runEffect: ReturnType<typeof makeRunEffect>;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -69,16 +78,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       extractedJson text,
       error text
     )`;
-    const sqliteLayer = SqliteClient.layer({ db: ctx.storage.sql });
-    const repoLayer = Layer.provideMerge(
-      OrganizationRepository.layer,
-      sqliteLayer,
-    );
-    const loggerLayer = makeLoggerLayer(env);
-    this.runEffect = (effect) =>
-      Effect.runPromise(
-        Effect.provide(effect, Layer.merge(repoLayer, loggerLayer)),
-      );
+    this.runEffect = makeRunEffect(ctx, env);
   }
 
   @callable()
