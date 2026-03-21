@@ -137,12 +137,16 @@ Everything in the constructor is synchronous:
 ```ts
 constructor(ctx: DurableObjectState, env: Env) {
   super(ctx, env);
-  void this.sql`create table if not exists Invoice (...)`;  // sync SQLite
-  const loggerLayer = makeLoggerLayer(env);                  // sync: builds Layer description
-  this.runEffect = (effect) =>                               // sync: stores a function
-    Effect.runPromise(Effect.provide(effect, loggerLayer));   // deferred: runs at method call time
+  // No blockConcurrencyWhile needed — everything here is synchronous:
+  // - SQLite ops don't yield the event loop (atomic without gating)
+  // - Layer construction is lazy (descriptions only, built at runPromise time)
+  void this.sql`create table if not exists Invoice (...)`;
+  const loggerLayer = makeLoggerLayer(env);
+  this.runEffect = (effect) => Effect.runPromise(Effect.provide(effect, loggerLayer));
 }
 ```
+
+**Note**: This comment should be preserved in the generated code.
 
 ### Class Methods: `Effect.gen({ self: this }, ...)`
 
@@ -341,6 +345,9 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // No blockConcurrencyWhile needed — everything here is synchronous:
+    // - SQLite ops don't yield the event loop (atomic without gating)
+    // - Layer construction is lazy (descriptions only, built at runPromise time)
     void this.sql`create table if not exists Invoice (
       id text primary key,
       fileName text not null,
