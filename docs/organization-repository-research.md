@@ -2,7 +2,7 @@
 
 ## Context
 
-OrganizationAgent currently has inline SQL + schema decoding spread across its methods. Goal: extract a repository service following the existing service pattern in the codebase. Related question: do we need an OrganizationDomain.ts for the agent's domain objects?
+OrganizationAgent has inline SQL + schema decoding spread across its methods. Goal: extract an OrganizationRepository service with `@effect/sql-sqlite-do` (Effect v4 unstable SQL) as the SQL dependency, plus an OrganizationDomain module for shared schemas.
 
 ## Current State
 
@@ -17,181 +17,215 @@ OrganizationAgent currently has inline SQL + schema decoding spread across its m
 | `onWorkflowError` | `update Invoice set status = 'error', error = ?` |
 | `getInvoices` | `select * from Invoice order by createdAt desc` |
 
-### Where schemas live today (`organization-agent.ts`)
+All operations use the Agent base class `this.sql` tagged template, which wraps `ctx.storage.sql: SqlStorage`. Synchronous — no `await` needed.
 
-- `InvoiceRowSchema` — full row schema (lines 14-25)
-- `InvoiceStatus` — imported from `Domain.ts` (shared enum)
-- `decodeInvoiceRow` / `decodeInvoices` — sync decoders (lines 29-32)
-- `OrganizationAgentError` — tagged error class (lines 34-37)
-- `activeWorkflowStatuses` — set of workflow status strings (line 27)
-
-### Existing service layering in the codebase
+### Existing service layering
 
 ```
-CloudflareEnv  (value service — just wraps Env)
-    ↓
-    D1          (ServiceMap.Service — yields CloudflareEnv, wraps d1 with retry/error handling)
-    ↓
-    Repository  (ServiceMap.Service — yields D1, exposes domain query methods)
+CloudflareEnv  →  D1  →  Repository
 ```
 
-`CloudflareEnv` is defined as a bare value service — one line:
+`Repository` depends on our custom `D1` service which wraps Cloudflare's raw D1 API with retry/error handling.
+
+---
+
+## Approach: `@effect/sql-sqlite-do` as SQL Dependency
+
+### What `@effect/sql-sqlite-do` provides
+
+Effect v4 ships a complete DO SQLite adapter at `refs/effect4/packages/sql/sqlite-do/src/SqliteClient.ts`.
+
+**Config interface:**
 
 ```ts
-export const CloudflareEnv = ServiceMap.Service<Env>("CloudflareEnv");
+// refs/effect4/packages/sql/sqlite-do/src/SqliteClient.ts:56-62
+export interface SqliteClientConfig {
+  readonly db: SqlStorage
+  readonly spanAttributes?: Record<string, unknown>
+  readonly transformResultNames?: ((str: string) => string)
+  readonly transformQueryNames?: ((str: string) => string)
+}
 ```
 
-`D1` depends on it: `const { D1: d1 } = yield* CloudflareEnv;`
-
-`Repository` depends on `D1`: `const d1 = yield* D1;`
-
-### Key difference: D1 vs DO SQLite
-
-Repository.ts uses **D1** (async, prepared statements, `d1.first()` / `d1.run()`).
-
-OrganizationAgent uses the **DO's `this.sql` tagged template** — synchronous, returns `T[]` directly. The type from the agents SDK:
+**How it wraps synchronous DO SQL:**
 
 ```ts
-sql<T = Record<string, string | number | boolean | null>>(
-  strings: TemplateStringsArray,
-  ...values: (string | number | boolean | null)[]
-): T[]
+// refs/effect4/packages/sql/sqlite-do/src/SqliteClient.ts:96-103
+const runStatement = (sql: string, params: ReadonlyArray<unknown> = []):
+  Effect.Effect<ReadonlyArray<any>, SqlError, never> =>
+  Effect.try({
+    try: () => Array.from(runIterator(sql, params)),
+    catch: (cause) => new SqlError({ cause, message: `Failed to execute statement` })
+  })
 ```
 
-This comes from the Agent base class. The underlying Cloudflare type is `DurableObjectStorage.sql: SqlStorage` which has `exec(query, ...bindings)`. The Agent wraps it as a tagged template convenience.
+Uses `Effect.try` (not `Effect.tryPromise`) — preserves synchronous semantics. Write coalescing still works: multiple `yield*` of sync Effects in sequence don't introduce `await`, so they execute atomically.
 
-## Approach: Follow the CloudflareEnv → D1 → Repository pattern exactly
-
-### 1. Value service for the DO sql tagged template
-
-Same pattern as `CloudflareEnv` — a value service that wraps a runtime value.
+**Layer construction — dual service registration:**
 
 ```ts
-// src/lib/AgentSql.ts
-import { ServiceMap } from "effect";
-
-type AgentSqlFn = <T = Record<string, string | number | boolean | null>>(
-  strings: TemplateStringsArray,
-  ...values: (string | number | boolean | null)[]
-) => T[];
-
-export const AgentSql = ServiceMap.Service<AgentSqlFn>("AgentSql");
+// refs/effect4/packages/sql/sqlite-do/src/SqliteClient.ts:209-217
+export const layer = (config: SqliteClientConfig):
+  Layer.Layer<SqliteClient | Client.SqlClient> =>
+  Layer.effectServices(
+    Effect.map(make(config), (client) =>
+      ServiceMap.make(SqliteClient, client).pipe(
+        ServiceMap.add(Client.SqlClient, client)
+      ))
+  ).pipe(Layer.provide(Reactivity.layer))
 ```
 
-Like `CloudflareEnv`, this is just a typed slot. The agent provides the value at construction time via `Layer.succeed(AgentSql, this.sql)`.
+Provides both the specific `SqliteClient` and the generic `SqlClient` — repository methods can depend on `SqlClient.SqlClient` (portable) or `SqliteClient` (DO-specific).
 
-If we later add more DO types, they all provide `AgentSql` the same way — it's the DO equivalent of `CloudflareEnv`.
+**Key internals:**
+- Semaphore(1) for connection serialization (`SqliteClient.ts:153`)
+- Transaction acquirer with scope-based release (`SqliteClient.ts:157-167`)
+- Iterator-based row materialization with ArrayBuffer→Uint8Array conversion (`SqliteClient.ts:80-94`)
+- `Statement.makeCompilerSqlite` for `?` placeholder compilation (`SqliteClient.ts:72`)
 
-### 2. OrganizationRepository as a ServiceMap.Service
+### What `SqlClient` gives us
 
-Follows the exact same shape as `Repository`:
+The `SqlClient` interface (`refs/effect4/packages/effect/src/unstable/sql/SqlClient.ts`) is a tagged template constructor:
+
+```ts
+// SqlClient.ts:27-66
+export interface SqlClient extends Constructor {
+  readonly safe: this
+  readonly withoutTransforms: () => this
+  readonly reserve: Effect.Effect<Connection, SqlError, Scope.Scope>
+  readonly withTransaction: <R, E, A>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>
+  readonly reactive: (keys, effect) => Stream<A, E, R>
+}
+```
+
+Used as a tagged template:
+
+```ts
+const sql = yield* SqlClient.SqlClient;
+const rows = yield* sql`select * from Invoice order by createdAt desc`;
+```
+
+The template literal compiles through `Statement.Compiler` → `[sqlString, params[]]` → `Connection.execute()`. This replaces the Agent's `this.sql` tagged template with Effect-managed, traced, error-typed queries.
+
+### `SqlSchema` — typed query builders
+
+`refs/effect4/packages/effect/src/unstable/sql/SqlSchema.ts` provides Schema-validated query builders:
+
+```ts
+// SqlSchema.ts:16-31 — findAll
+export const findAll = <Req, Res, E, R>(options: {
+  readonly Request: Req
+  readonly Result: Res
+  readonly execute: (request: Req["Encoded"]) => Effect.Effect<ReadonlyArray<unknown>, E, R>
+}) => {
+  const encodeRequest = Schema.encodeEffect(options.Request)
+  const decode = Schema.decodeUnknownEffect(Schema.mutable(Schema.Array(options.Result)))
+  return (request) => Effect.flatMap(Effect.flatMap(encodeRequest(request), options.execute), decode)
+}
+```
+
+Also: `findOne`, `findOneOption`, `findNonEmpty`, `void`. These encode requests and decode results through Schema — replacing our manual `decodeInvoiceRow`/`decodeInvoices`.
+
+---
+
+## 1. OrganizationRepository
+
+Depends on `SqlClient.SqlClient` (the generic interface). Repository methods use the tagged template for queries and `SqlSchema` for typed decoding.
 
 ```ts
 // src/lib/OrganizationRepository.ts
-import { Effect, Layer, Schema, ServiceMap } from "effect";
+import { Effect, Layer, ServiceMap } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
-import { AgentSql } from "./AgentSql";
 import * as OrganizationDomain from "./OrganizationDomain";
 
 export class OrganizationRepository extends ServiceMap.Service<OrganizationRepository>()(
   "OrganizationRepository",
   {
     make: Effect.gen(function* () {
-      const sql = yield* AgentSql;
+      const sql = yield* SqlClient.SqlClient;
 
-      const findInvoice = Effect.fn("OrganizationRepository.findInvoice")(
-        function* (invoiceId: string) {
-          return OrganizationDomain.decodeInvoiceRow(
-            sql`select * from Invoice where id = ${invoiceId}`[0] ?? null,
-          );
-        },
-      );
+      const findInvoice = SqlSchema.findOneOption({
+        Request: OrganizationDomain.InvoiceId,
+        Result: OrganizationDomain.InvoiceRow,
+        execute: (id) => sql`select * from Invoice where id = ${id}`,
+      });
 
-      const getInvoices = Effect.fn("OrganizationRepository.getInvoices")(
-        function* () {
-          return OrganizationDomain.decodeInvoices(
-            sql`select * from Invoice order by createdAt desc`,
-          );
-        },
-      );
+      const getInvoices = SqlSchema.findAll({
+        Request: OrganizationDomain.Void,
+        Result: OrganizationDomain.InvoiceRow,
+        execute: () => sql`select * from Invoice order by createdAt desc`,
+      });
 
-      const upsertInvoice = Effect.fn("OrganizationRepository.upsertInvoice")(
-        function* (input: {
-          invoiceId: string;
-          fileName: string;
-          contentType: string;
-          r2ActionTime: number;
-          idempotencyKey: string;
-          r2ObjectKey: string;
-        }) {
-          void sql`
-            insert into Invoice (
-              id, fileName, contentType, createdAt, r2ActionTime,
-              idempotencyKey, r2ObjectKey, status,
-              extractedJson, error
-            ) values (
-              ${input.invoiceId}, ${input.fileName}, ${input.contentType},
-              ${input.r2ActionTime}, ${input.r2ActionTime}, ${input.idempotencyKey},
-              ${input.r2ObjectKey}, 'uploaded',
-              ${null}, ${null}
-            )
-            on conflict(id) do update set
-              fileName = excluded.fileName,
-              contentType = excluded.contentType,
-              r2ActionTime = excluded.r2ActionTime,
-              idempotencyKey = excluded.idempotencyKey,
-              r2ObjectKey = excluded.r2ObjectKey,
-              status = 'uploaded',
-              extractedJson = null,
-              error = null
-          `;
-        },
-      );
+      const upsertInvoice = SqlSchema.void({
+        Request: OrganizationDomain.UpsertInvoice,
+        execute: (input) => sql`
+          insert into Invoice (
+            id, fileName, contentType, createdAt, r2ActionTime,
+            idempotencyKey, r2ObjectKey, status,
+            extractedJson, error
+          ) values (
+            ${input.invoiceId}, ${input.fileName}, ${input.contentType},
+            ${input.r2ActionTime}, ${input.r2ActionTime}, ${input.idempotencyKey},
+            ${input.r2ObjectKey}, 'uploaded',
+            ${null}, ${null}
+          )
+          on conflict(id) do update set
+            fileName = excluded.fileName,
+            contentType = excluded.contentType,
+            r2ActionTime = excluded.r2ActionTime,
+            idempotencyKey = excluded.idempotencyKey,
+            r2ObjectKey = excluded.r2ObjectKey,
+            status = 'uploaded',
+            extractedJson = null,
+            error = null
+        `,
+      });
 
-      const setExtracting = Effect.fn("OrganizationRepository.setExtracting")(
-        function* (invoiceId: string, idempotencyKey: string) {
-          void sql`
-            update Invoice
-            set status = 'extracting'
-            where id = ${invoiceId} and idempotencyKey = ${idempotencyKey}
-          `;
-        },
-      );
+      const setExtracting = SqlSchema.void({
+        Request: OrganizationDomain.InvoiceIdempotencyKey,
+        execute: (input) => sql`
+          update Invoice
+          set status = 'extracting'
+          where id = ${input.invoiceId} and idempotencyKey = ${input.idempotencyKey}
+        `,
+      });
 
-      const deleteInvoice = Effect.fn("OrganizationRepository.deleteInvoice")(
-        function* (invoiceId: string, r2ActionTime: number) {
-          return sql<{ id: string }>`
-            delete from Invoice
-            where id = ${invoiceId} and r2ActionTime <= ${r2ActionTime}
-            returning id
-          `;
-        },
-      );
+      const deleteInvoice = SqlSchema.findAll({
+        Request: OrganizationDomain.DeleteInvoice,
+        Result: OrganizationDomain.InvoiceIdOnly,
+        execute: (input) => sql`
+          delete from Invoice
+          where id = ${input.invoiceId} and r2ActionTime <= ${input.r2ActionTime}
+          returning id
+        `,
+      });
 
-      const saveExtractedJson = Effect.fn("OrganizationRepository.saveExtractedJson")(
-        function* (input: { invoiceId: string; idempotencyKey: string; extractedJson: string }) {
-          return sql<{ id: string; fileName: string }>`
-            update Invoice
-            set status = 'extracted',
-                extractedJson = ${input.extractedJson},
-                error = ${null}
-            where id = ${input.invoiceId} and idempotencyKey = ${input.idempotencyKey}
-            returning id, fileName
-          `;
-        },
-      );
+      const saveExtractedJson = SqlSchema.findAll({
+        Request: OrganizationDomain.SaveExtractedJson,
+        Result: OrganizationDomain.InvoiceIdFileName,
+        execute: (input) => sql`
+          update Invoice
+          set status = 'extracted',
+              extractedJson = ${input.extractedJson},
+              error = ${null}
+          where id = ${input.invoiceId} and idempotencyKey = ${input.idempotencyKey}
+          returning id, fileName
+        `,
+      });
 
-      const setError = Effect.fn("OrganizationRepository.setError")(
-        function* (workflowId: string, error: string) {
-          return sql<{ id: string; fileName: string }>`
-            update Invoice
-            set status = 'error',
-                error = ${error}
-            where idempotencyKey = ${workflowId}
-            returning id, fileName
-          `;
-        },
-      );
+      const setError = SqlSchema.findAll({
+        Request: OrganizationDomain.SetError,
+        Result: OrganizationDomain.InvoiceIdFileName,
+        execute: (input) => sql`
+          update Invoice
+          set status = 'error',
+              error = ${input.error}
+          where idempotencyKey = ${input.workflowId}
+          returning id, fileName
+        `,
+      });
 
       return {
         findInvoice,
@@ -209,15 +243,15 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
 }
 ```
 
-### 3. How the agent wires it up
+### How the agent wires it up
 
 ```ts
 // organization-agent.ts constructor
 constructor(ctx: DurableObjectState, env: Env) {
   super(ctx, env);
   void this.sql`create table if not exists Invoice (...)`;
-  const agentSqlLayer = Layer.succeed(AgentSql, this.sql);
-  const repoLayer = Layer.provideMerge(OrganizationRepository.layer, agentSqlLayer);
+  const sqliteLayer = SqliteDo.layer({ db: ctx.storage.sql });
+  const repoLayer = Layer.provideMerge(OrganizationRepository.layer, sqliteLayer);
   const loggerLayer = makeLoggerLayer(env);
   this.runEffect = (effect) =>
     Effect.runPromise(Effect.provide(effect, Layer.merge(repoLayer, loggerLayer)));
@@ -233,7 +267,7 @@ const d1Layer = Layer.provideMerge(D1.layer, envLayer);
 const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
 ```
 
-### 4. How agent methods look after
+### How agent methods look after
 
 ```ts
 @callable()
@@ -241,7 +275,7 @@ getInvoices() {
   return this.runEffect(
     Effect.gen(function* () {
       const repo = yield* OrganizationRepository;
-      return yield* repo.getInvoices();
+      return yield* repo.getInvoices(undefined);
     }),
   );
 }
@@ -256,12 +290,7 @@ onInvoiceUpload(upload: { ... }) {
 
       const repo = yield* OrganizationRepository;
       const existing = yield* repo.findInvoice(upload.invoiceId);
-      if (existing && r2ActionTime < existing.r2ActionTime) return;
-
-      const trackedWorkflow = this.getWorkflow(upload.idempotencyKey);
-      if (trackedWorkflow && activeWorkflowStatuses.has(trackedWorkflow.status)) return;
-      if (existing?.idempotencyKey === upload.idempotencyKey
-        && (existing.status === "extracting" || existing.status === "extracted")) return;
+      // ... guard logic using Option ...
 
       yield* repo.upsertInvoice({ ...upload, r2ActionTime });
       yield* broadcastActivity(this, { level: "info", text: `Invoice uploaded: ${upload.fileName}` });
@@ -269,54 +298,90 @@ onInvoiceUpload(upload: { ... }) {
         try: () => this.runWorkflow("INVOICE_EXTRACTION_WORKFLOW", { ... }, { id: upload.idempotencyKey, ... }),
         catch: (cause) => new OrganizationAgentError({ message: ... }),
       });
-      yield* repo.setExtracting(upload.invoiceId, upload.idempotencyKey);
+      yield* repo.setExtracting({ invoiceId: upload.invoiceId, idempotencyKey: upload.idempotencyKey });
     }),
   );
 }
 ```
 
-### Error handling note
+### Error handling
 
-The current code wraps every SQL call in `Effect.try`. Since DO SQLite ops are synchronous and the `Effect.fn` generator itself will catch thrown exceptions, we have a choice:
+`@effect/sql-sqlite-do` wraps all operations in `Effect.try` returning `SqlError` — a structured, tagged error with `cause` and `message`. This replaces our manual `Effect.try` → `OrganizationAgentError` wrapping per SQL call. `OrganizationAgentError` stays for non-SQL agent errors (invalid input, workflow failures).
 
-- **Wrap in Effect.try** per call (current pattern) — granular error messages per operation
-- **Let Effect.fn catch** — simpler code, errors surface as defects with stack traces
+`SqlSchema` query builders add `Schema.SchemaError` for decode failures — replacing our manual `decodeInvoiceRow`/`decodeInvoices`.
 
-The sketch above omits `Effect.try` for readability. Whether to add it back is a style decision — the current agent wraps everything, so we could preserve that. But `Effect.fn` already catches and traces, so it may be unnecessary ceremony.
+### Write coalescing preserved
+
+From `do-sqlite-storage-research.md`: "Effect generators that `yield*` synchronous Effects don't break coalescing." The `@effect/sql-sqlite-do` adapter uses `Effect.try` (synchronous) — no microtask boundary. Multiple sequential repo calls without intervening `await` remain atomic.
 
 ---
 
-## OrganizationDomain.ts — Do We Need It?
+## 2. OrganizationDomain
 
-### What would go in it?
+Extract from `organization-agent.ts` into `src/lib/OrganizationDomain.ts`. Contains schemas shared between agent and repository. `InvoiceStatus` stays in `Domain.ts` (already shared with UI).
 
-| Schema | Currently in | Notes |
-|---|---|---|
-| `InvoiceRowSchema` | `organization-agent.ts` | Full row shape |
-| `InvoiceRow` type | `organization-agent.ts` | Derived from schema |
-| `InvoiceStatus` | `Domain.ts` | Already shared — used by both agent and UI |
-| `OrganizationAgentError` | `organization-agent.ts` | Tagged error |
-| `activeWorkflowStatuses` | `organization-agent.ts` | Runtime set |
-| `decodeInvoiceRow` / `decodeInvoices` | `organization-agent.ts` | Sync decoders |
-| `WorkflowProgressSchema` | `Activity.ts` | Stays there — used across concerns |
+```ts
+// src/lib/OrganizationDomain.ts
+import * as Schema from "effect/Schema";
 
-### Analysis
+import { InvoiceStatus } from "./Domain";
 
-`InvoiceStatus` is already in `Domain.ts` because it's shared (UI renders it, agent writes it). The remaining schemas (`InvoiceRowSchema`, decoders, error class) are currently only used by OrganizationAgent.
+export const InvoiceRow = Schema.Struct({
+  id: Schema.String,
+  fileName: Schema.String,
+  contentType: Schema.String,
+  createdAt: Schema.Number,
+  r2ActionTime: Schema.Number,
+  idempotencyKey: Schema.String,
+  r2ObjectKey: Schema.String,
+  status: InvoiceStatus,
+  extractedJson: Schema.NullOr(Schema.String),
+  error: Schema.NullOr(Schema.String),
+});
+export type InvoiceRow = typeof InvoiceRow.Type;
 
-**With OrganizationRepository**, these schemas become shared between the agent and the repository — that's the natural trigger for extracting them.
+export const InvoiceId = Schema.Struct({ invoiceId: Schema.String });
+export const InvoiceIdOnly = Schema.Struct({ id: Schema.String });
+export const InvoiceIdFileName = Schema.Struct({ id: Schema.String, fileName: Schema.String });
+export const Void = Schema.Void;
 
-### Options
+export const InvoiceIdempotencyKey = Schema.Struct({
+  invoiceId: Schema.String,
+  idempotencyKey: Schema.String,
+});
 
-1. **Add to existing `Domain.ts`** — keeps one file for all domain schemas. Risk: Domain.ts grows and mixes primary DB schemas with DO-specific schemas.
+export const UpsertInvoice = Schema.Struct({
+  invoiceId: Schema.String,
+  fileName: Schema.String,
+  contentType: Schema.String,
+  r2ActionTime: Schema.Number,
+  idempotencyKey: Schema.String,
+  r2ObjectKey: Schema.String,
+});
 
-2. **Create `OrganizationDomain.ts`** — clean separation. Contains `InvoiceRowSchema`, `InvoiceRow` type, decoders, `OrganizationAgentError`, `activeWorkflowStatuses`. `InvoiceStatus` stays in `Domain.ts` (already there, already shared).
+export const DeleteInvoice = Schema.Struct({
+  invoiceId: Schema.String,
+  r2ActionTime: Schema.Number,
+});
 
-3. **Co-locate in `OrganizationRepository.ts`** — schemas live next to the code that uses them. But then the agent also needs to import schemas from the repository module (e.g., `activeWorkflowStatuses`, `OrganizationAgentError`), which is a bit inverted.
+export const SaveExtractedJson = Schema.Struct({
+  invoiceId: Schema.String,
+  idempotencyKey: Schema.String,
+  extractedJson: Schema.String,
+});
 
-### Recommendation
+export const SetError = Schema.Struct({
+  workflowId: Schema.String,
+  error: Schema.String,
+});
 
-**Option 2** (`OrganizationDomain.ts`) — the two files form a natural pair. Keeps `Domain.ts` focused on the primary D1-backed domain.
+export class OrganizationAgentError extends Schema.TaggedErrorClass<OrganizationAgentError>()(
+  "OrganizationAgentError",
+  { message: Schema.String },
+) {}
+
+export const activeWorkflowStatuses = new Set(["queued", "running", "waiting"]);
+```
 
 ---
 
@@ -324,10 +389,9 @@ The sketch above omits `Effect.try` for readability. Whether to add it back is a
 
 ```
 src/lib/
-  AgentSql.ts                  # Value service for DO sql tagged template (like CloudflareEnv)
-  OrganizationDomain.ts        # InvoiceRow schema, decoders, error class
-  OrganizationRepository.ts    # ServiceMap.Service, depends on AgentSql
-  Domain.ts                    # Unchanged
+  OrganizationDomain.ts        # InvoiceRow schema, request/result schemas, error class
+  OrganizationRepository.ts    # ServiceMap.Service, depends on SqlClient.SqlClient
+  Domain.ts                    # Unchanged (InvoiceStatus stays here)
   Repository.ts                # Unchanged
 ```
 
@@ -336,31 +400,59 @@ src/
   organization-agent.ts        # Slimmed down — orchestrates repo + broadcast + workflow
 ```
 
-### Full layering picture
+### Layering
 
 ```
-CloudflareEnv    AgentSql
-    ↓                ↓
-    D1          OrganizationRepository
-    ↓
-Repository
+CloudflareEnv       SqliteDo.layer({ db: ctx.storage.sql })
+    ↓                     ↓
+    D1              SqlClient.SqlClient (+ SqliteClient)
+    ↓                     ↓
+Repository        OrganizationRepository
 ```
+
+---
+
+## Trade-offs vs Custom AgentSql Value Service
+
+The previous version of this document proposed a custom `AgentSql` value service wrapping `this.sql`. Here's what changes with `@effect/sql-sqlite-do`:
+
+### Gains
+
+- **Typed tagged template** — `SqlClient` template literals compile through `Statement.Compiler` with `?` placeholders, span tracing, and `SqlError` — no manual `Effect.try` wrapping per call
+- **`SqlSchema` query builders** — `findAll`, `findOneOption`, `void` etc. encode requests + decode results through Schema, replacing manual decoders
+- **`withTransaction`** — semaphore-based transaction support if needed later
+- **Portability** — repository depends on generic `SqlClient`, not DO-specific API
+- **Consistency with Effect ecosystem** — same patterns as `@effect/sql-d1`, `@effect/sql-pg`, etc.
+
+### Costs
+
+- **Unstable API** — lives in `effect/unstable/sql/`. May change between Effect v4 releases. Mitigation: the adapter is small (~200 LOC), and we can vendor/fork if needed.
+- **New dependency** — need to add `@effect/sql-sqlite-do` package. Currently not in `package.json`.
+- **Heavier than a value service** — semaphore, compiler, reactivity layer. Though the layer construction is lazy and the runtime overhead is negligible for our use case.
+- **Different query pattern** — `yield* sql\`...\`` instead of `this.sql\`...\``. Repository methods already encapsulate this, so the agent doesn't see the difference.
+
+### Recommendation
+
+**Use `@effect/sql-sqlite-do`.** The `SqlSchema` query builders and typed `SqlError` eliminate enough boilerplate to justify the unstable dependency. The adapter is stable in practice (unchanged since v4 beta), small enough to vendor if needed, and aligns with the broader Effect SQL ecosystem.
 
 ---
 
 ## Open Questions
 
-1. **Table creation** — should the `create table if not exists` DDL move into the repository (e.g., an `initialize` effect), or stay in the agent constructor? Constructor is the natural place since it runs once per DO instantiation. But if the repository "owns" the schema, it's arguably more cohesive there.
+1. **Package installation** — `@effect/sql-sqlite-do` is a separate package, not bundled with `effect`. Need to verify it's published for the Effect v4 beta version we're on (`4.0.0-beta.27`) and check for any peer dependency requirements.
 
-2. **`broadcastActivity`** — uses `agent.broadcast()` which is an Agent method, not data. It stays in the agent. Repository handles pure data operations. Agent orchestrates: calls repo, broadcasts, runs workflow, calls repo again.
+I think it's bundled with the beta but certainly check.
 
-3. **`this.sql` type** — the Agent base class provides `this.sql` as a tagged template convenience over `this.ctx.storage.sql: SqlStorage`. The `AgentSql` service type should match the tagged template signature, not the raw `SqlStorage` interface. We pass `this.sql` (bound to the agent) into `Layer.succeed`.
+2. **Table creation** — DDL stays in agent constructor (runs once per DO instantiation, synchronous). Repository is purely query methods.
 
-4. **Workflow operations** — `this.runWorkflow()` and `this.getWorkflow()` are agent methods. They stay in the agent. Repository is purely data access.
+Leave as is for now.
 
-5. **Error wrapping** — current code wraps every SQL call in `Effect.try` with `OrganizationAgentError`. With the repository pattern, we could:
-   - Keep `Effect.try` wrapping (preserves granular error context)
-   - Drop it and let exceptions propagate as defects (simpler, `Effect.fn` traces)
-   - Rename error to `OrganizationRepositoryError` since it now lives in the repo layer
+3. **`SqlSchema` vs direct tagged template** — for simple queries (e.g., `setExtracting`), `SqlSchema.void` adds encode/decode overhead on inputs that are already typed. Could mix: use `SqlSchema` for reads (where result decoding matters), plain `sql\`...\`` for writes. Or keep uniform for consistency.
 
-6. **Naming** — `AgentSql` is generic enough for any DO. If we only ever have one DO type, `OrganizationSql` would be more specific. `AgentSql` is the better default since it mirrors `CloudflareEnv` as a shared infrastructure service.
+Need research on SqlSchema. Have no idea what it is. Confusing to me that we'll also have our domain schemas. why do we need schema's specifically for sql?
+
+4. **`Reactivity.layer`** — `SqliteDo.layer()` internally provides `Reactivity.layer`. We don't use reactive queries, but the layer is provided automatically. No action needed — just noting it's there.
+
+5. **`findInvoice` return type** — with `SqlSchema.findOneOption`, returns `Option<InvoiceRow>`. Agent code currently checks `existing && ...`. Would change to `Option.match` or `Option.getOrNull`. Cleaner but different pattern.
+
+Yes, Option is better.
