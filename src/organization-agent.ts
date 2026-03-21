@@ -1,40 +1,20 @@
 import { Agent, callable } from "agents";
-import { Effect } from "effect";
+import { Effect, Layer, Option } from "effect";
 import * as Schema from "effect/Schema";
+import { SqliteClient } from "@effect/sql-sqlite-do";
 
 import type { ActivityEnvelope, WorkflowProgress } from "@/lib/Activity";
 import { WorkflowProgressSchema } from "@/lib/Activity";
-import { InvoiceStatus } from "@/lib/Domain";
 import { makeLoggerLayer } from "@/lib/LoggerLayer";
+import {
+  OrganizationAgentError,
+  activeWorkflowStatuses,
+} from "@/lib/OrganizationDomain";
+import { OrganizationRepository } from "@/lib/OrganizationRepository";
 
 export interface OrganizationAgentState {
   readonly message: string;
 }
-
-const InvoiceRowSchema = Schema.Struct({
-  id: Schema.String,
-  fileName: Schema.String,
-  contentType: Schema.String,
-  createdAt: Schema.Number,
-  r2ActionTime: Schema.Number,
-  idempotencyKey: Schema.String,
-  r2ObjectKey: Schema.String,
-  status: InvoiceStatus,
-  extractedJson: Schema.NullOr(Schema.String),
-  error: Schema.NullOr(Schema.String),
-});
-
-const activeWorkflowStatuses = new Set(["queued", "running", "waiting"]);
-type InvoiceRow = typeof InvoiceRowSchema.Type;
-const decodeInvoiceRow = Schema.decodeUnknownSync(
-  Schema.NullOr(InvoiceRowSchema),
-);
-const decodeInvoices = Schema.decodeUnknownSync(Schema.Array(InvoiceRowSchema));
-
-export class OrganizationAgentError extends Schema.TaggedErrorClass<OrganizationAgentError>()(
-  "OrganizationAgentError",
-  { message: Schema.String },
-) {}
 
 const broadcastActivity = (
   agent: OrganizationAgent,
@@ -69,7 +49,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
 
   // Type-only declaration (no runtime initializer); assigned in constructor.
   private declare runEffect: <A, E>(
-    effect: Effect.Effect<A, E>,
+    effect: Effect.Effect<A, E, OrganizationRepository>,
   ) => Promise<A>;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -89,9 +69,16 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       extractedJson text,
       error text
     )`;
+    const sqliteLayer = SqliteClient.layer({ db: ctx.storage.sql });
+    const repoLayer = Layer.provideMerge(
+      OrganizationRepository.layer,
+      sqliteLayer,
+    );
     const loggerLayer = makeLoggerLayer(env);
     this.runEffect = (effect) =>
-      Effect.runPromise(Effect.provide(effect, loggerLayer));
+      Effect.runPromise(
+        Effect.provide(effect, Layer.merge(repoLayer, loggerLayer)),
+      );
   }
 
   @callable()
@@ -121,11 +108,13 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
             message: `Invalid r2ActionTime: ${upload.r2ActionTime}`,
           });
         }
-        const existing = decodeInvoiceRow(
-          this.sql<InvoiceRow>`select * from Invoice where id = ${upload.invoiceId}`[0] ??
-            null,
-        );
-        if (existing && r2ActionTime < existing.r2ActionTime) return;
+        const repo = yield* OrganizationRepository;
+        const existing = yield* repo.findInvoice(upload.invoiceId);
+        if (
+          Option.isSome(existing) &&
+          r2ActionTime < existing.value.r2ActionTime
+        )
+          return;
         const trackedWorkflow = this.getWorkflow(upload.idempotencyKey);
         if (
           trackedWorkflow &&
@@ -133,39 +122,13 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         )
           return;
         if (
-          existing?.idempotencyKey === upload.idempotencyKey &&
-          (existing.status === "extracting" ||
-            existing.status === "extracted")
+          Option.isSome(existing) &&
+          existing.value.idempotencyKey === upload.idempotencyKey &&
+          (existing.value.status === "extracting" ||
+            existing.value.status === "extracted")
         )
           return;
-        yield* Effect.try({
-          try: () =>
-            void this.sql`
-              insert into Invoice (
-                id, fileName, contentType, createdAt, r2ActionTime,
-                idempotencyKey, r2ObjectKey, status,
-                extractedJson, error
-              ) values (
-                ${upload.invoiceId}, ${upload.fileName}, ${upload.contentType},
-                ${r2ActionTime}, ${r2ActionTime}, ${upload.idempotencyKey},
-                ${upload.r2ObjectKey}, 'uploaded',
-                null, null
-              )
-              on conflict(id) do update set
-                fileName = excluded.fileName,
-                contentType = excluded.contentType,
-                r2ActionTime = excluded.r2ActionTime,
-                idempotencyKey = excluded.idempotencyKey,
-                r2ObjectKey = excluded.r2ObjectKey,
-                status = 'uploaded',
-                extractedJson = null,
-                error = null
-            `,
-          catch: (cause) =>
-            new OrganizationAgentError({
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
+        yield* repo.upsertInvoice({ ...upload, r2ActionTime });
         yield* broadcastActivity(this, {
           level: "info",
           text: `Invoice uploaded: ${upload.fileName}`,
@@ -191,18 +154,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
               message: cause instanceof Error ? cause.message : String(cause),
             }),
         });
-        yield* Effect.try({
-          try: () =>
-            void this.sql`
-              update Invoice
-              set status = 'extracting'
-              where id = ${upload.invoiceId} and idempotencyKey = ${upload.idempotencyKey}
-            `,
-          catch: (cause) =>
-            new OrganizationAgentError({
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
+        yield* repo.setExtracting(upload.invoiceId, upload.idempotencyKey);
       }),
     );
   }
@@ -221,18 +173,11 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
             message: `Invalid r2ActionTime: ${input.r2ActionTime}`,
           });
         }
-        const deleted = yield* Effect.try({
-          try: () =>
-            this.sql<{ id: string }>`
-              delete from Invoice
-              where id = ${input.invoiceId} and r2ActionTime <= ${r2ActionTime}
-              returning id
-            `,
-          catch: (cause) =>
-            new OrganizationAgentError({
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
+        const repo = yield* OrganizationRepository;
+        const deleted = yield* repo.deleteInvoice(
+          input.invoiceId,
+          r2ActionTime,
+        );
         if (deleted.length === 0) return;
         yield* broadcastActivity(this, {
           level: "info",
@@ -249,25 +194,12 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
-        const updated = yield* Effect.try({
-          try: () =>
-            this.sql<{ id: string; fileName: string }>`
-              update Invoice
-              set status = 'extracted',
-                  extractedJson = ${input.extractedJson},
-                  error = null
-              where id = ${input.invoiceId} and idempotencyKey = ${input.idempotencyKey}
-              returning id, fileName
-            `,
-          catch: (cause) =>
-            new OrganizationAgentError({
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
+        const repo = yield* OrganizationRepository;
+        const updated = yield* repo.saveExtractedJson(input);
         if (updated.length === 0) return;
         yield* broadcastActivity(this, {
           level: "success",
-          text: `Invoice extraction completed: ${updated[0].fileName}`,
+          text: `Invoice extraction completed: ${(updated[0] as { fileName: string }).fileName}`,
         });
       }),
     );
@@ -298,24 +230,12 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
         if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") return;
-        const updated = yield* Effect.try({
-          try: () =>
-            this.sql<{ id: string; fileName: string }>`
-              update Invoice
-              set status = 'error',
-                  error = ${error}
-              where idempotencyKey = ${workflowId}
-              returning id, fileName
-            `,
-          catch: (cause) =>
-            new OrganizationAgentError({
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
+        const repo = yield* OrganizationRepository;
+        const updated = yield* repo.setError(workflowId, error);
         if (updated.length === 0) return;
         yield* broadcastActivity(this, {
           level: "error",
-          text: `Invoice extraction failed: ${updated[0].fileName}`,
+          text: `Invoice extraction failed: ${(updated[0] as { fileName: string }).fileName}`,
         });
       }),
     );
@@ -324,17 +244,9 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   @callable()
   getInvoices() {
     return this.runEffect(
-      Effect.gen({ self: this }, function* () {
-        return yield* Effect.try({
-          try: () =>
-            decodeInvoices(
-              this.sql`select * from Invoice order by createdAt desc`,
-            ),
-          catch: (cause) =>
-            new OrganizationAgentError({
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
+      Effect.gen(function* () {
+        const repo = yield* OrganizationRepository;
+        return yield* repo.getInvoices();
       }),
     );
   }
