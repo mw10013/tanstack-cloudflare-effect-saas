@@ -6,7 +6,7 @@
 - **Naming**: `InvoiceItem` (not LineItem). Extraction schema field renamed `lineItems` → `invoiceItems`
 - **`extractedJson`**: Keep as audit record
 - **Text field defaults**: `''` (not null). `invoiceConfidence` defaults to `0` (real, not null)
-- **InvoiceItem ordering**: `sortOrder` column (real) — 1.0, 2.0, 3.0 on insert; fractional reorder without touching other rows
+- **InvoiceItem ordering**: `order` column (real) — 1.0, 2.0, 3.0 on insert; fractional reorder without touching other rows
 - **InvoiceItem.id**: UUID
 - **Cascade**: SQLite FK `on delete cascade`
 - **InvoiceRow → Invoice** rename
@@ -67,7 +67,7 @@ export const Invoice = Schema.Struct({
 export const InvoiceItem = Schema.Struct({
   id: Schema.String,
   invoiceId: Schema.String,
-  sortOrder: Schema.Number,
+  order: Schema.Number,
   ...InvoiceItemFields.fields,         // ← spread shared fields
 })
 ```
@@ -131,7 +131,7 @@ create table if not exists Invoice (
 create table if not exists InvoiceItem (
   id text primary key,
   invoiceId text not null references Invoice(id) on delete cascade,
-  sortOrder real not null,
+  "order" real not null,
   description text not null default '',
   quantity text not null default '',
   unitPrice text not null default '',
@@ -140,9 +140,7 @@ create table if not exists InvoiceItem (
 )
 ```
 
-Note: SQLite requires `pragma foreign_keys = on` per connection for cascade to work. Need to verify this is enabled in the DO sqlite context.
-
-it's enabled. change sortOrder to order
+Note: `order` is a reserved word in SQL — quoted as `"order"` in DDL/queries.
 
 ---
 
@@ -158,7 +156,7 @@ it's enabled. change sortOrder to order
 2. Workflow extracts → `saveExtraction(invoiceId, idempotencyKey, extractedFields, invoiceItems[])`:
    - Update Invoice row with extracted field values + `extractedJson` blob
    - Delete existing InvoiceItems for this invoiceId (re-extraction case)
-   - Insert InvoiceItem rows with generated UUIDs and sortOrder 1.0, 2.0, ...
+   - Insert InvoiceItem rows with generated UUIDs and order 1.0, 2.0, ...
    - Set status = 'extracted'
 3. UI reads fields directly from Invoice + joined InvoiceItems
 
