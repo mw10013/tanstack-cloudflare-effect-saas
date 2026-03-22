@@ -80,17 +80,14 @@ The hook returns a `PartySocket` extended with:
 | `onClose` | No | WebSocket closed |
 | `onError` | No | WebSocket error |
 
-## Replacing `router.invalidate()` with Scoped Query Invalidation
+## Invalidation Strategy: Hybrid
 
-### Why
+Two invalidation mechanisms, used for different triggers:
 
-`router.invalidate()` re-runs **all active route loaders** in the tree. Once `useAgent` is lifted to the layout, calling `router.invalidate()` from the layout's `onMessage` handler would re-run loaders for whichever child route is active — members, billing, etc. — even when the broadcast is only about invoices.
+- **User-initiated mutations** (upload, delete, etc.) — keep `router.invalidate()` in `onSuccess` handlers. Existing pattern across 13 call sites. No change.
+- **Broadcast-driven updates** (from the lifted `useAgent` `onMessage` in layout) — use scoped `queryClient.invalidateQueries()` targeting specific query keys. Avoids re-running unrelated loaders when user is on members/billing/etc.
 
-We want broadcast-driven invalidation to be **scoped**: only refetch data that the broadcast actually affects.
-
-`queryClient.invalidateQueries()` is scoped — it only affects queries matching the specified key. But it only works with data managed by React Query (`useQuery`), not with raw loader data (`Route.useLoaderData()`).
-
-This means the invoices route needs to switch from raw loader data to the **`ensureQueryData` + `useQuery` pattern**.
+`queryClient.invalidateQueries()` only works with data managed by React Query (`useQuery`), not raw loader data (`Route.useLoaderData()`). Routes whose data gets invalidated by broadcasts need to switch to the **`ensureQueryData` + `useQuery` pattern**. Right now that's only the invoices route. Other routes keep their current loader + `router.invalidate()` pattern untouched.
 
 ### `ensureQueryData` vs `prefetchQuery`
 
@@ -361,7 +358,7 @@ function RouteComponent() {
 
 Now `queryClient.invalidateQueries({ queryKey: invoicesQueryKey(organizationId) })` from the layout's broadcast handler will trigger a refetch only when the invoices route is mounted.
 
-Existing `router.invalidate()` calls in mutation `onSuccess` handlers (upload, delete) can stay as-is — they're user-initiated and broad invalidation is acceptable there. Or they can be migrated to scoped invalidation too for consistency, but that's optional.
+Existing `router.invalidate()` calls in mutation `onSuccess` handlers (upload, delete) stay as-is — they're user-initiated and broad invalidation is acceptable there.
 
 ## Sharing useAgent Capabilities with Nested Routes
 
@@ -451,7 +448,7 @@ function RouteComponent() {
 - Remove `useAgent` call
 - Remove activity card UI (sidebar replaces it)
 - Switch from `Route.useLoaderData()` to `useQuery(invoicesQueryKey)` (with `ensureQueryData` in loader)
-- Mutation `onSuccess` handlers: keep `router.invalidate()` or switch to scoped — either works
+- Mutation `onSuccess` handlers: keep `router.invalidate()` (user-initiated, broad invalidation is fine)
 
 **agent.tsx:**
 - Remove `useAgent` call
