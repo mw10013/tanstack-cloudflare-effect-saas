@@ -432,7 +432,7 @@ function RouteComponent() {
             <CardDescription>Live invoice activity for this organization.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-40 rounded-md border">
+            <ScrollArea className="h-24 rounded-md border">
               <div className="flex flex-col gap-3 p-4">
                 {activityMessages.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No activity yet.</p>
@@ -471,6 +471,7 @@ function RouteComponent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              <div className="max-h-52 overflow-auto">
               <Table>
                 <TableHeader>
                     <TableRow>
@@ -482,7 +483,12 @@ function RouteComponent() {
                 </TableHeader>
                 <TableBody>
                   {invoices.map((invoice) => (
-                    <TableRow key={invoice.id}>
+                    <TableRow
+                      key={invoice.id}
+                      data-state={selectedInvoiceId === invoice.id ? "selected" : undefined}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedInvoiceId(invoice.id)}
+                    >
                       <TableCell className="flex items-center gap-2 font-medium">
                         <FileText className="size-4 shrink-0 text-muted-foreground" />
                         <a
@@ -490,6 +496,7 @@ function RouteComponent() {
                           target="_blank"
                           rel="noreferrer"
                           className="truncate hover:underline"
+                          onClick={(e) => e.stopPropagation()}
                         >
                           {invoice.fileName}
                         </a>
@@ -503,35 +510,26 @@ function RouteComponent() {
                         {new Date(invoice.createdAt).toLocaleString()}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedInvoiceId(invoice.id);
-                            }}
-                          >
-                            Inspect
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              deleteMutation.mutate({
-                                invoiceId: invoice.id,
-                                r2ObjectKey: invoice.r2ObjectKey,
-                              });
-                            }}
-                            disabled={deleteMutation.isPending}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMutation.mutate({
+                              invoiceId: invoice.id,
+                              r2ObjectKey: invoice.r2ObjectKey,
+                            });
+                          }}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
 
