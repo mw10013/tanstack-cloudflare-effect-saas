@@ -1,7 +1,5 @@
-import { useAgent } from "agents/react";
-
-import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
+import { createFileRoute } from "@tanstack/react-router";
 
 import {
   Card,
@@ -10,22 +8,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { OrganizationAgent } from "@/organization-agent";
+import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 
 export const Route = createFileRoute("/app/$organizationId/agent")({
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  const { organizationId } = Route.useParams();
-  const [message, setMessage] = React.useState("Connecting to organization agent...");
-  useAgent<OrganizationAgent, { readonly message: string }>({
-    agent: "organization-agent",
-    name: organizationId,
-    onStateUpdate: (state) => {
-      setMessage(state.message);
-    },
-  });
+  const { stub } = useOrganizationAgent();
+  const [message, setMessage] = React.useState("Loading...");
+
+  React.useEffect(() => {
+    void stub.getTestMessage().then(setMessage);
+  }, [stub]);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -40,7 +35,7 @@ function RouteComponent() {
         <CardHeader>
           <CardTitle>Test Message</CardTitle>
           <CardDescription>
-            State synchronized from the organization agent instance.
+            Message fetched via RPC stub from the organization agent instance.
           </CardDescription>
         </CardHeader>
         <CardContent>
