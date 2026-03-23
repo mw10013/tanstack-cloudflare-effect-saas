@@ -330,7 +330,7 @@ function RouteComponent() {
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
         <p className="text-sm text-muted-foreground">
-          Upload invoices and inspect extracted JSON output.
+          Manage, upload, and review your invoices.
         </p>
       </header>
 
@@ -340,7 +340,7 @@ function RouteComponent() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <CardTitle>No invoices yet</CardTitle>
-                <CardDescription>Upload a PDF or image invoice to get started.</CardDescription>
+                <CardDescription>Upload or create an invoice to get started.</CardDescription>
               </div>
               <form
                 onSubmit={(e) => {
