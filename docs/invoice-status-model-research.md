@@ -181,7 +181,7 @@ Need logic to ensure deleting invoice that is in ready.
 | `src/routes/app.$organizationId.invoices.tsx` | `deleteInvoice` server fn: remove R2 delete, remove queue message, call `stub.softDeleteInvoice(invoiceId)` directly. `deleteInvoiceSchema`: remove `r2ObjectKey` field (only `invoiceId` needed). Trash icon: only render when `status === "ready" \|\| status === "error"`. |
 | `src/organization-agent.ts`                   | Add `@callable() softDeleteInvoice(invoiceId)` method. `onInvoiceDelete`: keep for now (R2 delete notifications from outside the app could still arrive) or remove — see open question.                                                                                       |
 | `src/lib/OrganizationRepository.ts`           | Add `softDeleteInvoice`: `update Invoice set status = 'deleted' where id = ? and status in ('ready', 'error')`. Replace or keep `deleteInvoice` — see open question.                                                                                                          |
-| `src/lib/OrganizationRepository.ts`           | `getInvoices`: add `where status != 'deleted'` filter.                                                                                                                                                                                                                        |
+| `src/lib/OrganizationRepository.ts`           | `getInvoices`: no filter needed — deleted invoices displayed in UI.                                                                                                                                                                                                            |
 | `src/worker.ts`                               | `processInvoiceDelete`: becomes dead code since the app no longer triggers R2 deletions. Keep for safety (external R2 deletes) or remove.                                                                                                                                     |
 
 ### Open Questions
@@ -222,9 +222,35 @@ The `Invoice` table has these `not null` columns without defaults that are uploa
 | `idempotencyKey` | `text not null unique` | No R2 idempotency. Generate a UUID.     |
 | `r2ObjectKey`    | `text not null`        | No R2 object. Use `''` empty string.    |
 
-<!-- REVIEW: Alternative: make these columns nullable or add defaults in the DDL. But that touches the upload flow too and risks breaking existing data. Using empty strings / generated values is simpler and non-breaking. Preference? -->
+Per annotation: string columns default to `''`, `r2ActionTime` nullable, `idempotencyKey` nullable (unique constraint allows multiple nulls in SQLite).
 
-For string types default to empty string. r2ActionTime should be nullable. since idempotencyKey must be unique, let's make that nullable. understand this would require refactoring code.
+#### DDL Changes (organization-agent.ts constructor)
+
+```sql
+fileName text not null default '',
+contentType text not null default '',
+r2ActionTime integer,                    -- was: integer not null
+idempotencyKey text unique,              -- was: text not null unique
+r2ObjectKey text not null default '',
+```
+
+#### Schema Changes (OrganizationDomain.ts)
+
+```typescript
+// Invoice schema — these become nullable
+r2ActionTime: Schema.NullOr(Schema.Number),
+idempotencyKey: Schema.NullOr(Schema.String),
+```
+
+#### Code Refactoring Required
+
+| Location | Change |
+|---|---|
+| `OrganizationDomain.ts` | `r2ActionTime: Schema.NullOr(Schema.Number)`, `idempotencyKey: Schema.NullOr(Schema.String)` |
+| `OrganizationRepository.ts` `upsertInvoice` | Input type: `r2ActionTime: number` (still required for upload path), `idempotencyKey: string` (still required for upload path). No change — callers always provide values. |
+| `OrganizationRepository.ts` `saveExtraction` | `where idempotencyKey = ?` — still works since upload invoices always have non-null idempotencyKey. |
+| `organization-agent.ts` `onInvoiceUpload` | `existing.value.r2ActionTime` comparison — needs null check: `Option.isSome(existing) && existing.value.r2ActionTime !== null && r2ActionTime < existing.value.r2ActionTime`. |
+| `organization-agent.ts` `onInvoiceUpload` | `existing.value.idempotencyKey === upload.idempotencyKey` — needs null check: `existing.value.idempotencyKey !== null && existing.value.idempotencyKey === upload.idempotencyKey`. |
 
 ### Status Lifecycle
 
@@ -294,28 +320,26 @@ createInvoice() {
 ```typescript
 const createInvoice = Effect.fn("OrganizationRepository.createInvoice")(
   function* (invoiceId: string) {
-    const now = Date.now();
     yield* sql`
-      insert into Invoice (
-        id, name, fileName, contentType, createdAt, r2ActionTime,
-        idempotencyKey, r2ObjectKey, status,
-        extractedJson, error
-      ) values (
-        ${invoiceId}, ${"Untitled Invoice"}, ${""}, ${""},
-        ${now}, ${now}, ${crypto.randomUUID()},
-        ${""}, ${"ready"},
-        ${null}, ${null}
-      )
+      insert into Invoice (id, name, createdAt, status)
+      values (${invoiceId}, ${"Untitled Invoice"}, ${Date.now()}, ${"ready"})
     `;
   },
 );
 ```
 
-I don't think we need to specify r2ActionTime, idempotencyKey, and r2ObjectKey - they can default.
+With DDL defaults, only `id`, `name`, `createdAt`, and `status` need explicit values. `fileName`, `contentType`, `r2ObjectKey` default to `''`. `r2ActionTime`, `idempotencyKey` default to `null`.
 
-<!-- REVIEW: Default name "Untitled Invoice" vs empty string? "Untitled Invoice" gives the table row a readable label. Empty string falls back to `invoice.name || invoice.fileName` which would show nothing for manual invoices. -->
+#### Naming: "Untitled" vs "Unnamed"
 
-Untitled vs Unnamed? trade-offs, recommendation. in the database, we use name, but should that be renamed to title? I don't know.
+| Option | Pros | Cons |
+|---|---|---|
+| `Untitled Invoice` | Standard in document apps (Google Docs, Notion, Figma). Implies "hasn't been given a title yet" — invites the user to name it. | Slightly longer. |
+| `Unnamed Invoice` | Shorter. Common in file managers. | Implies the thing lacks a name, not that the user should provide one. Subtly more passive. |
+
+**Recommendation:** `Untitled Invoice` — it's the convention users expect in document-creation UIs. It signals "you should name this" rather than "this has no name."
+
+**Re: rename `name` → `title` in DB?** Not recommended now. `name` is used across DDL, repo, domain schema, agent, and UI. Renaming is pure churn with no functional benefit — both are clear. If we later add a formal document model with title/subtitle/description, we can rename then.
 
 ### UI: "New Invoice" Button
 
@@ -359,28 +383,43 @@ When a manual invoice is selected (status `ready`, no `extractedJson`, empty `fi
 
 ### `getInvoices` Filter
 
-**Bug found during research:** `repo.getInvoices()` (OrganizationRepository.ts:31) currently fetches all invoices without filtering deleted ones:
-
-```sql
-select * from Invoice order by createdAt desc
-```
-
-Should be:
-
-```sql
-select * from Invoice where status != 'deleted' order by createdAt desc
-```
-
-This was listed in the soft-delete changes table but not yet implemented. Should be fixed as part of this work.
-
-We want to display deleted invoices. Update research accordingly
+Per annotation: we want to display deleted invoices. The current `getInvoices` query (`select * from Invoice order by createdAt desc`) is correct — no filter needed. Deleted invoices are already shown in the table with status badge and the trash button is gated on `ready`/`error`, so users can't re-delete. The detail pane shows "This invoice has been deleted." for `status === "deleted"` (line 504–505 of invoices.tsx). No changes needed here.
 
 ### `viewUrl` for Manual Invoices
 
 The `getInvoices` server fn generates `viewUrl` for each invoice using R2 signed URLs or local API path. Manual invoices have empty `r2ObjectKey` — the signed URL generation will fail or produce a broken URL.
 
-Fix: skip `viewUrl` generation when `r2ObjectKey` is empty. The `FileText` icon link in the table already conditionally renders on `invoice.viewUrl`, so manual invoices will just not show the file link. This is correct — there's no file to view.
+**Fix:** Skip `viewUrl` generation when `r2ObjectKey` is empty. The `FileText` icon link in the table already conditionally renders on `invoice.viewUrl`, so manual invoices won't show the file link. Correct — there's no file to view.
 
-<!-- REVIEW: The viewUrl generation iterates all invoices with Promise.all and signs URLs. For manual invoices with empty r2ObjectKey, we should set viewUrl to undefined/null. Two approaches: (1) filter in the map — `if (!invoice.r2ObjectKey) return { ...invoice, viewUrl: undefined }`, (2) always set viewUrl and let the broken URL fail silently. Approach 1 is cleaner. -->
+Per annotation: refactor from `Promise.all` to Effect. The current code wraps `Promise.all` inside `Effect.tryPromise` (invoices.tsx:115–135). Replace with `Effect.all` + `Effect.tryPromise` per invoice, which is idiomatic Effect v4 and naturally handles the `r2ObjectKey` filter:
 
-hmmm, we should probably be using effect v4 instead of Promise.all?
+```typescript
+// local env — simple map, skip empty r2ObjectKey
+return invoices.map((invoice) => ({
+  ...invoice,
+  viewUrl: invoice.r2ObjectKey
+    ? `/api/org/${organizationId}/invoice/${encodeURIComponent(invoice.id)}`
+    : undefined,
+}));
+
+// prod env — Effect.all replaces Promise.all
+return yield* Effect.all(
+  invoices.map((invoice) =>
+    invoice.r2ObjectKey
+      ? Effect.tryPromise(async () => {
+          const signed = await client.sign(
+            new Request(
+              `https://${cfAccountId}.r2.cloudflarestorage.com/${r2BucketName}/${invoice.r2ObjectKey}?X-Amz-Expires=900`,
+              { method: "GET" },
+            ),
+            { aws: { signQuery: true } },
+          );
+          return { ...invoice, viewUrl: signed.url as string | undefined };
+        })
+      : Effect.succeed({ ...invoice, viewUrl: undefined as string | undefined }),
+  ),
+  { concurrency: "unbounded" },
+);
+```
+
+This eliminates the `Effect.tryPromise` wrapping `Promise.all` anti-pattern and handles the `r2ObjectKey` guard cleanly.
