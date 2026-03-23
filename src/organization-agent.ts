@@ -187,24 +187,11 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
-  onInvoiceDelete(input: {
-    invoiceId: string;
-    r2ActionTime: string;
-    r2ObjectKey: string;
-  }) {
+  softDeleteInvoice(invoiceId: string) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
-        const r2ActionTime = Date.parse(input.r2ActionTime);
-        if (!Number.isFinite(r2ActionTime)) {
-          return yield* new OrganizationAgentError({
-            message: `Invalid r2ActionTime: ${input.r2ActionTime}`,
-          });
-        }
         const repo = yield* OrganizationRepository;
-        const deleted = yield* repo.deleteInvoice(
-          input.invoiceId,
-          r2ActionTime,
-        );
+        const deleted = yield* repo.softDeleteInvoice(invoiceId);
         if (deleted.length === 0) return;
         yield* broadcastActivity(this, {
           level: "info",

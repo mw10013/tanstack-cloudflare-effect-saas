@@ -61,7 +61,6 @@ const uploadFormSchema = Schema.Struct({
 
 const deleteInvoiceSchema = Schema.Struct({
   invoiceId: Schema.NonEmptyString,
-  r2ObjectKey: Schema.NonEmptyString,
 });
 
 const getInvoiceItemsSchema = Schema.Struct({
@@ -194,29 +193,20 @@ const deleteInvoice = createServerFn({ method: "POST" })
       Effect.gen(function* () {
         const request = yield* AppRequest;
         const auth = yield* Auth;
-        yield* auth.getSession(request.headers).pipe(
+        const validSession = yield* auth.getSession(request.headers).pipe(
           Effect.flatMap(Effect.fromOption),
           Effect.filterOrFail(
             (s) => !!s.session.activeOrganizationId,
             () => new Cause.NoSuchElementError(),
           ),
         );
-        const environment = yield* Config.nonEmptyString("ENVIRONMENT");
-        const env = yield* CloudflareEnv;
-        const r2 = yield* R2;
-        yield* r2.delete(data.r2ObjectKey);
-        if (environment === "local") {
-          const queue = yield* Effect.fromNullishOr(env.INVOICE_INGEST_Q);
-          yield* Effect.tryPromise(() =>
-            queue.send({
-              account: "local",
-              action: "DeleteObject",
-              bucket: "tcei-r2-local",
-              object: { key: data.r2ObjectKey },
-              eventTime: new Date().toISOString(),
-            }),
-          );
-        }
+        const organizationId = yield* Effect.fromNullishOr(
+          validSession.session.activeOrganizationId,
+        );
+        const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+        const id = ORGANIZATION_AGENT.idFromName(organizationId);
+        const stub = ORGANIZATION_AGENT.get(id);
+        yield* Effect.tryPromise(() => stub.softDeleteInvoice(data.invoiceId));
         return { success: true, invoiceId: data.invoiceId };
       }),
     ),
@@ -305,7 +295,7 @@ function RouteComponent() {
 
   const deleteServerFn = useServerFn(deleteInvoice);
   const deleteMutation = useMutation({
-    mutationFn: (input: { invoiceId: string; r2ObjectKey: string }) =>
+    mutationFn: (input: { invoiceId: string }) =>
       deleteServerFn({ data: input }),
     onSuccess: () => {
       void router.invalidate();
@@ -474,20 +464,19 @@ function RouteComponent() {
                         {new Date(invoice.createdAt).toLocaleString()}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMutation.mutate({
-                              invoiceId: invoice.id,
-                              r2ObjectKey: invoice.r2ObjectKey,
-                            });
-                          }}
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
+                        {(invoice.status === "ready" || invoice.status === "error") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteMutation.mutate({ invoiceId: invoice.id });
+                            }}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -501,17 +490,19 @@ function RouteComponent() {
             <CardHeader>
               <CardTitle>Invoice</CardTitle>
               <CardDescription>
-{selectedInvoice
-                  ? selectedInvoice.name
-                    ? `${selectedInvoice.name} (${selectedInvoice.fileName})`
-                    : `(${selectedInvoice.fileName})`
-                  : "Select an invoice to view details."}
+{(() => {
+                  if (!selectedInvoice) return "Select an invoice to view details."
+                  if (selectedInvoice.name) return `${selectedInvoice.name} (${selectedInvoice.fileName})`
+                  return `(${selectedInvoice.fileName})`
+                })()}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {(() => {
                 if (selectedInvoice === null)
                   return <p className="text-sm text-muted-foreground">No invoice selected.</p>;
+                if (selectedInvoice.status === "deleted")
+                  return <p className="text-sm text-muted-foreground">This invoice has been deleted.</p>;
                 if (selectedInvoice.status === "error")
                   return (
                     <Alert variant="destructive">

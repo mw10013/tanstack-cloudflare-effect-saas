@@ -197,8 +197,4 @@ Defer. No need to mention.
 2. ~~**Replace** status values: `["uploaded", "extracting", "extracted", "error"]` → `["extracting", "ready", "error", "deleted"]`~~ **DONE**
 3. ~~**Upload flow**: insert with `extracting` (remove `uploaded` intermediate step)~~ **DONE**
 4. **Manual create flow**: insert with `ready` — deferred
-5. **Soft delete**: status update to `deleted`, no R2 deletion, trash icon gated on `ready`/`error`
-
-
-
-We don't want to filter out deleted invoices in the UI for now.
+5. ~~**Soft delete**: status update to `deleted`, no R2 deletion, trash icon gated on `ready`/`error`~~ **DONE**

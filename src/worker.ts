@@ -149,12 +149,6 @@ const r2ObjectCustomMetadataSchema = Schema.Struct({
   contentType: Schema.optionalKey(Schema.NonEmptyString),
 });
 
-const parseInvoiceObjectKey = (key: string) => {
-  const [organizationId, collection, invoiceId] = key.split("/");
-  if (!organizationId || collection !== "invoices" || !invoiceId) return;
-  return { organizationId, invoiceId };
-};
-
 // Queue handlers create stubs directly. Unlike routeAgentRequest(), that path
 // does not populate the Agents SDK instance name, so name-dependent features
 // like workflows can throw until we set it explicitly. See
@@ -168,26 +162,6 @@ const getOrganizationAgentStub = Effect.fn("getOrganizationAgentStub")(
     return stub;
   },
 );
-
-const processInvoiceDelete = Effect.fn("processInvoiceDelete")(function* (
-  notification: typeof r2QueueMessageSchema.Type,
-) {
-  const parsed = parseInvoiceObjectKey(notification.object.key);
-  if (!parsed) {
-    yield* Effect.logError("Invalid invoice delete object key", {
-      key: notification.object.key,
-    });
-    return;
-  }
-  const stub = yield* getOrganizationAgentStub(parsed.organizationId);
-  yield* Effect.tryPromise(() =>
-    stub.onInvoiceDelete({
-      invoiceId: parsed.invoiceId,
-      r2ActionTime: notification.eventTime,
-      r2ObjectKey: notification.object.key,
-    }),
-  );
-});
 
 const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
   notification: typeof r2QueueMessageSchema.Type,
@@ -222,14 +196,8 @@ const processQueueMessage = Effect.fn("processQueueMessage")(function* (
 ) {
   const notification =
     yield* Schema.decodeUnknownEffect(r2QueueMessageSchema)(messageBody);
-  if (
-    notification.action !== "PutObject" &&
-    notification.action !== "DeleteObject"
-  )
-    return;
-  yield* notification.action === "DeleteObject"
-    ? processInvoiceDelete(notification)
-    : processInvoiceUpload(notification);
+  if (notification.action !== "PutObject") return;
+  yield* processInvoiceUpload(notification);
 });
 
 export default {
