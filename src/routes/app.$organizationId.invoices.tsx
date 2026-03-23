@@ -334,60 +334,104 @@ function RouteComponent() {
         </p>
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="size-5" />
-            Upload Invoice
-          </CardTitle>
-          <CardDescription>
-            Select a PDF or image invoice up to 10MB.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              uploadMutation.mutate(formData);
-            }}
-            className="flex items-end gap-3"
-          >
-            <div className="flex-1">
-              <Input
-                ref={fileInputRef}
-                name="file"
-                type="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
-                disabled={!isHydrated || uploadMutation.isPending}
-              />
+      {invoices.length === 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <CardTitle>No invoices yet</CardTitle>
+                <CardDescription>Upload a PDF or image invoice to get started.</CardDescription>
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  uploadMutation.mutate(formData);
+                }}
+                className="flex items-center gap-2"
+              >
+                <Input
+                  ref={fileInputRef}
+                  name="file"
+                  type="file"
+                  accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+                  disabled={!isHydrated || uploadMutation.isPending}
+                  className="w-auto"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!isHydrated || uploadMutation.isPending}
+                >
+                  {uploadMutation.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Upload className="size-4" />
+                  )}
+                  {uploadMutation.isPending ? "Uploading..." : "Upload"}
+                </Button>
+              </form>
             </div>
-            <Button
-              type="submit"
-              disabled={!isHydrated || uploadMutation.isPending}
-            >
-              {uploadMutation.isPending ? "Uploading..." : "Upload"}
-            </Button>
-          </form>
-          {uploadMutation.error && (
-            <Alert variant="destructive" className="mt-3">
-              <AlertCircle className="size-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>
-                {uploadMutation.error.message}
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+            {uploadMutation.error && (
+              <Alert variant="destructive" className="mt-2">
+                <AlertCircle className="size-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>
+                  {uploadMutation.error.message}
+                </AlertDescription>
+              </Alert>
+            )}
+          </CardHeader>
+        </Card>
+      )}
 
       {invoices.length > 0 && (
         <>
           <Card>
             <CardHeader>
-              <CardTitle>
-                {invoices.length} Invoice{invoices.length !== 1 && "s"}
-              </CardTitle>
+              <div className="flex items-center justify-between gap-4">
+                <CardTitle>
+                  {invoices.length} Invoice{invoices.length !== 1 && "s"}
+                </CardTitle>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.currentTarget);
+                    uploadMutation.mutate(formData);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Input
+                    ref={fileInputRef}
+                    name="file"
+                    type="file"
+                    accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+                    disabled={!isHydrated || uploadMutation.isPending}
+                    className="w-auto"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={!isHydrated || uploadMutation.isPending}
+                  >
+                    {uploadMutation.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Upload className="size-4" />
+                    )}
+                    {uploadMutation.isPending ? "Uploading..." : "Upload"}
+                  </Button>
+                </form>
+              </div>
+              {uploadMutation.error && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>
+                    {uploadMutation.error.message}
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardHeader>
             <CardContent>
               <div className="max-h-52 overflow-auto">
