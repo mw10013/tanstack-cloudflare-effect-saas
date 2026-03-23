@@ -1,6 +1,13 @@
 import * as Schema from "effect/Schema";
 
-import { InvoiceStatus } from "./Domain";
+export const InvoiceStatusValues = [
+  "uploaded",
+  "extracting",
+  "extracted",
+  "error",
+] as const;
+export const InvoiceStatus = Schema.Literals(InvoiceStatusValues);
+export type InvoiceStatus = typeof InvoiceStatus.Type;
 
 export const InvoiceExtractionFields = Schema.Struct({
   invoiceConfidence: Schema.Number,

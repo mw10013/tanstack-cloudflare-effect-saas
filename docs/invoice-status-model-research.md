@@ -1,39 +1,6 @@
 # Invoice Status Model Research
 
-## Question 1: Can InvoiceStatus Move from Domain.ts to OrganizationDomain.ts?
-
-### Current Location
-
-`InvoiceStatus` and `InvoiceStatusValues` defined in `src/lib/Domain.ts:77-84`.
-
-### Why It's in Domain.ts
-
-Domain.ts is the central schema module — User, Organization, Subscription, Plan, all roles, all statuses. InvoiceStatus follows the same pattern as `InvitationStatus` and `SubscriptionStatus`: a status enum that lives alongside other enums in the shared module.
-
-### Who Imports InvoiceStatus?
-
-| Consumer | Import Style |
-|---|---|
-| `src/lib/OrganizationDomain.ts` | Named import: `InvoiceStatus` |
-
-That's it. Only OrganizationDomain.ts imports `InvoiceStatus`. No route files, no other lib files import it directly.
-
-By contrast, `InvitationStatus` is used in `invitations.tsx`, `SubscriptionStatus` is used in `Repository.ts` and `Stripe.ts` — those genuinely need to be in the shared module.
-
-### Recommendation: Move to OrganizationDomain.ts
-
-**InvoiceStatus is organization-agent-scoped.** The Invoice schema, InvoiceExtractionFields, InvoiceItemFields, and OrganizationAgentError all live in OrganizationDomain.ts. InvoiceStatus belongs with them. It was likely placed in Domain.ts by convention (all statuses together), not necessity.
-
-**Impact of moving:**
-- Move `InvoiceStatusValues` and `InvoiceStatus` to OrganizationDomain.ts
-- Remove the import of `InvoiceStatus` from OrganizationDomain.ts (it's now local)
-- No other files need changes
-
-<!-- REVIEW: Agree with moving InvoiceStatus to OrganizationDomain.ts? -->
-
----
-
-## Question 2: Status Model Redesign
+## Status Model Redesign
 
 ### Current Statuses
 
@@ -183,7 +150,7 @@ Proposed:
 
 ## Summary of Proposed Changes
 
-1. **Move** `InvoiceStatus` + `InvoiceStatusValues` from Domain.ts → OrganizationDomain.ts
+1. ~~**Move** `InvoiceStatus` + `InvoiceStatusValues` from Domain.ts → OrganizationDomain.ts~~ **DONE**
 2. **Replace** status values: `["uploaded", "extracting", "extracted", "error"]` → `["extracting", "ready", "error", "deleted"]`
 3. **Upload flow**: insert with `extracting` (remove `uploaded` intermediate step)
 4. **Manual create flow**: insert with `ready`
@@ -193,8 +160,8 @@ Proposed:
 
 | File | Change |
 |---|---|
-| `src/lib/Domain.ts` | Remove InvoiceStatus, InvoiceStatusValues |
-| `src/lib/OrganizationDomain.ts` | Add InvoiceStatus, InvoiceStatusValues with new values |
+| ~~`src/lib/Domain.ts`~~ | ~~Remove InvoiceStatus, InvoiceStatusValues~~ **DONE** |
+| ~~`src/lib/OrganizationDomain.ts`~~ | ~~Add InvoiceStatus, InvoiceStatusValues~~ **DONE** (values still need updating) |
 | `src/lib/OrganizationRepository.ts` | `upsertInvoice`: status param instead of hardcoded "uploaded". Remove `setExtracting` (or repurpose). `saveExtraction`: set "ready" instead of "extracted". |
 | `src/organization-agent.ts` | `onInvoiceUpload`: insert with "extracting", remove separate setExtracting call |
 | `src/routes/app.$organizationId.invoices.tsx` | Badge logic: "ready" instead of "extracted". Detail view condition. |
