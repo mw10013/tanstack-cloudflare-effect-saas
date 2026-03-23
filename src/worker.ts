@@ -37,8 +37,9 @@ const makeEnvLayer = (env: Env) =>
   );
 
 /**
- * Runs an HTTP Effect within the app layer, converting failures to throwable
- * values compatible with TanStack Start's server function error serialization.
+ * Runs an Effect within the full app layer for HTTP request handlers (fetch,
+ * server functions), converting failures to throwable values compatible with
+ * TanStack Start's server function error serialization.
  *
  * Uses `runPromiseExit` instead of `runPromise` to inspect the `Exit` and
  * ensure the thrown value is always an `Error` instance (which TanStack Start
@@ -66,7 +67,7 @@ const makeEnvLayer = (env: Env) =>
  * server context that would otherwise be lost after `ShallowErrorPlugin`
  * strips everything except `.message`.
  */
-const makeHttpRunEffect = (env: Env, request: Request) => {
+const makeRunEffect = (env: Env, request: Request) => {
   const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
   const kvLayer = Layer.provideMerge(KV.layer, envLayer);
@@ -126,7 +127,7 @@ const makeHttpRunEffect = (env: Env, request: Request) => {
  */
 export interface ServerContext {
   env: Env;
-  runEffect: ReturnType<typeof makeHttpRunEffect>;
+  runEffect: ReturnType<typeof makeRunEffect>;
 }
 
 declare module "@tanstack/react-start" {
@@ -214,7 +215,7 @@ export default {
         return new Response("Rate limit exceeded", { status: 429 });
       }
     }
-    const runEffect = makeHttpRunEffect(env, request);
+    const runEffect = makeRunEffect(env, request);
     const routed = await routeAgentRequest(request, env, {
       onBeforeConnect: async (req) => {
         const session = await runEffect(
