@@ -457,7 +457,11 @@ function RouteComponent() {
             <CardHeader>
               <CardTitle>Invoice</CardTitle>
               <CardDescription>
-                {selectedInvoice?.fileName ?? "Select an invoice to view details."}
+{selectedInvoice
+                  ? selectedInvoice.name
+                    ? `${selectedInvoice.name} (${selectedInvoice.fileName})`
+                    : `(${selectedInvoice.fileName})`
+                  : "Select an invoice to view details."}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -477,7 +481,7 @@ function RouteComponent() {
                 if (selectedInvoice.status !== "extracted")
                   return <p className="text-sm text-muted-foreground">Extraction in progress.</p>;
                 return (
-                  <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
                     <div className="flex flex-col gap-5">
                       <div className="flex items-start justify-between gap-4">
                         <div>
