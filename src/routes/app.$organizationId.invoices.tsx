@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Auth } from "@/lib/Auth";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
+import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 import { R2 } from "@/lib/R2";
 import { Request as AppRequest } from "@/lib/Request";
 
@@ -57,10 +58,6 @@ const invoiceFileSchema = Schema.File.check(Schema.isMinSize(1))
 
 const uploadFormSchema = Schema.Struct({
   file: invoiceFileSchema,
-});
-
-const deleteInvoiceSchema = Schema.Struct({
-  invoiceId: Schema.NonEmptyString,
 });
 
 const getInvoiceItemsSchema = Schema.Struct({
@@ -191,32 +188,6 @@ const uploadInvoice = createServerFn({ method: "POST" })
     ),
   );
 
-const deleteInvoice = createServerFn({ method: "POST" })
-  .inputValidator(Schema.toStandardSchemaV1(deleteInvoiceSchema))
-  .handler(({ context: { runEffect }, data }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const request = yield* AppRequest;
-        const auth = yield* Auth;
-        const validSession = yield* auth.getSession(request.headers).pipe(
-          Effect.flatMap(Effect.fromOption),
-          Effect.filterOrFail(
-            (s) => !!s.session.activeOrganizationId,
-            () => new Cause.NoSuchElementError(),
-          ),
-        );
-        const organizationId = yield* Effect.fromNullishOr(
-          validSession.session.activeOrganizationId,
-        );
-        const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
-        const id = ORGANIZATION_AGENT.idFromName(organizationId);
-        const stub = ORGANIZATION_AGENT.get(id);
-        yield* Effect.tryPromise(() => stub.softDeleteInvoice(data.invoiceId));
-        return { success: true, invoiceId: data.invoiceId };
-      }),
-    ),
-  );
-
 const createInvoice = createServerFn({ method: "POST" }).handler(
   ({ context: { runEffect } }) =>
     runEffect(
@@ -333,13 +304,10 @@ function RouteComponent() {
     },
   });
 
-  const deleteServerFn = useServerFn(deleteInvoice);
+  const { stub } = useOrganizationAgent();
   const deleteMutation = useMutation({
-    mutationFn: (input: { invoiceId: string }) =>
-      deleteServerFn({ data: input }),
-    onSuccess: () => {
-      void router.invalidate();
-    },
+    mutationFn: ({ invoiceId }: { invoiceId: string }) =>
+      stub.softDeleteInvoice(invoiceId),
   });
 
   const getInvoiceItemsFn = useServerFn(getInvoiceItems);
