@@ -1,11 +1,12 @@
 import { Agent, callable, getCurrentAgent } from "agents";
 import type { Connection, ConnectionContext } from "agents";
-import { Effect, Layer, Option } from "effect";
+import { Config, ConfigProvider, Effect, Layer, Option, ServiceMap } from "effect";
 import * as Schema from "effect/Schema";
 import { SqliteClient } from "@effect/sql-sqlite-do";
 
 import type { ActivityEnvelope, WorkflowProgress } from "@/lib/Activity";
 import { WorkflowProgressSchema } from "@/lib/Activity";
+import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { makeLoggerLayer } from "@/lib/LoggerLayer";
 import type { InvoiceExtractionFields, InvoiceItemFields } from "@/lib/OrganizationDomain";
 import {
@@ -13,6 +14,17 @@ import {
   activeWorkflowStatuses,
 } from "@/lib/OrganizationDomain";
 import { OrganizationRepository } from "@/lib/OrganizationRepository";
+import { R2 } from "@/lib/R2";
+
+const invoiceMimeTypes = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+] as const;
+
+const MAX_BASE64_SIZE = Math.ceil(10_000_000 * 4 / 3) + 4;
 
 const makeRunEffect = (ctx: DurableObjectState, env: Env) => {
   const sqliteLayer = SqliteClient.layer({ db: ctx.storage.sql });
@@ -20,7 +32,13 @@ const makeRunEffect = (ctx: DurableObjectState, env: Env) => {
     OrganizationRepository.layer,
     sqliteLayer,
   );
-  const layer = Layer.merge(repoLayer, makeLoggerLayer(env));
+  const envLayer = Layer.succeedServices(
+    ServiceMap.make(CloudflareEnv, env).pipe(
+      ServiceMap.add(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env)),
+    ),
+  );
+  const r2Layer = Layer.provideMerge(R2.layer, envLayer);
+  const layer = Layer.mergeAll(repoLayer, r2Layer, makeLoggerLayer(env));
   return <A, E>(
     effect: Effect.Effect<A, E, Layer.Success<typeof layer>>,
   ) => Effect.runPromise(Effect.provide(effect, layer));
@@ -220,6 +238,50 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           level: "info",
           text: "Invoice created",
         });
+        return { invoiceId };
+      }),
+    );
+  }
+
+  @callable()
+  uploadInvoice(input: { fileName: string; contentType: string; base64: string }) {
+    return this.runEffect(
+      Effect.gen({ self: this }, function* () {
+        yield* getConnectionIdentity();
+        yield* Effect.logInfo("uploadInvoice", { agentName: self.name });
+        if (input.base64.length > MAX_BASE64_SIZE)
+          return yield* new OrganizationAgentError({ message: "File too large" });
+        if (!invoiceMimeTypes.includes(input.contentType as (typeof invoiceMimeTypes)[number]))
+          return yield* new OrganizationAgentError({ message: "Invalid file type" });
+        const invoiceId = crypto.randomUUID();
+        const idempotencyKey = crypto.randomUUID();
+        const key = `${self.name}/invoices/${invoiceId}`;
+        const bytes = Uint8Array.from(atob(input.base64), (c) => c.codePointAt(0) ?? 0);
+        const r2 = yield* R2;
+        yield* r2.put(key, bytes, {
+          httpMetadata: { contentType: input.contentType },
+          customMetadata: {
+            organizationId: self.name,
+            invoiceId,
+            idempotencyKey,
+            fileName: input.fileName,
+            contentType: input.contentType,
+          },
+        });
+        const environment = yield* Config.nonEmptyString("ENVIRONMENT");
+        if (environment === "local") {
+          const env = yield* CloudflareEnv;
+          const queue = yield* Effect.fromNullishOr(env.INVOICE_INGEST_Q);
+          yield* Effect.tryPromise(() =>
+            queue.send({
+              account: "local",
+              action: "PutObject",
+              bucket: "tcei-r2-local",
+              object: { key, size: bytes.byteLength, eTag: "local" },
+              eventTime: new Date().toISOString(),
+            }),
+          );
+        }
         return { invoiceId };
       }),
     );

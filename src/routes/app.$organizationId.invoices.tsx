@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createFileRoute,
   useHydrated,
-  useRouter,
 } from "@tanstack/react-router";
 import { createServerFn, useServerFn } from "@tanstack/react-start";
 import { Cause, Config, Effect, Redacted } from "effect";
@@ -33,31 +32,10 @@ import {
 import { Auth } from "@/lib/Auth";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
-import { R2 } from "@/lib/R2";
 import { Request as AppRequest } from "@/lib/Request";
 
 const organizationIdSchema = Schema.Struct({
   organizationId: Schema.NonEmptyString,
-});
-
-const invoiceMimeTypes = [
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-] as const;
-
-const invoiceFileSchema = Schema.File.check(Schema.isMinSize(1))
-  .check(Schema.isMaxSize(10_000_000))
-  .check(
-    Schema.makeFilter((file) =>
-      invoiceMimeTypes.includes(file.type as (typeof invoiceMimeTypes)[number]),
-    ),
-  );
-
-const uploadFormSchema = Schema.Struct({
-  file: invoiceFileSchema,
 });
 
 const getInvoiceItemsSchema = Schema.Struct({
@@ -139,55 +117,6 @@ const getInvoices = createServerFn({ method: "GET" })
     ),
   );
 
-const uploadInvoice = createServerFn({ method: "POST" })
-  .inputValidator((data) => {
-    if (!(data instanceof FormData)) throw new TypeError("Expected FormData");
-    return Schema.decodeUnknownSync(uploadFormSchema)(Object.fromEntries(data));
-  })
-  .handler(({ context: { runEffect }, data }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const request = yield* AppRequest;
-        const auth = yield* Auth;
-        const validSession = yield* auth.getSession(request.headers).pipe(
-          Effect.flatMap(Effect.fromOption),
-        );
-        const organizationId = yield* Effect.fromNullishOr(
-          validSession.session.activeOrganizationId,
-        );
-        const environment = yield* Config.nonEmptyString("ENVIRONMENT");
-        const env = yield* CloudflareEnv;
-        const r2 = yield* R2;
-        const invoiceId = crypto.randomUUID();
-        const key = `${organizationId}/invoices/${invoiceId}`;
-        const idempotencyKey = crypto.randomUUID();
-        yield* r2.put(key, data.file, {
-          httpMetadata: { contentType: data.file.type },
-          customMetadata: {
-            organizationId,
-            invoiceId,
-            idempotencyKey,
-            fileName: data.file.name,
-            contentType: data.file.type,
-          },
-        });
-        if (environment === "local") {
-          const queue = yield* Effect.fromNullishOr(env.INVOICE_INGEST_Q);
-          yield* Effect.tryPromise(() =>
-            queue.send({
-              account: "local",
-              action: "PutObject",
-              bucket: "tcei-r2-local",
-              object: { key, size: data.file.size, eTag: "local" },
-              eventTime: new Date().toISOString(),
-            }),
-          );
-        }
-        return { success: true, invoiceId, size: data.file.size };
-      }),
-    ),
-  );
-
 const getInvoiceItems = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(getInvoiceItemsSchema))
   .handler(({ context: { runEffect }, data: { organizationId, invoiceId } }) =>
@@ -222,7 +151,6 @@ export const Route = createFileRoute("/app/$organizationId/invoices")({
 function RouteComponent() {
   const { organizationId } = Route.useParams();
   const isHydrated = useHydrated();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | null>(
@@ -261,16 +189,21 @@ function RouteComponent() {
     }
   }, [invoicesQuery.data, selectedInvoiceId]);
 
-  const uploadServerFn = useServerFn(uploadInvoice);
+  const { stub } = useOrganizationAgent();
   const uploadMutation = useMutation({
-    mutationFn: (formData: FormData) => uploadServerFn({ data: formData }),
-    onSuccess: () => {
+    mutationFn: async (file: File) => {
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(String.fromCodePoint(...new Uint8Array(buffer)));
+      return stub.uploadInvoice({ fileName: file.name, contentType: file.type, base64 });
+    },
+    onSuccess: (result) => {
       if (fileInputRef.current) fileInputRef.current.value = "";
-      void router.invalidate();
+      setSelectedInvoiceId(result.invoiceId);
+      void queryClient.invalidateQueries({
+        queryKey: invoicesQueryKey(organizationId),
+      });
     },
   });
-
-  const { stub } = useOrganizationAgent();
   const createInvoiceMutation = useMutation({
     mutationFn: () => stub.createInvoice(),
     onSuccess: (result) => {
@@ -315,26 +248,22 @@ function RouteComponent() {
                 <CardTitle>No invoices yet</CardTitle>
                 <CardDescription>Upload or create an invoice to get started.</CardDescription>
               </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.currentTarget);
-                  uploadMutation.mutate(formData);
-                }}
-                className="flex items-center gap-2"
-              >
+              <div className="flex items-center gap-2">
                 <Input
                   ref={fileInputRef}
-                  name="file"
                   type="file"
                   accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
                   disabled={!isHydrated || uploadMutation.isPending}
                   className="w-auto"
                 />
                 <Button
-                  type="submit"
+                  type="button"
                   size="sm"
                   disabled={!isHydrated || uploadMutation.isPending}
+                  onClick={() => {
+                    const file = fileInputRef.current?.files?.[0];
+                    if (file) uploadMutation.mutate(file);
+                  }}
                 >
                   {uploadMutation.isPending ? (
                     <Loader2 className="size-4 animate-spin" />
@@ -357,7 +286,7 @@ function RouteComponent() {
                   )}
                   New Invoice
                 </Button>
-              </form>
+              </div>
             </div>
             {uploadMutation.error && (
               <Alert variant="destructive" className="mt-2">
@@ -380,26 +309,22 @@ function RouteComponent() {
                 <CardTitle>
                   {invoices.length} Invoice{invoices.length !== 1 && "s"}
                 </CardTitle>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const formData = new FormData(e.currentTarget);
-                    uploadMutation.mutate(formData);
-                  }}
-                  className="flex items-center gap-2"
-                >
+                <div className="flex items-center gap-2">
                   <Input
                     ref={fileInputRef}
-                    name="file"
                     type="file"
                     accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
                     disabled={!isHydrated || uploadMutation.isPending}
                     className="w-auto"
                   />
                   <Button
-                    type="submit"
+                    type="button"
                     size="sm"
                     disabled={!isHydrated || uploadMutation.isPending}
+                    onClick={() => {
+                      const file = fileInputRef.current?.files?.[0];
+                      if (file) uploadMutation.mutate(file);
+                    }}
                   >
                     {uploadMutation.isPending ? (
                       <Loader2 className="size-4 animate-spin" />
@@ -422,7 +347,7 @@ function RouteComponent() {
                     )}
                     New Invoice
                   </Button>
-                </form>
+                </div>
               </div>
               {uploadMutation.error && (
                 <Alert variant="destructive" className="mt-2">
