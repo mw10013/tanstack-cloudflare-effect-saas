@@ -204,6 +204,24 @@ const processQueueMessage = Effect.fn("processQueueMessage")(function* (
   yield* processInvoiceUpload(notification);
 });
 
+const authorizeAgentRequest = Effect.fn("authorizeAgentRequest")(function* (
+  request: Request,
+) {
+  const auth = yield* Auth;
+  const session = yield* auth.getSession(request.headers);
+  if (Option.isNone(session)) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const agentName = extractAgentInstanceName(request);
+  const activeOrganizationId = session.value.session.activeOrganizationId;
+  if (!activeOrganizationId || agentName !== activeOrganizationId) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  const headers = new Headers(request.headers);
+  headers.set(organizationAgentAuthHeaders.userId, session.value.user.id);
+  return new Request(request, { headers });
+});
+
 export default {
   async fetch(request, env, _ctx) {
     const url = new URL(request.url);
@@ -219,31 +237,9 @@ export default {
       }
     }
     const runEffect = makeRunEffect(env, request);
-    const authorizeAgentRequest = ({
-      request: agentRequest,
-    }: {
-      request: Request;
-    }) =>
-      runEffect(
-        Effect.gen(function* () {
-          const auth = yield* Auth;
-          const session = yield* auth.getSession(agentRequest.headers);
-          if (Option.isNone(session)) {
-            return new Response("Unauthorized", { status: 401 });
-          }
-          const agentName = extractAgentInstanceName(agentRequest);
-          const activeOrganizationId = session.value.session.activeOrganizationId;
-          if (!activeOrganizationId || agentName !== activeOrganizationId) {
-            return new Response("Forbidden", { status: 403 });
-          }
-          const headers = new Headers(agentRequest.headers);
-          headers.set(organizationAgentAuthHeaders.userId, session.value.user.id);
-          return new Request(agentRequest, { headers });
-        }),
-      );
     const routed = await routeAgentRequest(request, env, {
-      onBeforeConnect: (req) => authorizeAgentRequest({ request: req }),
-      onBeforeRequest: (req) => authorizeAgentRequest({ request: req }),
+      onBeforeConnect: (req) => runEffect(authorizeAgentRequest(req)),
+      onBeforeRequest: (req) => runEffect(authorizeAgentRequest(req)),
     });
     if (routed) {
       return routed;
