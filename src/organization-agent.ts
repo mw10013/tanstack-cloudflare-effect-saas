@@ -248,20 +248,19 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
         yield* getConnectionIdentity();
-        yield* Effect.logInfo("uploadInvoice", { agentName: self.name });
         if (input.base64.length > MAX_BASE64_SIZE)
           return yield* new OrganizationAgentError({ message: "File too large" });
         if (!invoiceMimeTypes.includes(input.contentType as (typeof invoiceMimeTypes)[number]))
           return yield* new OrganizationAgentError({ message: "Invalid file type" });
         const invoiceId = crypto.randomUUID();
         const idempotencyKey = crypto.randomUUID();
-        const key = `${self.name}/invoices/${invoiceId}`;
+        const key = `${this.name}/invoices/${invoiceId}`;
         const bytes = Uint8Array.from(atob(input.base64), (c) => c.codePointAt(0) ?? 0);
         const r2 = yield* R2;
         yield* r2.put(key, bytes, {
           httpMetadata: { contentType: input.contentType },
           customMetadata: {
-            organizationId: self.name,
+            organizationId: this.name,
             invoiceId,
             idempotencyKey,
             fileName: input.fileName,
