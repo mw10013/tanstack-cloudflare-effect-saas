@@ -21,7 +21,10 @@ import { R2 } from "@/lib/R2";
 import { Repository } from "@/lib/Repository";
 import { Request as AppRequest } from "@/lib/Request";
 import { Stripe } from "@/lib/Stripe";
-import { extractAgentInstanceName } from "./organization-agent";
+import {
+  extractAgentInstanceName,
+  organizationAgentAuthHeaders,
+} from "./organization-agent";
 
 export { InvoiceExtractionWorkflow } from "./invoice-extraction-workflow";
 export { OrganizationAgent } from "./organization-agent";
@@ -216,39 +219,31 @@ export default {
       }
     }
     const runEffect = makeRunEffect(env, request);
+    const authorizeAgentRequest = ({
+      request: agentRequest,
+    }: {
+      request: Request;
+    }) =>
+      runEffect(
+        Effect.gen(function* () {
+          const auth = yield* Auth;
+          const session = yield* auth.getSession(agentRequest.headers);
+          if (Option.isNone(session)) {
+            return new Response("Unauthorized", { status: 401 });
+          }
+          const agentName = extractAgentInstanceName(agentRequest);
+          const activeOrganizationId = session.value.session.activeOrganizationId;
+          if (!activeOrganizationId || agentName !== activeOrganizationId) {
+            return new Response("Forbidden", { status: 403 });
+          }
+          const headers = new Headers(agentRequest.headers);
+          headers.set(organizationAgentAuthHeaders.userId, session.value.user.id);
+          return new Request(agentRequest, { headers });
+        }),
+      );
     const routed = await routeAgentRequest(request, env, {
-      onBeforeConnect: async (req) => {
-        const session = await runEffect(
-          Effect.gen(function* () {
-            const auth = yield* Auth;
-            return yield* auth.getSession(req.headers);
-          }),
-        );
-        if (Option.isNone(session)) {
-          return new Response("Unauthorized", { status: 401 });
-        }
-        const agentName = extractAgentInstanceName(req);
-        const activeOrganizationId = session.value.session.activeOrganizationId;
-        if (!activeOrganizationId || agentName !== activeOrganizationId) {
-          return new Response("Forbidden", { status: 403 });
-        }
-      },
-      onBeforeRequest: async (req) => {
-        const session = await runEffect(
-          Effect.gen(function* () {
-            const auth = yield* Auth;
-            return yield* auth.getSession(req.headers);
-          }),
-        );
-        if (Option.isNone(session)) {
-          return new Response("Unauthorized", { status: 401 });
-        }
-        const agentName = extractAgentInstanceName(req);
-        const activeOrganizationId = session.value.session.activeOrganizationId;
-        if (!activeOrganizationId || agentName !== activeOrganizationId) {
-          return new Response("Forbidden", { status: 403 });
-        }
-      },
+      onBeforeConnect: (req) => authorizeAgentRequest({ request: req }),
+      onBeforeRequest: (req) => authorizeAgentRequest({ request: req }),
     });
     if (routed) {
       return routed;

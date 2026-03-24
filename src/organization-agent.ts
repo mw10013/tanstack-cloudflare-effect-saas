@@ -1,4 +1,5 @@
-import { Agent, callable } from "agents";
+import { Agent, callable, getCurrentAgent } from "agents";
+import type { Connection, ConnectionContext } from "agents";
 import { Effect, Layer, Option } from "effect";
 import * as Schema from "effect/Schema";
 import { SqliteClient } from "@effect/sql-sqlite-do";
@@ -28,6 +29,14 @@ const makeRunEffect = (ctx: DurableObjectState, env: Env) => {
 export interface OrganizationAgentState {
   readonly message: string;
 }
+
+export interface OrganizationAgentConnectionState {
+  readonly userId: string;
+}
+
+export const organizationAgentAuthHeaders = {
+  userId: "x-organization-agent-user-id",
+} as const;
 
 const broadcastActivity = (
   agent: OrganizationAgent,
@@ -108,17 +117,29 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     this.runEffect = makeRunEffect(ctx, env);
   }
 
+  onConnect(
+    connection: Connection<OrganizationAgentConnectionState>,
+    ctx: ConnectionContext,
+  ) {
+    const userId = ctx.request.headers.get(organizationAgentAuthHeaders.userId);
+    if (!userId) {
+      connection.close(4001, "Unauthorized");
+      return;
+    }
+    connection.setState({ userId });
+  }
+
   @callable()
   getTestMessage() {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
+        const auth = yield* getConnectionIdentity();
         yield* Effect.logDebug("getTestMessage called");
-        return this.state.message;
+        return `${this.state.message} (${auth.userId})`;
       }),
     );
   }
 
-  @callable()
   onInvoiceUpload(upload: {
     invoiceId: string;
     r2ActionTime: string;
@@ -295,3 +316,19 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     );
   }
 }
+
+const getConnectionIdentity = Effect.fn("OrganizationAgent.getConnectionIdentity")(
+  function* () {
+    const { agent, connection } = getCurrentAgent<OrganizationAgent>();
+    const identity = connection?.state as
+      | OrganizationAgentConnectionState
+      | null
+      | undefined;
+    if (!agent || !identity?.userId) {
+      return yield* new OrganizationAgentError({
+        message: "Unauthorized",
+      });
+    }
+    return identity;
+  },
+);
