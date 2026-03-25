@@ -283,7 +283,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
               `;
             }
             return yield* getInvoiceWithItems(input.invoiceId);
-          }).pipe(sql.withTransaction);
+          });
         },
       );
 

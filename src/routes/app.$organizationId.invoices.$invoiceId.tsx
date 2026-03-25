@@ -24,9 +24,9 @@ import {
   getInvoiceWithItems,
   invoiceQueryKey,
   invoicesQueryKey,
-  updateInvoice,
 } from "@/lib/Invoices";
 import type * as OrganizationDomain from "@/lib/OrganizationDomain";
+import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 import { Textarea } from "@/components/ui/textarea";
 
 interface InvoiceFormValues {
@@ -116,8 +116,8 @@ function RouteComponent() {
   const { organizationId, invoiceId } = Route.useParams();
   const isHydrated = useHydrated();
   const queryClient = useQueryClient();
+  const { stub } = useOrganizationAgent();
   const getInvoiceWithItemsFn = useServerFn(getInvoiceWithItems);
-  const updateInvoiceFn = useServerFn(updateInvoice);
   const invoiceQuery = useQuery({
     queryKey: [
       ...invoiceQueryKey(organizationId, invoiceId),
@@ -137,14 +137,26 @@ function RouteComponent() {
 
   const saveMutation = useMutation({
     mutationFn: (data: InvoiceFormValues) =>
-      updateInvoiceFn({
-        data: {
-          organizationId,
-          invoiceId,
-          ...data,
-        },
+      stub.updateInvoice({
+        invoiceId,
+        name: data.name,
+        invoiceNumber: data.invoiceNumber,
+        invoiceDate: data.invoiceDate,
+        dueDate: data.dueDate,
+        currency: data.currency,
+        vendorName: data.vendorName,
+        vendorEmail: data.vendorEmail,
+        vendorAddress: data.vendorAddress,
+        billToName: data.billToName,
+        billToEmail: data.billToEmail,
+        billToAddress: data.billToAddress,
+        subtotal: data.subtotal,
+        tax: data.tax,
+        total: data.total,
+        amountDue: data.amountDue,
+        invoiceItems: data.invoiceItems,
       }),
-    onSuccess: (invoice) => {
+    onSuccess: (invoice: OrganizationDomain.InvoiceWithItems) => {
       queryClient.setQueryData(invoiceQueryKey(organizationId, invoiceId), invoice);
       void queryClient.invalidateQueries({
         queryKey: invoicesQueryKey(organizationId),

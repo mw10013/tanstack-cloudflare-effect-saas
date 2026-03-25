@@ -4,6 +4,7 @@ import {
   Link,
   createFileRoute,
   useHydrated,
+  useNavigate,
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertCircle, Copy, FilePenLine, FileText, Loader2, Plus, Trash2, Upload } from "lucide-react";
@@ -53,6 +54,7 @@ export const Route = createFileRoute("/app/$organizationId/invoices/")({
 function RouteComponent() {
   const { organizationId } = Route.useParams();
   const isHydrated = useHydrated();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | null>(
@@ -112,6 +114,10 @@ function RouteComponent() {
       setSelectedInvoiceId(result.invoiceId);
       void queryClient.invalidateQueries({
         queryKey: invoicesQueryKey(organizationId),
+      });
+      void navigate({
+        to: "/app/$organizationId/invoices/$invoiceId",
+        params: { organizationId, invoiceId: result.invoiceId },
       });
     },
   });

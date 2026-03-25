@@ -129,39 +129,33 @@ export const getInvoiceWithItems = createServerFn({ method: "GET" })
     ),
   );
 
-export const updateInvoice = createServerFn({ method: "POST" })
-  .inputValidator(Schema.toStandardSchemaV1(updateInvoiceSchema))
-  .handler(({ context: { runEffect }, data }) =>
-    runEffect(
-      Effect.gen(function* () {
-        const stub = yield* getOrganizationAgentStub(data.organizationId);
-        const updateInvoiceStub = stub as typeof stub & {
-          updateInvoice: (input: UpdateInvoiceInput) => Promise<OrganizationDomain.InvoiceWithItems>;
-        };
-        const invoice: OrganizationDomain.InvoiceWithItems = yield* Effect.tryPromise(() =>
-          updateInvoiceStub.updateInvoice({
-            invoiceId: data.invoiceId,
-            name: data.name,
-            invoiceNumber: data.invoiceNumber,
-            invoiceDate: data.invoiceDate,
-            dueDate: data.dueDate,
-            currency: data.currency,
-            vendorName: data.vendorName,
-            vendorEmail: data.vendorEmail,
-            vendorAddress: data.vendorAddress,
-            billToName: data.billToName,
-            billToEmail: data.billToEmail,
-            billToAddress: data.billToAddress,
-            subtotal: data.subtotal,
-            tax: data.tax,
-            total: data.total,
-            amountDue: data.amountDue,
-            invoiceItems: data.invoiceItems,
-          }),
-        );
-        return structuredClone(invoice);
+export const updateInvoiceWithAgent = (data: UpdateInvoiceInput & { organizationId: string }) =>
+  Effect.gen(function* () {
+    const stub = yield* getOrganizationAgentStub(data.organizationId);
+    const updateInvoiceStub = stub as typeof stub & {
+      updateInvoice: (input: UpdateInvoiceInput) => Promise<OrganizationDomain.InvoiceWithItems>;
+    };
+    return yield* Effect.tryPromise(() =>
+      updateInvoiceStub.updateInvoice({
+        invoiceId: data.invoiceId,
+        name: data.name,
+        invoiceNumber: data.invoiceNumber,
+        invoiceDate: data.invoiceDate,
+        dueDate: data.dueDate,
+        currency: data.currency,
+        vendorName: data.vendorName,
+        vendorEmail: data.vendorEmail,
+        vendorAddress: data.vendorAddress,
+        billToName: data.billToName,
+        billToEmail: data.billToEmail,
+        billToAddress: data.billToAddress,
+        subtotal: data.subtotal,
+        tax: data.tax,
+        total: data.total,
+        amountDue: data.amountDue,
+        invoiceItems: data.invoiceItems,
       }),
-    ),
-  );
+    );
+  });
 
 export type InvoiceListItem = Awaited<ReturnType<typeof getInvoices>>[number];
