@@ -11,7 +11,7 @@ import { AlertCircle, Copy, FilePenLine, FileText, Loader2, Plus, Trash2, Upload
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -360,20 +360,15 @@ function RouteComponent() {
                 {selectedInvoice &&
                   (selectedInvoice.status === "ready" ||
                     selectedInvoice.status === "error") && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      render={(
-                        <Link
-                          from={Route.fullPath}
-                          to="/app/$organizationId/invoices/$invoiceId"
-                          params={{ organizationId, invoiceId: selectedInvoice.id }}
-                        />
-                      )}
+                    <Link
+                      from={Route.fullPath}
+                      to="/app/$organizationId/invoices/$invoiceId"
+                      params={{ organizationId, invoiceId: selectedInvoice.id }}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
                     >
                       <FilePenLine className="size-4" />
                       Edit invoice
-                    </Button>
+                    </Link>
                   )}
               </div>
             </CardHeader>

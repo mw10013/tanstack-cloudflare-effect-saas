@@ -9,7 +9,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { AlertCircle, ArrowLeft, ExternalLink, FilePenLine, Loader2, Plus, Trash2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -204,20 +204,25 @@ function RouteComponent() {
     <div className="flex flex-col gap-6 p-6">
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button variant="outline" size="sm" render={(
-            <Link to="/app/$organizationId/invoices" params={{ organizationId }} />
-          )}>
+          <Link
+            to="/app/$organizationId/invoices"
+            params={{ organizationId }}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
             <ArrowLeft className="size-4" />
             Back to invoices
-          </Button>
+          </Link>
           <div className="flex items-center gap-2">
             {invoiceSummary?.viewUrl && (
-              <Button variant="outline" size="sm" render={(
-                <a href={invoiceSummary.viewUrl} target="_blank" rel="noreferrer">Open source file</a>
-              )}>
+              <a
+                href={invoiceSummary.viewUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
                 <ExternalLink className="size-4" />
                 Open source file
-              </Button>
+              </a>
             )}
             <Button
               type="button"
