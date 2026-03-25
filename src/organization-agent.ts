@@ -244,6 +244,39 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
+  updateInvoice(input: {
+    invoiceId: string;
+    name: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    dueDate: string;
+    currency: string;
+    vendorName: string;
+    vendorEmail: string;
+    vendorAddress: string;
+    billToName: string;
+    billToEmail: string;
+    billToAddress: string;
+    subtotal: string;
+    tax: string;
+    total: string;
+    amountDue: string;
+    invoiceItems: readonly (typeof InvoiceItemFields.Type)[];
+  }) {
+    return this.runEffect(
+      Effect.gen({ self: this }, function* () {
+        const repo = yield* OrganizationRepository;
+        const invoice = yield* repo.updateInvoice(input);
+        yield* broadcastActivity(this, {
+          level: "success",
+          text: `Invoice updated: ${invoice.name || invoice.fileName || invoice.id}`,
+        });
+        return invoice;
+      }),
+    );
+  }
+
+  @callable()
   uploadInvoice(input: { fileName: string; contentType: string; base64: string }) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {

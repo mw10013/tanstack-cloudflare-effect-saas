@@ -39,4 +39,5 @@ export const shouldInvalidateForInvoice = (text: string) =>
   text.startsWith("Invoice uploaded:") ||
   text.startsWith("Invoice extraction completed:") ||
   text.startsWith("Invoice extraction failed:") ||
+  text.startsWith("Invoice updated:") ||
   text === "Invoice deleted";

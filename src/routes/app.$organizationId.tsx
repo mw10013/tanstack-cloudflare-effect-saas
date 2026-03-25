@@ -133,6 +133,9 @@ function RouteComponent() {
         void queryClient.invalidateQueries({
           queryKey: ["organization", organizationId, "invoiceItems"],
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["organization", organizationId, "invoice"],
+        });
       }
     },
     onStateUpdate: (state) => {

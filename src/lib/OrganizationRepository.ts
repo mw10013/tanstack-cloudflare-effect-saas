@@ -228,12 +228,72 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
         },
       );
 
+      const updateInvoice = Effect.fn("OrganizationRepository.updateInvoice")(
+        function* (input: {
+          invoiceId: string;
+          name: string;
+          invoiceNumber: string;
+          invoiceDate: string;
+          dueDate: string;
+          currency: string;
+          vendorName: string;
+          vendorEmail: string;
+          vendorAddress: string;
+          billToName: string;
+          billToEmail: string;
+          billToAddress: string;
+          subtotal: string;
+          tax: string;
+          total: string;
+          amountDue: string;
+          invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemFields.Type)[];
+        }) {
+          return yield* Effect.gen(function* () {
+            const updated = yield* sql`
+              update Invoice
+              set name = ${input.name},
+                  status = 'ready',
+                  invoiceNumber = ${input.invoiceNumber},
+                  invoiceDate = ${input.invoiceDate},
+                  dueDate = ${input.dueDate},
+                  currency = ${input.currency},
+                  vendorName = ${input.vendorName},
+                  vendorEmail = ${input.vendorEmail},
+                  vendorAddress = ${input.vendorAddress},
+                  billToName = ${input.billToName},
+                  billToEmail = ${input.billToEmail},
+                  billToAddress = ${input.billToAddress},
+                  subtotal = ${input.subtotal},
+                  tax = ${input.tax},
+                  total = ${input.total},
+                  amountDue = ${input.amountDue},
+                  error = ${null}
+              where id = ${input.invoiceId} and status in ('ready', 'error')
+              returning id
+            `;
+            if (updated.length === 0) return yield* Effect.fail(new Error("Invoice cannot be edited"));
+            yield* sql`delete from InvoiceItem where invoiceId = ${input.invoiceId}`;
+            for (let i = 0; i < input.invoiceItems.length; i++) {
+              const item = input.invoiceItems[i];
+              const id = crypto.randomUUID();
+              const order = i + 1;
+              yield* sql`
+                insert into InvoiceItem (id, invoiceId, "order", description, quantity, unitPrice, amount, period)
+                values (${id}, ${input.invoiceId}, ${order}, ${item.description}, ${item.quantity}, ${item.unitPrice}, ${item.amount}, ${item.period})
+              `;
+            }
+            return yield* getInvoiceWithItems(input.invoiceId);
+          }).pipe(sql.withTransaction);
+        },
+      );
+
       return {
         findInvoice,
         getInvoices,
         getInvoiceWithItems,
         upsertInvoice,
         createInvoice,
+        updateInvoice,
         softDeleteInvoice,
         saveExtraction,
         setError,

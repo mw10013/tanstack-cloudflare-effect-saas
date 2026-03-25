@@ -30,6 +30,8 @@ import { Route as AppOrganizationIdInvitationsRouteImport } from './routes/app.$
 import { Route as AppOrganizationIdBillingRouteImport } from './routes/app.$organizationId.billing'
 import { Route as AppOrganizationIdAgentRouteImport } from './routes/app.$organizationId.agent'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AppOrganizationIdInvoicesIndexRouteImport } from './routes/app.$organizationId.invoices.index'
+import { Route as AppOrganizationIdInvoicesInvoiceIdRouteImport } from './routes/app.$organizationId.invoices.$invoiceId'
 import { Route as ApiOrgOrganizationIdInvoiceInvoiceIdRouteImport } from './routes/api/org.$organizationId.invoice.$invoiceId'
 import { Route as ApiE2eDeleteUserEmailRouteImport } from './routes/api/e2e/delete/user/$email'
 
@@ -141,6 +143,18 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppOrganizationIdInvoicesIndexRoute =
+  AppOrganizationIdInvoicesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppOrganizationIdInvoicesRoute,
+  } as any)
+const AppOrganizationIdInvoicesInvoiceIdRoute =
+  AppOrganizationIdInvoicesInvoiceIdRouteImport.update({
+    id: '/$invoiceId',
+    path: '/$invoiceId',
+    getParentRoute: () => AppOrganizationIdInvoicesRoute,
+  } as any)
 const ApiOrgOrganizationIdInvoiceInvoiceIdRoute =
   ApiOrgOrganizationIdInvoiceInvoiceIdRouteImport.update({
     id: '/api/org/$organizationId/invoice/$invoiceId',
@@ -171,9 +185,11 @@ export interface FileRoutesByFullPath {
   '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
-  '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRoute
+  '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRouteWithChildren
   '/app/$organizationId/members': typeof AppOrganizationIdMembersRoute
   '/app/$organizationId/': typeof AppOrganizationIdIndexRoute
+  '/app/$organizationId/invoices/$invoiceId': typeof AppOrganizationIdInvoicesInvoiceIdRoute
+  '/app/$organizationId/invoices/': typeof AppOrganizationIdInvoicesIndexRoute
   '/api/e2e/delete/user/$email': typeof ApiE2eDeleteUserEmailRoute
   '/api/org/$organizationId/invoice/$invoiceId': typeof ApiOrgOrganizationIdInvoiceInvoiceIdRoute
 }
@@ -192,9 +208,10 @@ export interface FileRoutesByTo {
   '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
-  '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRoute
   '/app/$organizationId/members': typeof AppOrganizationIdMembersRoute
   '/app/$organizationId': typeof AppOrganizationIdIndexRoute
+  '/app/$organizationId/invoices/$invoiceId': typeof AppOrganizationIdInvoicesInvoiceIdRoute
+  '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesIndexRoute
   '/api/e2e/delete/user/$email': typeof ApiE2eDeleteUserEmailRoute
   '/api/org/$organizationId/invoice/$invoiceId': typeof ApiOrgOrganizationIdInvoiceInvoiceIdRoute
 }
@@ -218,9 +235,11 @@ export interface FileRoutesById {
   '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
-  '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRoute
+  '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRouteWithChildren
   '/app/$organizationId/members': typeof AppOrganizationIdMembersRoute
   '/app/$organizationId/': typeof AppOrganizationIdIndexRoute
+  '/app/$organizationId/invoices/$invoiceId': typeof AppOrganizationIdInvoicesInvoiceIdRoute
+  '/app/$organizationId/invoices/': typeof AppOrganizationIdInvoicesIndexRoute
   '/api/e2e/delete/user/$email': typeof ApiE2eDeleteUserEmailRoute
   '/api/org/$organizationId/invoice/$invoiceId': typeof ApiOrgOrganizationIdInvoiceInvoiceIdRoute
 }
@@ -247,6 +266,8 @@ export interface FileRouteTypes {
     | '/app/$organizationId/invoices'
     | '/app/$organizationId/members'
     | '/app/$organizationId/'
+    | '/app/$organizationId/invoices/$invoiceId'
+    | '/app/$organizationId/invoices/'
     | '/api/e2e/delete/user/$email'
     | '/api/org/$organizationId/invoice/$invoiceId'
   fileRoutesByTo: FileRoutesByTo
@@ -265,9 +286,10 @@ export interface FileRouteTypes {
     | '/app/$organizationId/agent'
     | '/app/$organizationId/billing'
     | '/app/$organizationId/invitations'
-    | '/app/$organizationId/invoices'
     | '/app/$organizationId/members'
     | '/app/$organizationId'
+    | '/app/$organizationId/invoices/$invoiceId'
+    | '/app/$organizationId/invoices'
     | '/api/e2e/delete/user/$email'
     | '/api/org/$organizationId/invoice/$invoiceId'
   id:
@@ -293,6 +315,8 @@ export interface FileRouteTypes {
     | '/app/$organizationId/invoices'
     | '/app/$organizationId/members'
     | '/app/$organizationId/'
+    | '/app/$organizationId/invoices/$invoiceId'
+    | '/app/$organizationId/invoices/'
     | '/api/e2e/delete/user/$email'
     | '/api/org/$organizationId/invoice/$invoiceId'
   fileRoutesById: FileRoutesById
@@ -457,6 +481,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/$organizationId/invoices/': {
+      id: '/app/$organizationId/invoices/'
+      path: '/'
+      fullPath: '/app/$organizationId/invoices/'
+      preLoaderRoute: typeof AppOrganizationIdInvoicesIndexRouteImport
+      parentRoute: typeof AppOrganizationIdInvoicesRoute
+    }
+    '/app/$organizationId/invoices/$invoiceId': {
+      id: '/app/$organizationId/invoices/$invoiceId'
+      path: '/$invoiceId'
+      fullPath: '/app/$organizationId/invoices/$invoiceId'
+      preLoaderRoute: typeof AppOrganizationIdInvoicesInvoiceIdRouteImport
+      parentRoute: typeof AppOrganizationIdInvoicesRoute
+    }
     '/api/org/$organizationId/invoice/$invoiceId': {
       id: '/api/org/$organizationId/invoice/$invoiceId'
       path: '/api/org/$organizationId/invoice/$invoiceId'
@@ -504,11 +542,28 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface AppOrganizationIdInvoicesRouteChildren {
+  AppOrganizationIdInvoicesInvoiceIdRoute: typeof AppOrganizationIdInvoicesInvoiceIdRoute
+  AppOrganizationIdInvoicesIndexRoute: typeof AppOrganizationIdInvoicesIndexRoute
+}
+
+const AppOrganizationIdInvoicesRouteChildren: AppOrganizationIdInvoicesRouteChildren =
+  {
+    AppOrganizationIdInvoicesInvoiceIdRoute:
+      AppOrganizationIdInvoicesInvoiceIdRoute,
+    AppOrganizationIdInvoicesIndexRoute: AppOrganizationIdInvoicesIndexRoute,
+  }
+
+const AppOrganizationIdInvoicesRouteWithChildren =
+  AppOrganizationIdInvoicesRoute._addFileChildren(
+    AppOrganizationIdInvoicesRouteChildren,
+  )
+
 interface AppOrganizationIdRouteChildren {
   AppOrganizationIdAgentRoute: typeof AppOrganizationIdAgentRoute
   AppOrganizationIdBillingRoute: typeof AppOrganizationIdBillingRoute
   AppOrganizationIdInvitationsRoute: typeof AppOrganizationIdInvitationsRoute
-  AppOrganizationIdInvoicesRoute: typeof AppOrganizationIdInvoicesRoute
+  AppOrganizationIdInvoicesRoute: typeof AppOrganizationIdInvoicesRouteWithChildren
   AppOrganizationIdMembersRoute: typeof AppOrganizationIdMembersRoute
   AppOrganizationIdIndexRoute: typeof AppOrganizationIdIndexRoute
 }
@@ -517,7 +572,7 @@ const AppOrganizationIdRouteChildren: AppOrganizationIdRouteChildren = {
   AppOrganizationIdAgentRoute: AppOrganizationIdAgentRoute,
   AppOrganizationIdBillingRoute: AppOrganizationIdBillingRoute,
   AppOrganizationIdInvitationsRoute: AppOrganizationIdInvitationsRoute,
-  AppOrganizationIdInvoicesRoute: AppOrganizationIdInvoicesRoute,
+  AppOrganizationIdInvoicesRoute: AppOrganizationIdInvoicesRouteWithChildren,
   AppOrganizationIdMembersRoute: AppOrganizationIdMembersRoute,
   AppOrganizationIdIndexRoute: AppOrganizationIdIndexRoute,
 }
