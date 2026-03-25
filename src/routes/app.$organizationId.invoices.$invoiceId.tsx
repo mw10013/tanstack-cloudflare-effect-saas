@@ -6,7 +6,7 @@ import {
   useHydrated,
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertCircle, ArrowLeft, ExternalLink, FilePenLine, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, ExternalLink, FilePenLine, Loader2, Plus, Trash2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -50,6 +50,7 @@ interface InvoiceFormValues {
 }
 
 interface InvoiceItemFormValues {
+  readonly clientId: string;
   readonly description: string;
   readonly quantity: string;
   readonly unitPrice: string;
@@ -58,6 +59,7 @@ interface InvoiceItemFormValues {
 }
 
 const emptyInvoiceItem = (): InvoiceItemFormValues => ({
+  clientId: crypto.randomUUID(),
   description: "",
   quantity: "",
   unitPrice: "",
@@ -87,6 +89,7 @@ const toFormValues = (
   invoiceItems:
     invoice.items.length > 0
       ? invoice.items.map((item) => ({
+          clientId: crypto.randomUUID(),
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
@@ -154,7 +157,7 @@ function RouteComponent() {
         tax: data.tax,
         total: data.total,
         amountDue: data.amountDue,
-        invoiceItems: data.invoiceItems,
+        invoiceItems: data.invoiceItems.map(({ clientId: _, ...rest }) => rest),
       }),
     onSuccess: (invoice: OrganizationDomain.InvoiceWithItems) => {
       queryClient.setQueryData(invoiceQueryKey(organizationId, invoiceId), invoice);
@@ -452,27 +455,61 @@ function RouteComponent() {
           <CardContent>
             <div className="flex flex-col gap-4">
               {form.invoiceItems.map((item, index) => (
-                <div key={index} className="rounded-lg border p-4">
+                <div key={item.clientId} className="rounded-lg border p-4">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <p className="text-sm font-medium">Item {index + 1}</p>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      disabled={!isHydrated || !canEdit || form.invoiceItems.length === 1}
-                      onClick={() => {
-                        setForm((current) =>
-                          current
-                            ? {
-                                ...current,
-                                invoiceItems: current.invoiceItems.filter((_, itemIndex) => itemIndex !== index),
-                              }
-                            : current,
-                        );
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        disabled={!isHydrated || !canEdit || index === 0}
+                        onClick={() => {
+                          setForm((current) => {
+                            if (!current) return current;
+                            const items = [...current.invoiceItems];
+                            [items[index - 1], items[index]] = [items[index], items[index - 1]];
+                            return { ...current, invoiceItems: items };
+                          });
+                        }}
+                      >
+                        <ArrowUp className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        disabled={!isHydrated || !canEdit || index === form.invoiceItems.length - 1}
+                        onClick={() => {
+                          setForm((current) => {
+                            if (!current) return current;
+                            const items = [...current.invoiceItems];
+                            [items[index], items[index + 1]] = [items[index + 1], items[index]];
+                            return { ...current, invoiceItems: items };
+                          });
+                        }}
+                      >
+                        <ArrowDown className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        disabled={!isHydrated || !canEdit || form.invoiceItems.length === 1}
+                        onClick={() => {
+                          setForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  invoiceItems: current.invoiceItems.filter((_, itemIndex) => itemIndex !== index),
+                                }
+                              : current,
+                          );
+                        }}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
                   </div>
                   <div className="grid gap-4">
                     <TextAreaField
