@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getInvoices,
   getInvoiceWithItems,
@@ -427,8 +428,8 @@ function RouteComponent() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="flex h-0 min-h-full flex-col overflow-hidden">
+          <CardHeader className="shrink-0">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle>Line Items</CardTitle>
@@ -452,7 +453,8 @@ function RouteComponent() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-h-0 flex-1">
+            <ScrollArea className="h-full">
             <div className="flex flex-col gap-4">
               {form.invoiceItems.map((item, index) => (
                 <div key={item.clientId} className="rounded-lg border p-4">
@@ -603,6 +605,7 @@ function RouteComponent() {
                 </div>
               ))}
             </div>
+            </ScrollArea>
           </CardContent>
         </Card>
       </div>
