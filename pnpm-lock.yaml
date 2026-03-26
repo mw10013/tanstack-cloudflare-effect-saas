@@ -15,8 +15,8 @@ importers:
         specifier: 1.5.1
         version: 1.5.1(@better-auth/core@1.5.1(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260313.1)(better-call@1.3.2(zod@4.3.6))(jose@6.2.1)(kysely@0.28.11)(nanostores@1.1.1))(better-auth@1.5.1(515c4b8521fc96dbe3d8488e184e94d9))(better-call@1.3.2(zod@4.3.6))(stripe@19.3.0(@types/node@25.0.3))
       '@effect/sql-sqlite-do':
-        specifier: 4.0.0-beta.36
-        version: 4.0.0-beta.36(effect@4.0.0-beta.36)
+        specifier: 4.0.0-beta.40
+        version: 4.0.0-beta.40(effect@4.0.0-beta.40)
       '@epic-web/invariant':
         specifier: 1.0.0
         version: 1.0.0
@@ -69,8 +69,8 @@ importers:
         specifier: 1.1.1
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       effect:
-        specifier: 4.0.0-beta.36
-        version: 4.0.0-beta.36
+        specifier: 4.0.0-beta.40
+        version: 4.0.0-beta.40
       embla-carousel-react:
         specifier: 8.6.0
         version: 8.6.0(react@19.2.3)
@@ -555,10 +555,10 @@ packages:
     peerDependencies:
       '@noble/ciphers': ^1.0.0
 
-  '@effect/sql-sqlite-do@4.0.0-beta.36':
-    resolution: {integrity: sha512-a8wR9/6GccTLjQVIW8zJEcg+hqTjzp9fshGJ9NFrxudgvbjz82dM1zwxdUXIIbCefEOsmrATOvermdNso1z4/Q==}
+  '@effect/sql-sqlite-do@4.0.0-beta.40':
+    resolution: {integrity: sha512-Z1ZdImaUzXHX+llfYD8yvzMmtI7t0Nhw5sfQOxsgRj04Phthn4J6YW8BGfmBKxz/S1bwhKZipGDy8yha3qKBQw==}
     peerDependencies:
-      effect: ^4.0.0-beta.36
+      effect: ^4.0.0-beta.40
 
   '@electric-sql/pglite-socket@0.0.20':
     resolution: {integrity: sha512-J5nLGsicnD9wJHnno9r+DGxfcZWh+YJMCe0q/aCgtG6XOm9Z7fKeite8IZSNXgZeGltSigM9U/vAWZQWdgcSFg==}
@@ -2998,8 +2998,8 @@ packages:
   effect@3.18.4:
     resolution: {integrity: sha512-b1LXQJLe9D11wfnOKAk3PKxuqYshQ0Heez+y5pnkd3jLj1yx9QhM72zZ9uUrOQyNvrs2GZZd/3maL0ZV18YuDA==}
 
-  effect@4.0.0-beta.36:
-    resolution: {integrity: sha512-It0ivpQrAi7cTAISEVPLbPjGGLSN90dZ1Y6iDhYbUdBj/QH8rf/AZVx1tGYLgA++Jfs+5ONrxA88gpNYWXxXKA==}
+  effect@4.0.0-beta.40:
+    resolution: {integrity: sha512-GA7Q1TglPIrEjg/Dtj3AvXbyh00A4sAXgu3JGDUHRPZ4hxMRC5CMAsCzCH0140zetRMpe7LOH8uVi5gb4t/8oQ==}
 
   electron-to-chromium@1.5.307:
     resolution: {integrity: sha512-5z3uFKBWjiNR44nFcYdkcXjKMbg5KXNdciu7mhTPo9tB7NbqSNP2sSnGR+fqknZSCwKkBN+oxiiajWs4dT6ORg==}
@@ -5492,9 +5492,9 @@ snapshots:
     dependencies:
       '@noble/ciphers': 1.3.0
 
-  '@effect/sql-sqlite-do@4.0.0-beta.36(effect@4.0.0-beta.36)':
+  '@effect/sql-sqlite-do@4.0.0-beta.40(effect@4.0.0-beta.40)':
     dependencies:
-      effect: 4.0.0-beta.36
+      effect: 4.0.0-beta.40
 
   '@electric-sql/pglite-socket@0.0.20(@electric-sql/pglite@0.3.15)':
     dependencies:
@@ -7594,7 +7594,7 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2
 
-  effect@4.0.0-beta.36:
+  effect@4.0.0-beta.40:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.6.0
