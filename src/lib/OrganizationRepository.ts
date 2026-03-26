@@ -8,10 +8,6 @@ const decodeInvoice = Schema.decodeUnknownEffect(OrganizationDomain.Invoice);
 const decodeInvoices = Schema.decodeUnknownEffect(
   Schema.mutable(Schema.Array(OrganizationDomain.Invoice)),
 );
-const decodeInvoiceWithItems = Schema.decodeUnknownEffect(
-  DataFromResult(OrganizationDomain.InvoiceWithItems),
-);
-
 export class OrganizationRepository extends ServiceMap.Service<OrganizationRepository>()(
   "OrganizationRepository",
   {
@@ -93,7 +89,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
           where i.id = ${invoiceId}
         `;
         return yield* Effect.fromNullishOr(rows[0]).pipe(
-          Effect.flatMap(decodeInvoiceWithItems),
+          Effect.flatMap(Schema.decodeUnknownEffect(DataFromResult(OrganizationDomain.InvoiceWithItems))),
         );
       });
 
