@@ -121,10 +121,12 @@ export const getInvoiceWithItems = createServerFn({ method: "GET" })
     runEffect(
       Effect.gen(function* () {
         const stub = yield* getOrganizationAgentStub(organizationId);
-        const invoice: OrganizationDomain.InvoiceWithItems = yield* Effect.tryPromise(
+        // Type annotation strips Disposable from DO stub return type;
+        // structuredClone strips it at runtime for TanStack Start serialization.
+        const invoice: OrganizationDomain.InvoiceWithItems | null = yield* Effect.tryPromise(
           () => stub.getInvoiceWithItems(invoiceId),
         );
-        return structuredClone(invoice);
+        return invoice ? structuredClone(invoice) : null;
       }),
     ),
   );

@@ -1,4 +1,4 @@
-import { Schema, SchemaGetter, Struct } from "effect";
+import { Array as Arr, Option, Schema, SchemaGetter, SchemaTransformation, Struct } from "effect";
 
 /**
  * Extract a single field from a struct schema, returning the unwrapped value.
@@ -33,3 +33,24 @@ export const DataFromResult = <S extends Schema.Top>(DataSchema: S) =>
     pluck("data"),
     Schema.decodeTo(Schema.fromJsonString(DataSchema)),
   );
+
+/**
+ * Schema for an array of `{ data: string }` shaped records.
+ * Extracts the first element, parses its JSON `data` column, and validates against `DataSchema`.
+ * Returns `Option.none` for an empty array, `Option.some(decoded)` for non-empty.
+ */
+export const DataFromFirstRow = <S extends Schema.Top>(DataSchema: S) => {
+  const RowSchema = DataFromResult(DataSchema);
+  return Schema.Array(RowSchema).pipe(
+    Schema.decodeTo(
+      Schema.Option(Schema.toType(RowSchema)),
+      SchemaTransformation.transform({
+        decode: Arr.head,
+        encode: Option.match({
+          onNone: () => [],
+          onSome: (item) => [item],
+        }),
+      }),
+    ),
+  );
+};

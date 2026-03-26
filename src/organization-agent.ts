@@ -405,7 +405,9 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.runEffect(
       Effect.gen(function* () {
         const repo = yield* OrganizationRepository;
-        return yield* repo.getInvoiceWithItems(invoiceId);
+        return yield* repo.getInvoiceWithItems(invoiceId).pipe(
+          Effect.map(Option.getOrNull),
+        );
       }),
     );
   }
