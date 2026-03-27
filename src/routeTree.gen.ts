@@ -28,7 +28,6 @@ import { Route as AppOrganizationIdMembersRouteImport } from './routes/app.$orga
 import { Route as AppOrganizationIdInvoicesRouteImport } from './routes/app.$organizationId.invoices'
 import { Route as AppOrganizationIdInvitationsRouteImport } from './routes/app.$organizationId.invitations'
 import { Route as AppOrganizationIdBillingRouteImport } from './routes/app.$organizationId.billing'
-import { Route as AppOrganizationIdAgentRouteImport } from './routes/app.$organizationId.agent'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AppOrganizationIdInvoicesIndexRouteImport } from './routes/app.$organizationId.invoices.index'
 import { Route as AppOrganizationIdInvoicesInvoiceIdRouteImport } from './routes/app.$organizationId.invoices.$invoiceId'
@@ -133,11 +132,6 @@ const AppOrganizationIdBillingRoute =
     path: '/billing',
     getParentRoute: () => AppOrganizationIdRoute,
   } as any)
-const AppOrganizationIdAgentRoute = AppOrganizationIdAgentRouteImport.update({
-  id: '/agent',
-  path: '/agent',
-  getParentRoute: () => AppOrganizationIdRoute,
-} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -182,7 +176,6 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRouteWithChildren
@@ -205,7 +198,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminIndexRoute
   '/app': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/members': typeof AppOrganizationIdMembersRoute
@@ -232,7 +224,6 @@ export interface FileRoutesById {
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/app/$organizationId/agent': typeof AppOrganizationIdAgentRoute
   '/app/$organizationId/billing': typeof AppOrganizationIdBillingRoute
   '/app/$organizationId/invitations': typeof AppOrganizationIdInvitationsRoute
   '/app/$organizationId/invoices': typeof AppOrganizationIdInvoicesRouteWithChildren
@@ -260,7 +251,6 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/app/'
     | '/api/auth/$'
-    | '/app/$organizationId/agent'
     | '/app/$organizationId/billing'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/invoices'
@@ -283,7 +273,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/app'
     | '/api/auth/$'
-    | '/app/$organizationId/agent'
     | '/app/$organizationId/billing'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/members'
@@ -309,7 +298,6 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/app/'
     | '/api/auth/$'
-    | '/app/$organizationId/agent'
     | '/app/$organizationId/billing'
     | '/app/$organizationId/invitations'
     | '/app/$organizationId/invoices'
@@ -467,13 +455,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizationIdBillingRouteImport
       parentRoute: typeof AppOrganizationIdRoute
     }
-    '/app/$organizationId/agent': {
-      id: '/app/$organizationId/agent'
-      path: '/agent'
-      fullPath: '/app/$organizationId/agent'
-      preLoaderRoute: typeof AppOrganizationIdAgentRouteImport
-      parentRoute: typeof AppOrganizationIdRoute
-    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -560,7 +541,6 @@ const AppOrganizationIdInvoicesRouteWithChildren =
   )
 
 interface AppOrganizationIdRouteChildren {
-  AppOrganizationIdAgentRoute: typeof AppOrganizationIdAgentRoute
   AppOrganizationIdBillingRoute: typeof AppOrganizationIdBillingRoute
   AppOrganizationIdInvitationsRoute: typeof AppOrganizationIdInvitationsRoute
   AppOrganizationIdInvoicesRoute: typeof AppOrganizationIdInvoicesRouteWithChildren
@@ -569,7 +549,6 @@ interface AppOrganizationIdRouteChildren {
 }
 
 const AppOrganizationIdRouteChildren: AppOrganizationIdRouteChildren = {
-  AppOrganizationIdAgentRoute: AppOrganizationIdAgentRoute,
   AppOrganizationIdBillingRoute: AppOrganizationIdBillingRoute,
   AppOrganizationIdInvitationsRoute: AppOrganizationIdInvitationsRoute,
   AppOrganizationIdInvoicesRoute: AppOrganizationIdInvoicesRouteWithChildren,
