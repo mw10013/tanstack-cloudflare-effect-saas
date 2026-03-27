@@ -2,7 +2,7 @@ import { Effect, Layer, Option, Schema, ServiceMap } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as OrganizationDomain from "./OrganizationDomain";
-import { DataFromFirstRow } from "./SchemaEx";
+import { JsonDataFieldHead } from "./SchemaEx";
 
 const decodeInvoice = Schema.decodeUnknownEffect(OrganizationDomain.Invoice);
 const decodeInvoices = Schema.decodeUnknownEffect(
@@ -88,7 +88,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
           from Invoice i
           where i.id = ${invoiceId}
         `;
-        return yield* Schema.decodeUnknownEffect(DataFromFirstRow(OrganizationDomain.InvoiceWithItems))(rows);
+        return yield* Schema.decodeUnknownEffect(JsonDataFieldHead(OrganizationDomain.InvoiceWithItems))(rows);
       });
 
       const upsertInvoice = Effect.fn("OrganizationRepository.upsertInvoice")(

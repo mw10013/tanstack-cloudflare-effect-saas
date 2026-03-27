@@ -2,7 +2,7 @@ import { Effect, Layer, Schema, ServiceMap } from "effect";
 
 import { D1 } from "./D1";
 import * as Domain from "./Domain";
-import { DataFromResult } from "./SchemaEx";
+import { JsonDataField } from "./SchemaEx";
 
 export class Repository extends ServiceMap.Service<Repository>()("Repository", {
   make: Effect.gen(function* () {
@@ -131,7 +131,7 @@ select json_object(
       return yield* Effect.fromOption(result).pipe(
         Effect.flatMap(
           Schema.decodeUnknownEffect(
-            DataFromResult(
+            JsonDataField(
               Schema.Struct({
                 users: Schema.Array(Domain.User),
                 count: Schema.Number,
@@ -209,7 +209,7 @@ select json_object(
         return yield* Effect.fromOption(result).pipe(
           Effect.flatMap(
             Schema.decodeUnknownEffect(
-              DataFromResult(
+              JsonDataField(
                 Schema.Struct({
                   userInvitations: Schema.Array(
                     Domain.InvitationWithOrganizationAndInviter,
@@ -245,7 +245,7 @@ select json_object(
         return yield* Effect.fromOption(result).pipe(
           Effect.flatMap(
             Schema.decodeUnknownEffect(
-              DataFromResult(
+              JsonDataField(
                 Schema.Struct({
                   customerCount: Schema.Number,
                   activeSubscriptionCount: Schema.Number,
@@ -330,7 +330,7 @@ select json_object(
       return yield* Effect.fromOption(result).pipe(
         Effect.flatMap(
           Schema.decodeUnknownEffect(
-            DataFromResult(
+            JsonDataField(
               Schema.Struct({
                 customers: Schema.Array(Domain.UserWithSubscription),
                 count: Schema.Number,
@@ -447,7 +447,7 @@ select json_object(
         return yield* Effect.fromOption(result).pipe(
           Effect.flatMap(
             Schema.decodeUnknownEffect(
-              DataFromResult(
+              JsonDataField(
                 Schema.Struct({
                   subscriptions: Schema.Array(Domain.SubscriptionWithUser),
                   count: Schema.Number,
@@ -550,7 +550,7 @@ select json_object(
       return yield* Effect.fromOption(result).pipe(
         Effect.flatMap(
           Schema.decodeUnknownEffect(
-            DataFromResult(
+            JsonDataField(
               Schema.Struct({
                 sessions: Schema.Array(Domain.SessionWithUser),
                 count: Schema.Number,

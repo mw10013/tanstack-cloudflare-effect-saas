@@ -20,27 +20,27 @@ const pluck =
     );
 
 /**
- * Schema for D1 rows shaped `{ data: string }` (e.g. from `json_group_array`/`json_object` queries).
- * Extracts the `data` column, parses the JSON string, and validates against `DataSchema`.
+ * Schema for structs with a `{ data: string }` field containing serialized JSON.
+ * Extracts the `data` field, parses the JSON string, and decodes against `DataSchema`.
  *
  * Uses `<S extends Schema.Top>` instead of `<A>(Schema.Schema<A>)` to preserve
  * the concrete schema type through the pipeline. `Schema.Schema<A>` erases
  * `DecodingServices` to `unknown` (inherited from `Schema.Top`), which causes
  * `Schema.decodeUnknownEffect` to infer `R = unknown` instead of `R = never`.
  */
-export const DataFromResult = <S extends Schema.Top>(DataSchema: S) =>
+export const JsonDataField = <S extends Schema.Top>(DataSchema: S) =>
   Schema.Struct({ data: Schema.String }).pipe(
     pluck("data"),
     Schema.decodeTo(Schema.fromJsonString(DataSchema)),
   );
 
 /**
- * Schema for an array of `{ data: string }` shaped records.
- * Extracts the first element, parses its JSON `data` column, and validates against `DataSchema`.
- * Returns `Option.none` for an empty array, `Option.some(decoded)` for non-empty.
+ * Schema for an array of structs with a `{ data: string }` field.
+ * Takes the head element, extracts and decodes its JSON `data` field against `DataSchema`.
+ * Returns `Option.none` for an empty array, `Option.some(decoded)` otherwise.
  */
-export const DataFromFirstRow = <S extends Schema.Top>(DataSchema: S) => {
-  const RowSchema = DataFromResult(DataSchema);
+export const JsonDataFieldHead = <S extends Schema.Top>(DataSchema: S) => {
+  const RowSchema = JsonDataField(DataSchema);
   return Schema.Array(RowSchema).pipe(
     Schema.decodeTo(
       Schema.Option(Schema.toType(RowSchema)),
