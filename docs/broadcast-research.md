@@ -20,163 +20,58 @@ Client RPC (stub.createInvoice, etc.) → OrganizationAgent @callable methods
 
 ## Where broadcasts originate
 
-All broadcasts originate from `OrganizationAgent` (`src/organization-agent.ts`) via the `broadcastActivity` helper (L59-74), which wraps `agent.broadcast()` from the Cloudflare Agents SDK.
+All broadcasts originate from `OrganizationAgent` (`src/organization-agent.ts`) via the `broadcastActivity` helper (L58-70), which wraps `agent.broadcast()` from the Cloudflare Agents SDK.
 
 | Trigger | Text prefix | Level | Source line |
 |---|---|---|---|
-| `onInvoiceUpload` | `"Invoice uploaded: {fileName}"` | info | L190 |
-| `createInvoice` | `"Invoice created"` | info | L226 |
-| `updateInvoice` | `"Invoice updated: {name}"` | success | L262 |
-| `softDeleteInvoice` | `"Invoice deleted"` | info | L321 |
-| `saveExtraction` | `"Invoice extraction completed: {fileName}"` | success | L341 |
-| `onWorkflowProgress` | Forwarded from workflow | varies | L360 |
-| `onWorkflowError` | `"Invoice extraction failed: {fileName}"` | error | L377 |
+| `onInvoiceUpload` | `"Invoice uploaded: {fileName}"` | info | L187 |
+| `createInvoice` | `"Invoice created"` | info | L223 |
+| `updateInvoice` | `"Invoice updated: {name}"` | success | L259 |
+| `softDeleteInvoice` | `"Invoice deleted"` | info | L318 |
+| `saveExtraction` | `"Invoice extraction completed: {fileName}"` | success | L338 |
+| `onWorkflowProgress` | Forwarded from workflow | varies | L357 |
+| `onWorkflowError` | `"Invoice extraction failed: {fileName}"` | error | L374 |
 
-The workflow itself (`InvoiceExtractionWorkflow`, `src/invoice-extraction-workflow.ts`) reports progress via `this.reportProgress()` which the Agent SDK routes to `onWorkflowProgress`, which then re-broadcasts as activity.
+The workflow (`InvoiceExtractionWorkflow`, `src/invoice-extraction-workflow.ts`) reports progress via `this.reportProgress()` which the Agent SDK routes to `onWorkflowProgress`, which then re-broadcasts as activity.
 
-## Activity type system: current implementation
+## Activity type system
 
-### The three types and why they exist
+### Single type: `ActivityMessage`
 
-`src/lib/Activity.ts` defines three schemas and three types:
+After simplification, `src/lib/Activity.ts` defines one schema and one type:
 
 ```ts
-// 1. What the client displays in the activity feed
-ActivityMessage  = { createdAt: string, level: "info"|"success"|"error", text: string }
-
-// 2. What the workflow sends via this.reportProgress()
-WorkflowProgress = { level: "info"|"success"|"error", text: string }
-
-// 3. What goes over the WebSocket wire
-ActivityEnvelope = { type: "activity", message: ActivityMessage }
+ActivityMessage = { createdAt: string, level: "info"|"success"|"error", text: string }
 ```
 
-**Why `WorkflowProgress` exists separately from `ActivityMessage`:**
-The Agents SDK's `AgentWorkflow<Agent, Params, ProgressType>` has a typed `reportProgress(progress: ProgressType)` method. The third generic param constrains what the workflow can send. `onWorkflowProgress` on the Agent side receives `progress: unknown` — we validate it with `Schema.decodeUnknownExit(WorkflowProgressSchema)`. `WorkflowProgress` is `ActivityMessage` minus `createdAt` because the workflow doesn't know when the message will be broadcast — the agent adds `createdAt` at broadcast time inside `broadcastActivity`.
+This is the wire format, the display type, and the cache type — no wrapping, no unwrapping.
 
-**Why `ActivityEnvelope` wraps `ActivityMessage`:**
-The `type: "activity"` field was added to discriminate from other potential WebSocket message types. In practice `type` is always `"activity"` — there are no other message types. The Agents SDK uses its own internal message types for state sync (handled by `onStateUpdate`) and RPC responses (handled by the `stub` proxy), so user-land `onMessage` only receives messages sent via `agent.broadcast()`.
+### What was removed and why
 
-### How the types flow through the system
+**`ActivityEnvelope`** (`{ type: "activity", message: ActivityMessage }`) — the `type: "activity"` discriminator existed for future message types that never materialized. The Agents SDK handles state sync and RPC on separate internal channels, so user-land `onMessage` only receives `agent.broadcast()` messages. The envelope added wrap/unwrap ceremony with no benefit.
+
+**`WorkflowProgress`** (`{ level, text }`) — existed as `ActivityMessage` minus `createdAt` because workflows don't set timestamps. But `broadcastActivity` always added `createdAt` anyway, so its input was always `{ level, text }`. Now expressed as `Pick<ActivityMessage, "level" | "text">` — no separate type needed.
+
+**`ActivityLevel`** — was a shared schema (`Schema.Literals(["info", "success", "error"])`) used by both `ActivityMessageSchema` and `WorkflowProgressSchema`. With only one schema remaining, it's inlined.
+
+### How the types flow now
 
 **Path A: Direct agent method → broadcast**
 ```
-broadcastActivity(agent, { level, text })  // input is WorkflowProgress shape
-  → adds createdAt, wraps in { type: "activity", message: {...} }  // becomes ActivityEnvelope
-  → JSON.stringify → agent.broadcast(string)
-  → WebSocket → client onMessage
-  → decodeActivityMessage(event)  // parses JSON, validates ActivityEnvelopeSchema
-  → returns ActivityMessage (the .message field)
+broadcastActivity(agent, { level, text })     // Pick<ActivityMessage, "level" | "text">
+  → adds createdAt → JSON.stringify            // ActivityMessage
+  → agent.broadcast(string) → WebSocket
+  → decodeActivityMessage(event)               // parse JSON, validate ActivityMessageSchema
+  → ActivityMessage
 ```
 
 **Path B: Workflow → agent → broadcast**
 ```
-workflow.reportProgress({ level, text })  // typed as WorkflowProgress
-  → Agent SDK RPC → onWorkflowProgress(name, id, progress: unknown)
-  → Schema.decodeUnknownExit(WorkflowProgressSchema)(progress)  // validate unknown → WorkflowProgress
-  → broadcastActivity(this, message.value)  // same as Path A from here
+workflow.reportProgress({ level, text })       // Pick<ActivityMessage, "level" | "text">
+  → Agent SDK RPC → onWorkflowProgress(unknown)
+  → inline Schema.Struct validation            // unknown → { level, text }
+  → broadcastActivity(this, result.value)      // same as Path A
 ```
-
-### What's redundant
-
-1. **`ActivityEnvelope` exists only to add `type: "activity"`** — a discriminator for message types that don't exist. Every `agent.broadcast()` call goes through `broadcastActivity`, which always sets `type: "activity"`. On the client, `decodeActivityMessage` validates the envelope then immediately unwraps it, discarding `type`.
-
-2. **`WorkflowProgress` is structurally `ActivityMessage` minus `createdAt`** — it exists because (a) workflows shouldn't set timestamps and (b) the Agent SDK needs a type param for `reportProgress`. But `broadcastActivity` already accepts `{ level, text }` — the same shape — so `WorkflowProgress` just duplicates that input type.
-
-3. **`ActivityLevel` is defined but only used inline** — `Schema.Literals(["info", "success", "error"])` is used twice (in `ActivityMessageSchema` and `WorkflowProgressSchema`) but could be a single shared field.
-
-### The complexity cost
-
-- 3 schemas (`ActivityMessageSchema`, `WorkflowProgressSchema`, `ActivityEnvelopeSchema`)
-- 3 types (`ActivityMessage`, `WorkflowProgress`, `ActivityEnvelope`)
-- 1 decoder (`decodeActivityMessage`) that wraps/unwraps the envelope
-- `broadcastActivity` manually constructs the envelope with `satisfies ActivityEnvelope`
-- `onWorkflowProgress` validates `unknown` against `WorkflowProgressSchema` then passes to `broadcastActivity` which re-wraps it in `ActivityEnvelope`
-
-## Proposed simplification: single `BroadcastMessage` type
-
-Collapse to one schema that serves as both the wire format and the client display type:
-
-```ts
-export const BroadcastMessageSchema = Schema.Struct({
-  createdAt: Schema.String,
-  level: Schema.Literals(["info", "success", "error"]),
-  text: Schema.String,
-});
-export type BroadcastMessage = typeof BroadcastMessageSchema.Type;
-```
-
-### Why we can drop `ActivityEnvelope`
-
-The `type: "activity"` discriminator serves no purpose because:
-- `agent.broadcast()` is the only source of user-land WebSocket messages
-- The Agents SDK handles state sync and RPC on separate internal channels
-- If we ever need a second message type, we can add a discriminated union then — YAGNI
-
-Without the envelope, `broadcastActivity` sends `BroadcastMessage` directly as JSON. On the client, `decodeActivityMessage` validates against `BroadcastMessageSchema` directly — no unwrapping.
-
-### Why we can drop `WorkflowProgress` as a separate type
-
-`WorkflowProgress = { level, text }` exists because the workflow doesn't set `createdAt`. But `broadcastActivity` already adds `createdAt` — the input to `broadcastActivity` has always been `{ level, text }`, never `ActivityMessage`. We can express this with `Omit<BroadcastMessage, "createdAt">` or `Pick<BroadcastMessage, "level" | "text">` — no need for a separate schema/type.
-
-For the `AgentWorkflow` generic param, use `Pick<BroadcastMessage, "level" | "text">` directly:
-
-```ts
-export class InvoiceExtractionWorkflow extends AgentWorkflow<
-  OrganizationAgent,
-  InvoiceExtractionWorkflowParams,
-  Pick<BroadcastMessage, "level" | "text">
-> { ... }
-```
-
-### Simplified `broadcastActivity`
-
-```ts
-const broadcastActivity = (
-  agent: OrganizationAgent,
-  input: Pick<BroadcastMessage, "level" | "text">,
-) =>
-  Effect.sync(() => {
-    agent.broadcast(
-      JSON.stringify({
-        createdAt: new Date().toISOString(),
-        level: input.level,
-        text: input.text,
-      } satisfies BroadcastMessage),
-    );
-  });
-```
-
-### Simplified `decodeBroadcastMessage`
-
-```ts
-export const decodeBroadcastMessage = (
-  event: MessageEvent,
-): BroadcastMessage | null => {
-  const result = Schema.decodeUnknownExit(
-    Schema.fromJsonString(BroadcastMessageSchema),
-  )(String(event.data));
-  return Exit.isSuccess(result) ? result.value : null;
-};
-```
-
-### Simplified `onWorkflowProgress`
-
-`WorkflowProgressSchema` can stay as a validation schema for the `unknown` input from the SDK, but it doesn't need its own type export. Or we can inline the validation using `BroadcastMessageSchema.pick("level", "text")` — but Effect Schema `pick` isn't a thing. Simplest: keep a small validation schema for the `unknown` → `{ level, text }` decode in `onWorkflowProgress`, but don't export a separate type.
-
-### What changes and what stays
-
-| Before | After | Notes |
-|---|---|---|
-| `ActivityEnvelopeSchema` | removed | No envelope needed |
-| `ActivityEnvelope` type | removed | |
-| `ActivityMessageSchema` | `BroadcastMessageSchema` | Same shape, better name |
-| `ActivityMessage` type | `BroadcastMessage` type | |
-| `WorkflowProgressSchema` | kept (internal) | Still needed to validate `unknown` from SDK |
-| `WorkflowProgress` type | removed as export | Use `Pick<BroadcastMessage, "level" \| "text">` |
-| `decodeActivityMessage` | `decodeBroadcastMessage` | No envelope unwrap |
-| `activityQueryKey` | `broadcastQueryKey` or keep | Naming choice |
-| `shouldInvalidateForInvoice` | unchanged | Separate concern |
 
 ## Do broadcasts trigger query invalidation?
 
@@ -194,7 +89,7 @@ onMessage: (event) => {
 }
 ```
 
-`shouldInvalidateForInvoice` (Activity.ts L38-42) checks for these prefixes:
+`shouldInvalidateForInvoice` (Activity.ts L25-30) checks for these prefixes:
 - `"Invoice uploaded:"`
 - `"Invoice extraction completed:"`
 - `"Invoice extraction failed:"`
@@ -242,15 +137,16 @@ onMessage: (event) => {
 - **Centralized broadcast helper**: single `broadcastActivity` function, consistent shape, every broadcast goes through it.
 - **Query key factories**: `activityQueryKey`, `invoicesQueryKey`, `invoiceQueryKey` in dedicated modules — consistent, refactor-friendly.
 - **Agent SDK integration**: `useAgent` + `@callable()` gives typed RPC with automatic WebSocket lifecycle. Clean separation of transport from domain logic.
+- **Single message type**: `ActivityMessage` serves as wire format, display type, and cache type — no envelope ceremony.
 
 ### Where it falls short
 
 #### 1. String-based message discrimination is fragile
 `shouldInvalidateForInvoice` pattern-matches on `text.startsWith("Invoice uploaded:")` etc. Adding a new broadcast requires coordinating a string literal in the agent AND a prefix check on the client. A typo or missing colon (see "Invoice created" above) silently breaks invalidation.
 
-**Alternative**: Add a structured `action` field to `BroadcastMessage`:
+**Alternative**: Add a structured `action` field to `ActivityMessage`:
 ```ts
-BroadcastMessage = {
+ActivityMessage = {
   createdAt: string,
   level: "info" | "success" | "error",
   text: string,
@@ -290,13 +186,20 @@ During batch upload, each file triggers its own broadcast and invalidation. TanS
 - **Agents SDK**: `refs/agents/docs/client-sdk.md` — `useAgent` hook, `onMessage`, RPC via `stub`
 - **Agents SDK**: `refs/agents/docs/state.md` — state sync, `broadcast()` — state sync uses separate internal channel, not `onMessage`
 - **Cloudflare Docs**: `refs/cloudflare-docs/.../durable-objects/best-practices/websockets.mdx` — WebSocket hibernation, broadcast patterns
-- **Effect v4**: `refs/effect4/ai-docs/src/01_effect/06_pubsub/` — PubSub for fan-out (not used; could be relevant)
 
-## Dead code removed
+## Changes made
 
-- **`onStateUpdate` + `agentState` query key**: never consumed by any component. Removed.
-- **`setState` from context**: never called by any consumer. Removed.
-- **`invoiceItems` query key invalidation**: query key never used by any `useQuery`. Removed.
+### Type simplification (this iteration)
+- **Removed `ActivityEnvelope`**: `type: "activity"` discriminator was unused — no other message types exist. `broadcastActivity` now sends `ActivityMessage` directly as JSON.
+- **Removed `WorkflowProgress`**: replaced with `Pick<ActivityMessage, "level" | "text">` in `InvoiceExtractionWorkflow` generic param and `broadcastActivity` input.
+- **Removed `ActivityLevel`**: inlined into `ActivityMessageSchema`.
+- **Simplified `decodeActivityMessage`**: decodes JSON directly to `ActivityMessage` — no envelope unwrap.
+- **Inline validation in `onWorkflowProgress`**: `WorkflowProgressSchema` removed; uses inline `Schema.Struct` to validate `unknown` from SDK.
+
+### Dead code removal (previous iteration)
+- **`onStateUpdate` + `agentState` query key**: never consumed by any component.
+- **`setState` from context**: never called by any consumer.
+- **`invoiceItems` query key invalidation**: query key never used by any `useQuery`.
 
 ## Questions for iteration
 
@@ -304,4 +207,3 @@ During batch upload, each file triggers its own broadcast and invalidation. TanS
 2. Do we want server-side activity persistence (DO SQLite) so clients can hydrate history on reconnect?
 3. Should mutations stop doing their own invalidation and defer entirely to broadcast? Or keep the dual path as a "fast path" optimization?
 4. Do we need to handle WebSocket reconnect more explicitly (invalidate stale queries on `onOpen`)?
-5. Naming: `BroadcastMessage` or something else? `broadcastQueryKey` or keep `activityQueryKey`?

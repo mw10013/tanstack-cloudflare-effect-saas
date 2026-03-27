@@ -8,9 +8,9 @@ import * as Encoding from "effect/Encoding";
 import * as Result from "effect/Result";
 import { FetchHttpClient } from "effect/unstable/http";
 
+import type { ActivityMessage } from "@/lib/Activity";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { InvoiceExtraction } from "@/lib/InvoiceExtraction";
-import type { WorkflowProgress } from "@/lib/Activity";
 import { R2 } from "@/lib/R2";
 
 interface InvoiceExtractionWorkflowParams {
@@ -33,7 +33,7 @@ export class InvoiceExtractionWorkflowError extends Schema.TaggedErrorClass<Invo
 export class InvoiceExtractionWorkflow extends AgentWorkflow<
   OrganizationAgent,
   InvoiceExtractionWorkflowParams,
-  WorkflowProgress
+  Pick<ActivityMessage, "level" | "text">
 > {
   async run(
     event: AgentWorkflowEvent<InvoiceExtractionWorkflowParams>,
@@ -41,7 +41,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
   ) {
     // Capture instance state before entering nested Effect / step callback boundaries.
     const agent = this.agent;
-    const reportActivity = (progress: WorkflowProgress) =>
+    const reportActivity = (progress: Pick<ActivityMessage, "level" | "text">) =>
       Effect.tryPromise(() => this.reportProgress(progress));
     const envLayer = Layer.succeedServices(
       ServiceMap.make(CloudflareEnv, this.env).pipe(

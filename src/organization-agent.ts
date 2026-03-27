@@ -4,8 +4,7 @@ import { Config, ConfigProvider, Effect, Layer, Option, ServiceMap } from "effec
 import * as Schema from "effect/Schema";
 import { SqliteClient } from "@effect/sql-sqlite-do";
 
-import type { ActivityEnvelope, WorkflowProgress } from "@/lib/Activity";
-import { WorkflowProgressSchema } from "@/lib/Activity";
+import type { ActivityMessage } from "@/lib/Activity";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { makeLoggerLayer } from "@/lib/LoggerLayer";
 import type { InvoiceExtractionFields, InvoiceItemFields } from "@/lib/OrganizationDomain";
@@ -58,18 +57,15 @@ export const organizationAgentAuthHeaders = {
 
 const broadcastActivity = (
   agent: OrganizationAgent,
-  input: { level: WorkflowProgress["level"]; text: string },
+  input: Pick<ActivityMessage, "level" | "text">,
 ) =>
   Effect.sync(() => {
     agent.broadcast(
       JSON.stringify({
-        type: "activity",
-        message: {
-          createdAt: new Date().toISOString(),
-          level: input.level,
-          text: input.text,
-        },
-      } satisfies ActivityEnvelope),
+        createdAt: new Date().toISOString(),
+        level: input.level,
+        text: input.text,
+      } satisfies ActivityMessage),
     );
   });
 
@@ -354,10 +350,11 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
         if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") return;
-        const message =
-          Schema.decodeUnknownExit(WorkflowProgressSchema)(progress);
-        if (message._tag === "Failure") return;
-        yield* broadcastActivity(this, message.value);
+        const result = Schema.decodeUnknownExit(
+          Schema.Struct({ level: Schema.Literals(["info", "success", "error"]), text: Schema.String }),
+        )(progress);
+        if (result._tag === "Failure") return;
+        yield* broadcastActivity(this, result.value);
       }),
     );
   }
