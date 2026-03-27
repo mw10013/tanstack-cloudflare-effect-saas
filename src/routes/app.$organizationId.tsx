@@ -125,24 +125,14 @@ function RouteComponent() {
         (current: readonly ActivityMessage[] | undefined) =>
           [message, ...(current ?? [])].slice(0, 50),
       );
-      // scoped invalidation for invoice-related broadcasts
       if (shouldInvalidateForInvoice(message.text)) {
         void queryClient.invalidateQueries({
           queryKey: ["organization", organizationId, "invoices"],
         });
         void queryClient.invalidateQueries({
-          queryKey: ["organization", organizationId, "invoiceItems"],
-        });
-        void queryClient.invalidateQueries({
           queryKey: ["organization", organizationId, "invoice"],
         });
       }
-    },
-    onStateUpdate: (state) => {
-      queryClient.setQueryData(
-        ["organization", organizationId, "agentState"],
-        state,
-      );
     },
   });
 
@@ -151,7 +141,6 @@ function RouteComponent() {
       value={{
         call: agent.call,
         stub: agent.stub,
-        setState: agent.setState,
         ready: agent.ready,
         identified: agent.identified,
       }}

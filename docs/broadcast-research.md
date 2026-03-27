@@ -60,7 +60,6 @@ onMessage: (event) => {
   // 2. Conditionally invalidate invoice-related queries
   if (shouldInvalidateForInvoice(message.text)) {
     queryClient.invalidateQueries({ queryKey: ["organization", organizationId, "invoices"] });
-    queryClient.invalidateQueries({ queryKey: ["organization", organizationId, "invoiceItems"] });
     queryClient.invalidateQueries({ queryKey: ["organization", organizationId, "invoice"] });
   }
 }
@@ -96,7 +95,7 @@ Several mutations invalidate queries in BOTH their `onSuccess` AND via broadcast
 
 `ActivityFeed` (`app.$organizationId.tsx` L309-351) uses a TanStack Query with `staleTime: Infinity` and a no-op `queryFn: () => []`. Data is injected purely via `setQueryData` in the `onMessage` handler. This is a client-only, ephemeral feed — no persistence, no server fetch, resets on page refresh.
 
-The `onStateUpdate` callback (L141-146) syncs DO state to `["organization", organizationId, "agentState"]` query key, but this isn't consumed visibly in the current UI.
+~~The `onStateUpdate` callback synced DO state to `agentState` query key — removed as dead code (never consumed).~~
 
 ## Agent connection & auth
 
@@ -181,10 +180,15 @@ During a batch upload (multiple files), each file triggers its own broadcast. Th
 - **Effect v4**: `refs/effect4/ai-docs/src/51_http-server/fixtures/server/Users.ts` — `Effect.fn` + service patterns
 - **TanStack Query**: invalidation patterns, `setQueryData`, `invalidateQueries`
 
+## Dead code removed
+
+- **`onStateUpdate` + `agentState` query key**: `useAgent`'s `onStateUpdate` callback wrote to `["organization", organizationId, "agentState"]` — never consumed by any component. Removed callback and query key. `OrganizationAgentState` and `initialState` remain in `organization-agent.ts` because the `Agent<Env, State>` base class requires them.
+- **`setState` from context**: `OrganizationAgentContext` exposed `setState` — never called by any consumer. Removed from interface and provider value.
+- **`invoiceItems` query key invalidation**: `onMessage` invalidated `["organization", organizationId, "invoiceItems"]` — this query key is never used by any `useQuery`. Invoice items are fetched via `invoiceQueryKey` (`getInvoiceWithItems`), which is already invalidated separately. Removed.
+
 ## Questions for iteration
 
 1. Should we adopt a structured `action` discriminator on the envelope, or keep string-matching and just fix the gaps?
 2. Do we want server-side activity persistence (DO SQLite) so clients can hydrate history on reconnect?
 3. Should mutations stop doing their own invalidation and defer entirely to broadcast? Or keep the dual path as a "fast path" optimization?
-4. Is the `onStateUpdate` → `agentState` query key used anywhere? If not, should we remove the dead code path?
-5. Do we need to handle WebSocket reconnect more explicitly (invalidate stale queries on `onOpen`)?
+4. Do we need to handle WebSocket reconnect more explicitly (invalidate stale queries on `onOpen`)?

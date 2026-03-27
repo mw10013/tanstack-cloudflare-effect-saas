@@ -10,7 +10,6 @@ type AgentReturn = ReturnType<
 interface OrganizationAgentContextValue {
   readonly call: AgentReturn["call"];
   readonly stub: AgentReturn["stub"];
-  readonly setState: AgentReturn["setState"];
   readonly ready: AgentReturn["ready"];
   readonly identified: AgentReturn["identified"];
 }
