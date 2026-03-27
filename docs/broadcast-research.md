@@ -141,20 +141,23 @@ onMessage: (event) => {
 
 ### Where it falls short
 
-#### 1. String-based message discrimination is fragile
+#### 1. String-based message discrimination is fragile — **decided: add `action` field**
 `shouldInvalidateForInvoice` pattern-matches on `text.startsWith("Invoice uploaded:")` etc. Adding a new broadcast requires coordinating a string literal in the agent AND a prefix check on the client. A typo or missing colon (see "Invoice created" above) silently breaks invalidation.
 
-**Alternative**: Add a structured `action` field to `ActivityMessage`:
+**Plan**: Add a structured `action` literal field to `ActivityMessage`:
 ```ts
 ActivityMessage = {
   createdAt: string,
   level: "info" | "success" | "error",
   text: string,
-  action: "invoice.uploaded" | "invoice.created" | ...
-  entityId?: string
+  action: "invoice.uploaded" | "invoice.created" | "invoice.updated"
+        | "invoice.deleted" | "invoice.extraction.completed"
+        | "invoice.extraction.failed" | "invoice.extraction.progress"
 }
 ```
-Then `shouldInvalidateForInvoice` becomes a set lookup on `action`, and targeted single-invoice invalidation becomes possible.
+`shouldInvalidateForInvoice` becomes a `Set.has()` lookup on `action` — no string coordination, no silent misses. The "Invoice created" bug goes away automatically.
+
+**Deferred: `entityId` field.** Adding `entityId?: string` would enable targeted single-invoice invalidation (`["organization", orgId, "invoice", entityId]`) instead of the current broad prefix match on `["organization", orgId, "invoice"]`. Not needed now — broad invalidation is fine at current scale. Revisit if invoice count grows or if single-invoice cache precision becomes valuable.
 
 #### 2. Broadcast is fire-and-forget with no delivery guarantee
 `agent.broadcast()` sends to all currently-connected WebSockets. If a client is disconnected during extraction, it misses the completion broadcast and the invoice stays in "extracting" state until manual refresh.
@@ -203,7 +206,7 @@ During batch upload, each file triggers its own broadcast and invalidation. TanS
 
 ## Questions for iteration
 
-1. Should we adopt a structured `action` discriminator on the message, or keep string-matching and just fix the gaps?
+1. ~~Should we adopt a structured `action` discriminator on the message, or keep string-matching and just fix the gaps?~~ **Decided: add `action` field. Defer `entityId` for future.**
 2. Do we want server-side activity persistence (DO SQLite) so clients can hydrate history on reconnect?
 3. Should mutations stop doing their own invalidation and defer entirely to broadcast? Or keep the dual path as a "fast path" optimization?
 4. Do we need to handle WebSocket reconnect more explicitly (invalidate stale queries on `onOpen`)?
