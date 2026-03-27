@@ -125,7 +125,7 @@ function RouteComponent() {
         (current: readonly ActivityMessage[] | undefined) =>
           [message, ...(current ?? [])].slice(0, 50),
       );
-      if (shouldInvalidateForInvoice(message.text)) {
+      if (shouldInvalidateForInvoice(message.action)) {
         void queryClient.invalidateQueries({
           queryKey: ["organization", organizationId, "invoices"],
         });

@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { SqliteClient } from "@effect/sql-sqlite-do";
 
 import type { ActivityMessage } from "@/lib/Activity";
+import { ActivityAction } from "@/lib/Activity";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { makeLoggerLayer } from "@/lib/LoggerLayer";
 import type { InvoiceExtractionFields, InvoiceItemFields } from "@/lib/OrganizationDomain";
@@ -57,12 +58,13 @@ export const organizationAgentAuthHeaders = {
 
 const broadcastActivity = (
   agent: OrganizationAgent,
-  input: Pick<ActivityMessage, "level" | "text">,
+  input: Pick<ActivityMessage, "action" | "level" | "text">,
 ) =>
   Effect.sync(() => {
     agent.broadcast(
       JSON.stringify({
         createdAt: new Date().toISOString(),
+        action: input.action,
         level: input.level,
         text: input.text,
       } satisfies ActivityMessage),
@@ -184,6 +186,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const name = upload.fileName.replace(/\.[^.]+$/, "");
         yield* repo.upsertInvoice({ ...upload, name, r2ActionTime, status: "extracting" });
         yield* broadcastActivity(this, {
+          action: "invoice.uploaded",
           level: "info",
           text: `Invoice uploaded: ${upload.fileName}`,
         });
@@ -220,6 +223,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const invoiceId: string = crypto.randomUUID();
         yield* repo.createInvoice(invoiceId);
         yield* broadcastActivity(this, {
+          action: "invoice.created",
           level: "info",
           text: "Invoice created",
         });
@@ -256,6 +260,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         );
         if (!invoice) return yield* new OrganizationAgentError({ message: "Invoice not found after update" });
         yield* broadcastActivity(this, {
+          action: "invoice.updated",
           level: "success",
           text: `Invoice updated: ${invoice.name ?? invoice.fileName ?? invoice.id}`,
         });
@@ -315,6 +320,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const deleted = yield* repo.softDeleteInvoice(invoiceId);
         if (deleted.length === 0) return;
         yield* broadcastActivity(this, {
+          action: "invoice.deleted",
           level: "info",
           text: "Invoice deleted",
         });
@@ -335,6 +341,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const updated = yield* repo.saveExtraction(input);
         if (updated.length === 0) return;
         yield* broadcastActivity(this, {
+          action: "invoice.extraction.completed",
           level: "success",
           text: `Invoice extraction completed: ${(updated[0] as { fileName: string }).fileName}`,
         });
@@ -351,7 +358,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       Effect.gen({ self: this }, function* () {
         if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") return;
         const result = Schema.decodeUnknownExit(
-          Schema.Struct({ level: Schema.Literals(["info", "success", "error"]), text: Schema.String }),
+          Schema.Struct({ action: ActivityAction, level: Schema.Literals(["info", "success", "error"]), text: Schema.String }),
         )(progress);
         if (result._tag === "Failure") return;
         yield* broadcastActivity(this, result.value);
@@ -372,6 +379,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const updated = yield* repo.setError(workflowId, error);
         if (updated.length === 0) return;
         yield* broadcastActivity(this, {
+          action: "invoice.extraction.failed",
           level: "error",
           text: `Invoice extraction failed: ${(updated[0] as { fileName: string }).fileName}`,
         });

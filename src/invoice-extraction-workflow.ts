@@ -33,7 +33,7 @@ export class InvoiceExtractionWorkflowError extends Schema.TaggedErrorClass<Invo
 export class InvoiceExtractionWorkflow extends AgentWorkflow<
   OrganizationAgent,
   InvoiceExtractionWorkflowParams,
-  Pick<ActivityMessage, "level" | "text">
+  Pick<ActivityMessage, "action" | "level" | "text">
 > {
   async run(
     event: AgentWorkflowEvent<InvoiceExtractionWorkflowParams>,
@@ -41,7 +41,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
   ) {
     // Capture instance state before entering nested Effect / step callback boundaries.
     const agent = this.agent;
-    const reportActivity = (progress: Pick<ActivityMessage, "level" | "text">) =>
+    const reportActivity = (progress: Pick<ActivityMessage, "action" | "level" | "text">) =>
       Effect.tryPromise(() => this.reportProgress(progress));
     const envLayer = Layer.succeedServices(
       ServiceMap.make(CloudflareEnv, this.env).pipe(
@@ -61,6 +61,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
     return Effect.runPromise(
       Effect.gen(function* () {
         yield* reportActivity({
+          action: "invoice.extraction.progress",
           level: "info",
           text: `Invoice extraction started: ${event.payload.fileName}`,
         });
@@ -114,6 +115,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
         }
         const fileBytes = decodedFileBytes.success;
         yield* reportActivity({
+          action: "invoice.extraction.progress",
           level: "info",
           text: `Invoice extraction in progress: ${event.payload.fileName}`,
         });
