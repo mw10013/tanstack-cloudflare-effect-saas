@@ -538,22 +538,53 @@ Trade-off: no schema-level guarantee that values are trimmed. DB admits untrimme
 
 ### TanStack Form GitHub issues: normalization is a known gap
 
-TanStack Form has no built-in normalization API. This is a known gap with active discussion:
+TanStack Form has no built-in normalization API. This is a known gap with active discussion.
 
 **[#418](https://github.com/TanStack/form/issues/418) — Transform values on submit** (OPEN)
 
-The canonical issue. Filed by the maintainer (`crutchcorn`). 18+ comments, unassigned, no PR.
+The canonical issue. Filed by the maintainer (`crutchcorn`). 19+ comments, unassigned, no PR.
 - Original request: field-level `transformOnSubmit` prop (e.g. `transformOnSubmit={v => parseFloat(v)}`)
-- `gutentag2012` suggests per-field `transformToBinding` / `transformFromBinding` on every change
+- `gutentag2012` suggests per-field `transformToBinding` / `transformFromBinding` on every change — not just submit. His signal-based form library implements this with a `handleChangeBound` that transforms the value before setting it in the form and a `transformedValue` attribute that runs the form value through the transformer.
 - `juanvilladev` argues standard schema `z.input` / `z.output` should be respected — `defaultValues` typed as input, `onSubmit` typed as output
+- `leomelzer` points to `standard-schema`'s `InferInput` / `InferOutput` as the right approach
 - `bpinto`: "Wouldn't we need to perform the transformations on `onChange` (and others) events as well?"
-- Community workaround: call `schema.parse(value)` again inside `onSubmit`
+- `luchillo17` workaround: define a separate Zod transformer, pass the base schema to form validators, transform once in the submit callback
+- `Choco-milk-for-u`: "are there any solutions by any chance?"
+- `myeljoud`: "Is there anything new in this regard?" (most recent comment)
 
 **[#1723](https://github.com/TanStack/form/issues/1723) — Parsed value not returned from standard schema** (OPEN)
 
 When using Zod/Valibot/Effect with transforms, `onSubmit` receives the raw value, not the parsed/transformed output. Trimming, coercion, and normalization in the schema are silently skipped.
 - Official docs acknowledge: "While TanStack Form provides Standard Schema support for validation, it does not preserve the Schema's output data."
-- Proposed fix: return `{ ok: true, data: result.value }` from the standard schema validator
+- `FLchs`: types are unsound — `onSubmit` value is typed as the schema output (e.g. `{age: number}`) but at runtime it's the raw input (e.g. `{age: "42"}`)
+- Proposed fix: one-line change in `standardSchemaValidator.ts` — return `{ ok: true, data: result.value }` instead of bare `return` when no issues. No PR.
+
+Workarounds noted in the issues:
+
+```ts
+// Workaround 1: re-parse in onSubmit (most common)
+// Since the validator already checked validity, this parse is guaranteed to succeed.
+onSubmit: async ({ value }) => {
+  const transformed = v.parse(SomeFormSchema, value)
+  await api.submit(transformed)
+}
+
+// Workaround 2: separate validation schema + transform schema (luchillo17)
+const ValidationSchema = z.object({ startTime: z.string() })
+const TransformSchema = z.transform(
+  (dto: FormDTO): MutationModel => ({
+    ...dto,
+    startMinutes: hmToMinutes(dto.startTime),
+  })
+)
+// Pass ValidationSchema to form validators
+// Apply TransformSchema in onSubmit
+
+// Workaround 3: cast defaultValues to match schema output type (leomelzer)
+const defaultValues = {
+  related_entry_id: null as unknown as number,
+}
+```
 
 **[#163](https://github.com/TanStack/form/issues/163) — `preSubmit` for v2?** (CLOSED)
 
@@ -563,7 +594,7 @@ Normalization before submit was requested in the earliest TanStack Form versions
 
 Phone number formatting, date masking. No resolution — suggested using `prevalidate`. No built-in masking support added.
 
-**Implication for our approach:** The normalize-before-blur pattern via a pre-bound component is the idiomatic workaround given the current API. If #418 or #1723 ship, the approach could simplify — transforms in the schema would be respected, and normalization could live in the validation layer instead of the component layer.
+**Implication for our approach:** The normalize-before-blur pattern via a pre-bound component is the idiomatic workaround given the current API. No community solution addresses normalize-then-validate on blur — the workarounds all focus on submit-time. If #418 or #1723 ship, normalization could move into the schema/validation layer. Until then, the component-level `normalize` prop is the cleanest option.
 
 ### SSR forms with TanStack Start
 
