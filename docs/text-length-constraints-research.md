@@ -155,43 +155,38 @@ All fields are bare `Schema.String` with no constraints.
 
 ## Proposed Domain Schema Changes
 
-Two viable approaches. Both keep length rules in one place.
+Schemas validate only — check that values are trimmed and within max length, never mutate.
+Trimming is the form layer's responsibility (see Trimming Strategy below).
 Code-controlled columns (`id`, `status`, `idempotencyKey`) left unconstrained per decision #1.
 
-### Option A: Single schema (trim + length everywhere)
-
-Use `SchemaTransformation.trim()` + `isMaxLength()` on all text fields.
-This is the simplest and ensures all decoded values are normalized.
-
-Reusable helper:
+### Effect Schema helper (validation only)
 
 ```ts
-import { SchemaTransformation } from "effect/Schema"
-
-const trimMax = (max: number) =>
-  Schema.String.pipe(Schema.decode(SchemaTransformation.trim()))
-    .check(Schema.isMaxLength(max))
+const trimmedMax = (max: number) =>
+  Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(max))
 ```
+
+Rejects untrimmed or over-length strings. No transformation — callers must trim before passing data through.
 
 ### InvoiceExtractionFields (OrganizationDomain.ts)
 
 ```ts
 export const InvoiceExtractionFields = Schema.Struct({
   invoiceConfidence: Schema.Number,
-  invoiceNumber: trimMax(100),
-  invoiceDate: trimMax(50),
-  dueDate: trimMax(50),
-  currency: trimMax(10),
-  vendorName: trimMax(500),
-  vendorEmail: trimMax(254),
-  vendorAddress: trimMax(2000),
-  billToName: trimMax(500),
-  billToEmail: trimMax(254),
-  billToAddress: trimMax(2000),
-  subtotal: trimMax(50),
-  tax: trimMax(50),
-  total: trimMax(50),
-  amountDue: trimMax(50),
+  invoiceNumber: trimmedMax(100),
+  invoiceDate: trimmedMax(50),
+  dueDate: trimmedMax(50),
+  currency: trimmedMax(10),
+  vendorName: trimmedMax(500),
+  vendorEmail: trimmedMax(254),
+  vendorAddress: trimmedMax(2000),
+  billToName: trimmedMax(500),
+  billToEmail: trimmedMax(254),
+  billToAddress: trimmedMax(2000),
+  subtotal: trimmedMax(50),
+  tax: trimmedMax(50),
+  total: trimmedMax(50),
+  amountDue: trimmedMax(50),
 })
 ```
 
@@ -199,11 +194,11 @@ export const InvoiceExtractionFields = Schema.Struct({
 
 ```ts
 export const InvoiceItemFields = Schema.Struct({
-  description: trimMax(2000),
-  quantity: trimMax(50),
-  unitPrice: trimMax(50),
-  amount: trimMax(50),
-  period: trimMax(50),
+  description: trimmedMax(2000),
+  quantity: trimmedMax(50),
+  unitPrice: trimmedMax(50),
+  amount: trimmedMax(50),
+  period: trimmedMax(50),
 })
 ```
 
@@ -212,29 +207,40 @@ export const InvoiceItemFields = Schema.Struct({
 ```ts
 export const Invoice = Schema.Struct({
   id: Schema.String,
-  name: trimMax(500),
-  fileName: trimMax(500),
-  contentType: trimMax(100),
+  name: trimmedMax(500),
+  fileName: trimmedMax(500),
+  contentType: trimmedMax(100),
   createdAt: Schema.Number,
   r2ActionTime: Schema.NullOr(Schema.Number),
   idempotencyKey: Schema.NullOr(Schema.String),
   r2ObjectKey: Schema.String,
   status: InvoiceStatus,
   ...InvoiceExtractionFields.fields,
-  extractedJson: Schema.NullOr(trimMax(100_000)),
-  error: Schema.NullOr(trimMax(10_000)),
+  extractedJson: Schema.NullOr(trimmedMax(100_000)),
+  error: Schema.NullOr(trimmedMax(10_000)),
 })
 ```
 
-### Option B: Split input vs DB schemas (trim on input only)
+### Alternative: Transform-based schemas
 
-Trim is decode-only and encode passthrough in Effect v4. That means `decode` applies `trim`, `encode` does not.
-Grounding:
+For reference, two transform-based approaches are viable if validation-only proves insufficient.
+
+#### Option A: Single schema (trim + length everywhere)
+
+Use `SchemaTransformation.trim()` + `isMaxLength()` — decode always trims.
+
+```ts
+const trimMax = (max: number) =>
+  Schema.String.pipe(Schema.decode(SchemaTransformation.trim()))
+    .check(Schema.isMaxLength(max))
+```
+
+#### Option B: Split input vs DB schemas (trim on input only)
+
+Trim is decode-only, encode is passthrough in Effect v4. Use `trimMax` at input boundaries, `bounded` for DB reads.
 
 - `Schema.decode(SchemaTransformation.trim())` applies trim on decode: `refs/effect4/packages/effect/SCHEMA.md:2935-2941`
 - `trim` is decode-only (`Getter.trim()` with `Getter.passthrough()` for encode): `refs/effect4/packages/effect/SCHEMA.md:2967-2973`
-
-Minimal split example:
 
 ```ts
 const bounded = (max: number) =>
@@ -255,17 +261,13 @@ export const InvoiceFieldsInput = makeInvoiceFields(trimMax)
 export const InvoiceFieldsDb = makeInvoiceFields(bounded)
 ```
 
-### Trade-offs
+#### Transform trade-offs
 
 | Approach | Pros | Cons |
 | --- | --- | --- |
-| Single schema | Simplest usage; one export to wire everywhere | Trim runs on every decode; masks untrimmed DB values; small extra allocations |
-| Split schemas | Trim only at boundaries; DB reads stay exact and cheaper | More exports; need to pick the right schema per call site |
-
-### Recommendation
-
-If you already have clear input boundaries (extraction, UI, API), use **Option B**. The builder keeps constraints in one place, and DB reads avoid trim overhead.
-If you want the fewest moving parts, **Option A** is fine — trim cost is small compared to SQLite IO.
+| Validation-only (`trimmedMax`) | Schema never mutates; trim lives in form/input layer; simplest mental model | Requires all input paths to trim before validation |
+| Single transform (`trimMax`) | One export; always normalized | Trim runs on every decode; masks untrimmed DB values |
+| Split schemas | Trim only at boundaries; DB reads stay exact | More exports; must pick the right schema per call site |
 
 ### SQLite DDL — CHECK constraints
 
@@ -351,18 +353,264 @@ check(length(period) <= 50)
 
 3. **`extractedJson`**: Cap at 100KB.
 
-4. **Trimming strategy**: Transform at input boundaries. DB read strategy is open (single vs split), see trade-offs below.
+4. **Trimming strategy**: Form layer trims; schemas validate only. See details below.
 
-   **Background:** `Schema.Trimmed` is a check — it rejects untrimmed strings with an error, does not modify them. `Schema.decode(SchemaTransformation.trim())` is a transform — it always trims, never errors about whitespace.
+   **Background:** `Schema.Trimmed` (`isTrimmed()`) is a check — it rejects untrimmed strings with an error, does not modify them. `Schema.decode(SchemaTransformation.trim())` is a transform — it always trims, never errors about whitespace. We use validation-only schemas (`isTrimmed()` + `isMaxLength()`), so trimming must happen before the schema sees the data.
+
+   TanStack Form does not apply transformed schema output to form state:
+   - "Validation will not provide you with transformed values." `refs/tan-form/docs/framework/react/guides/validation.md:461`
+   - "The value passed to the onSubmit function will always be the input data... parse it in the onSubmit function." `refs/tan-form/docs/framework/react/guides/submission-handling.md:67-90`
+
+### Trimming strategy: centralized trim-before-blur in TextField component (recommended)
+
+Trim in the input's `onBlur` handler **before** calling `field.handleBlur()`, so blur validators always see the trimmed value. Centralize this in a pre-bound `TextField` component via `createFormHook`.
+
+#### Why not a form-level onBlur listener?
+
+Form-level `onBlur` listeners run **after** blur validation. From source:
+
+**`handleBlur`** (`refs/tan-form/packages/form-core/src/FieldApi.ts:1944-1955`):
+
+```ts
+handleBlur = () => {
+  // ...set isTouched, isBlurred meta...
+  this.validate('blur')          // 1. blur validators run FIRST
+  this.triggerOnBlurListener()   // 2. blur listeners run AFTER
+}
+```
+
+A form-level listener that trims would run at step 2 — after blur validators already saw the untrimmed value. If `isTrimmed()` is on the blur validator, it rejects, then the listener trims, then `setValue` re-validates via onChange. The user sees a flash of a spurious trim error.
+
+#### Why not onChange validation?
+
+`isTrimmed()` on `validators.onChange` fires on every keystroke. A space is valid mid-string (e.g. `"John Smith"`), but `isTrimmed()` rejects leading/trailing whitespace — so typing a trailing space before the next word would show a false error. onChange is wrong for trim checking.
+
+#### Correct approach: trim in input onBlur, validate on blur
+
+Use `field.setValue(trimmed, { dontValidate: true })` to set the trimmed value without triggering change validation, then call `field.handleBlur()` which runs blur validation on the now-trimmed value.
+
+**`setValue`** (`refs/tan-form/packages/form-core/src/FieldApi.ts:1390-1404`):
+
+```ts
+setValue = (updater, options?) => {
+  this.form.setFieldValue(...)
+  if (!options?.dontRunListeners) this.triggerOnChangeListener()
+  if (!options?.dontValidate) this.validate('change')
+}
+```
+
+**`UpdateMetaOptions`** (`refs/tan-form/packages/form-core/src/types.ts:132-145`):
+
+```ts
+export interface UpdateMetaOptions {
+  dontUpdateMeta?: boolean
+  dontValidate?: boolean
+  dontRunListeners?: boolean
+}
+```
+
+Flow:
+
+```mermaid
+flowchart TD
+  A1["User blurs field"] --> A2["input onBlur handler"]
+  A2 --> A3{"value needs trimming?"}
+  A3 -->|yes| A4["field.setValue(trimmed, { dontValidate: true })"]
+  A4 --> A5["field.handleBlur()"]
+  A3 -->|no| A5
+  A5 --> A6["validate('blur') sees TRIMMED value"]
+  A6 --> A7["isTrimmed() passes, isMaxLength() checked"]
+```
+
+No spurious errors. No flash. Blur validator sees clean data.
+
+#### Centralized via TextField component
+
+Use `createFormHook` to register a pre-bound `TextField` that handles trim-on-blur for all string fields:
+
+```tsx
+function TextField({ label }: { label: string }) {
+  const field = useFieldContext<string>()
+  return (
+    <label>
+      <span>{label}</span>
+      <input
+        value={field.state.value}
+        onChange={(e) => field.handleChange(e.target.value)}
+        onBlur={(e) => {
+          const trimmed = e.target.value.trim()
+          if (trimmed !== field.state.value) {
+            field.setValue(trimmed, { dontValidate: true })
+          }
+          field.handleBlur()
+        }}
+      />
+    </label>
+  )
+}
+
+const { useAppForm } = createFormHook({
+  fieldContext,
+  formContext,
+  fieldComponents: { TextField },
+  formComponents: {},
+})
+```
+
+Usage — validation via `validators.onBlur` with the Effect Schema:
+
+```tsx
+const form = useAppForm({
+  defaultValues: { vendorName: '', vendorEmail: '' },
+})
+
+// ...
+<form.AppField
+  name="vendorName"
+  validators={{ onBlur: vendorNameSchema }}
+  children={(field) => <field.TextField label="Vendor Name" />}
+/>
+```
+
+Docs:
+- Custom form hooks: `refs/tan-form/docs/framework/react/guides/form-composition.md:10-44`
+- Pre-bound field components: `refs/tan-form/docs/framework/react/guides/form-composition.md:46-104`
+- Form-level listeners propagate to children: `refs/tan-form/docs/framework/react/guides/listeners.md:93-95`
+
+#### Alternative: form-level onBlur listener (deferred trimming)
+
+If centralizing in `TextField` is not feasible, a form-level listener works but with a caveat: blur validators see pre-trim values. Only viable if `isTrimmed()` is dropped from the schema and replaced with `isMaxLength()` only.
+
+```tsx
+const form = useForm({
+  listeners: {
+    onBlur: ({ fieldApi }) => {
+      const value = fieldApi.state.value
+      if (typeof value === "string") {
+        const trimmed = value.trim()
+        if (trimmed !== value) fieldApi.setValue(trimmed, { dontValidate: true })
+      }
+    },
+  },
+})
+```
+
+Trade-off: no schema-level guarantee that values are trimmed. Relies on all input paths using the listener. DB admits untrimmed strings since CHECK only enforces length.
+
+### SSR forms with TanStack Start
+
+TanStack Form supports SSR with TanStack Start via `@tanstack/react-form-start`. This enables server-side validation as a second layer of defense beyond client-side form validation.
+
+#### How it works
+
+1. **Shared form shape** via `formOptions()` — used on both client and server.
+2. **Server validation** via `createServerValidate()` — runs in a `createServerFn` handler.
+3. **State merging** via `useTransform` + `mergeForm` — server validation errors flow back to the client form.
+4. **Progressive enhancement** — form posts as `multipart/form-data` to the server fn URL, works without JS.
+
+Docs: `refs/tan-form/docs/framework/react/guides/ssr.md:14-174`
+
+#### SSR form pattern for TanStack Start
+
+```tsx
+// shared form options
+import { formOptions } from '@tanstack/react-form-start'
+
+export const formOpts = formOptions({
+  defaultValues: {
+    vendorName: '',
+    vendorEmail: '',
+  },
+})
+```
+
+```tsx
+// server validation
+import { createServerValidate, ServerValidateError } from '@tanstack/react-form-start'
+
+const serverValidate = createServerValidate({
+  ...formOpts,
+  onServerValidate: ({ value }) => {
+    // Run Effect Schema validation on server
+    // Return error string if validation fails
+  },
+})
+
+export const handleForm = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    if (!(data instanceof FormData)) throw new Error('Invalid form data')
+    return data
+  })
+  .handler(async (ctx) => {
+    try {
+      const validatedData = await serverValidate(ctx.data)
+      // Trim + validate with Effect Schema before persisting
+      // This is where trimming happens on the server path
+    } catch (e) {
+      if (e instanceof ServerValidateError) return e.response
+      throw e
+    }
+  })
+```
+
+```tsx
+// client form with SSR state merging
+import { mergeForm, useForm, useTransform } from '@tanstack/react-form-start'
+
+export const Route = createFileRoute('/')({
+  component: Home,
+  loader: async () => ({ state: await getFormDataFromServer() }),
+})
+
+function Home() {
+  const { state } = Route.useLoaderData()
+  const form = useForm({
+    ...formOpts,
+    transform: useTransform((baseForm) => mergeForm(baseForm, state), [state]),
+  })
+
+  return (
+    <form action={handleForm.url} method="post" encType="multipart/form-data">
+      {/* Uses pre-bound TextField with trim-on-blur built in */}
+    </form>
+  )
+}
+```
+
+#### SSR form trade-offs
+
+| Aspect | Client-only form | SSR form |
+| --- | --- | --- |
+| Validation | Client-side only (until server fn call) | Client + server validation, errors merge back |
+| Progressive enhancement | Requires JS | Works without JS via native form post |
+| Trimming | TextField trims on blur before validation | TextField trims on blur + server normalizes on submit |
+| Complexity | Lower — no server validate setup | Higher — `formOptions`, `createServerValidate`, `useTransform`/`mergeForm` |
+| Security | Depends on server fn validation | Server validation is explicit and integrated |
+
+#### When to use SSR forms
+
+- Forms that must work without JavaScript (accessibility, progressive enhancement)
+- Forms where server-side validation feedback should integrate seamlessly into the form UI (not just a toast/error banner)
+- Forms with server-side-only validation rules (uniqueness checks, authorization)
+
+For the invoice editing use case, SSR forms may be overkill if the primary path is already: client form → `createServerFn` → Effect Schema validation → DB write. The server fn already validates. SSR forms add value if you want server validation errors to appear inline on form fields without custom wiring.
+
+#### Submission-time normalization
+
+Parsing in `onSubmit` produces a transformed output value but does not mutate form state. It is normalization of the submitted data, not a state mutation.
 
 5. **Branded types**: No brands for now.
 
 6. **Date format validation**: Defer.
 
+7. **SSR forms**: Evaluate. Current forms use client-only TanStack Form → `createServerFn`. SSR form pattern (`@tanstack/react-form-start`) adds server-side validation with error merging but increases complexity. Worth it if we want progressive enhancement or inline server validation errors. See SSR Forms section above.
+
 ## Next Steps
 
-- [ ] Choose Option A (single schema) or Option B (split input vs DB schemas)
-- [ ] Add `trimMax()` helper and constrained fields to `OrganizationDomain.ts`
+- [ ] Add `trimmedMax()` helper and constrained fields to `OrganizationDomain.ts`
 - [ ] Add CHECK constraints to SQLite DDL in `organization-agent.ts`
+- [ ] Create `createFormHook` with pre-bound `TextField` that trims on blur via `setValue({ dontValidate: true })` + `handleBlur()`
+- [ ] Wire `validators.onBlur` using the constrained schemas on form fields
 - [ ] Ensure extraction workflow decodes/validates through the constrained schemas
+- [ ] Decide on SSR form adoption (see trade-offs above)
 - [ ] Verify UI form validation surfaces constraint violations before DB write
