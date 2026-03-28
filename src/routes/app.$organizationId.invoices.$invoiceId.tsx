@@ -164,14 +164,12 @@ function RouteComponent() {
         invoiceItems: data.invoiceItems.map(({ clientId: _, ...rest }) => rest),
       }),
     onSuccess: (invoice: OrganizationDomain.InvoiceWithItems) => {
+      queryClient.setQueryData(invoiceQueryKey(organizationId, invoiceId), invoice);
       setForm(toFormValues(invoice));
     },
     onSettled: () => {
       void queryClient.invalidateQueries({
         queryKey: invoicesQueryKey(organizationId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: invoiceQueryKey(organizationId, invoiceId),
       });
     },
   });
