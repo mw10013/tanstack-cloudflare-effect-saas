@@ -155,38 +155,50 @@ All fields are bare `Schema.String` with no constraints.
 
 ## Proposed Domain Schema Changes
 
-Schemas validate only — check that values are trimmed and within max length, never mutate.
-Trimming is the form layer's responsibility (see Trimming Strategy below).
-Code-controlled columns (`id`, `status`, `idempotencyKey`) left unconstrained per decision #1.
+Two schema helpers depending on the use case. Code-controlled columns (`id`, `status`, `idempotencyKey`) left unconstrained per decision #1.
 
-### Effect Schema helper (validation only)
+### Effect Schema helpers
 
 ```ts
+import { SchemaTransformation } from "effect/Schema"
+
+// Transform schema: trims then checks length. Use as the primary schema.
+// Form validation: TanStack Form discards transform output (known issue #1723),
+// but validation still passes/fails correctly.
+// Server decode: trim is applied, DB gets clean data.
+const trimMax = (max: number) =>
+  Schema.String.pipe(Schema.decode(SchemaTransformation.trim()))
+    .check(Schema.isMaxLength(max))
+
+// Validation-only schema: rejects untrimmed or over-length strings, no mutation.
+// Use for cases where the caller must normalize before validation.
 const trimmedMax = (max: number) =>
   Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(max))
 ```
 
-Rejects untrimmed or over-length strings. No transformation — callers must trim before passing data through.
+**Primary approach: `trimMax` (transform schema).** The form uses it as a validator — TanStack Form discards the trimmed output but validation works correctly. The server fn decodes through the same schema — trim is applied, DB gets clean data. No component-level normalization needed for trimming.
+
+**`trimmedMax` (validation-only)** is available for cases where the caller has already normalized and wants strict checking.
 
 ### InvoiceExtractionFields (OrganizationDomain.ts)
 
 ```ts
 export const InvoiceExtractionFields = Schema.Struct({
   invoiceConfidence: Schema.Number,
-  invoiceNumber: trimmedMax(100),
-  invoiceDate: trimmedMax(50),
-  dueDate: trimmedMax(50),
-  currency: trimmedMax(10),
-  vendorName: trimmedMax(500),
-  vendorEmail: trimmedMax(254),
-  vendorAddress: trimmedMax(2000),
-  billToName: trimmedMax(500),
-  billToEmail: trimmedMax(254),
-  billToAddress: trimmedMax(2000),
-  subtotal: trimmedMax(50),
-  tax: trimmedMax(50),
-  total: trimmedMax(50),
-  amountDue: trimmedMax(50),
+  invoiceNumber: trimMax(100),
+  invoiceDate: trimMax(50),
+  dueDate: trimMax(50),
+  currency: trimMax(10),
+  vendorName: trimMax(500),
+  vendorEmail: trimMax(254),
+  vendorAddress: trimMax(2000),
+  billToName: trimMax(500),
+  billToEmail: trimMax(254),
+  billToAddress: trimMax(2000),
+  subtotal: trimMax(50),
+  tax: trimMax(50),
+  total: trimMax(50),
+  amountDue: trimMax(50),
 })
 ```
 
@@ -194,11 +206,11 @@ export const InvoiceExtractionFields = Schema.Struct({
 
 ```ts
 export const InvoiceItemFields = Schema.Struct({
-  description: trimmedMax(2000),
-  quantity: trimmedMax(50),
-  unitPrice: trimmedMax(50),
-  amount: trimmedMax(50),
-  period: trimmedMax(50),
+  description: trimMax(2000),
+  quantity: trimMax(50),
+  unitPrice: trimMax(50),
+  amount: trimMax(50),
+  period: trimMax(50),
 })
 ```
 
@@ -207,37 +219,36 @@ export const InvoiceItemFields = Schema.Struct({
 ```ts
 export const Invoice = Schema.Struct({
   id: Schema.String,
-  name: trimmedMax(500),
-  fileName: trimmedMax(500),
-  contentType: trimmedMax(100),
+  name: trimMax(500),
+  fileName: trimMax(500),
+  contentType: trimMax(100),
   createdAt: Schema.Number,
   r2ActionTime: Schema.NullOr(Schema.Number),
   idempotencyKey: Schema.NullOr(Schema.String),
   r2ObjectKey: Schema.String,
   status: InvoiceStatus,
   ...InvoiceExtractionFields.fields,
-  extractedJson: Schema.NullOr(trimmedMax(100_000)),
-  error: Schema.NullOr(trimmedMax(10_000)),
+  extractedJson: Schema.NullOr(trimMax(100_000)),
+  error: Schema.NullOr(trimMax(10_000)),
 })
 ```
 
-### Alternative: Transform-based schemas
+### Alternative schema approaches
 
-For reference, two transform-based approaches are viable if validation-only proves insufficient.
+#### Validation-only schema (`trimmedMax`)
 
-#### Option A: Single schema (trim + length everywhere)
-
-Use `SchemaTransformation.trim()` + `isMaxLength()` — decode always trims.
+Rejects untrimmed strings instead of trimming them. Only useful if the caller has already normalized.
 
 ```ts
-const trimMax = (max: number) =>
-  Schema.String.pipe(Schema.decode(SchemaTransformation.trim()))
-    .check(Schema.isMaxLength(max))
+const trimmedMax = (max: number) =>
+  Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(max))
 ```
 
-#### Option B: Split input vs DB schemas (trim on input only)
+Trade-off: requires all input paths to trim before validation. More complex form-side wiring needed (see normalize-before-blur pattern above).
 
-Trim is decode-only, encode is passthrough in Effect v4. Use `trimMax` at input boundaries, `bounded` for DB reads.
+#### Split input vs DB schemas
+
+Use `trimMax` at input boundaries, length-only for DB reads. Avoids trim overhead on reads.
 
 - `Schema.decode(SchemaTransformation.trim())` applies trim on decode: `refs/effect4/packages/effect/SCHEMA.md:2935-2941`
 - `trim` is decode-only (`Getter.trim()` with `Getter.passthrough()` for encode): `refs/effect4/packages/effect/SCHEMA.md:2967-2973`
@@ -245,10 +256,6 @@ Trim is decode-only, encode is passthrough in Effect v4. Use `trimMax` at input 
 ```ts
 const bounded = (max: number) =>
   Schema.String.check(Schema.isMaxLength(max))
-
-const trimMax = (max: number) =>
-  Schema.String.pipe(Schema.decode(SchemaTransformation.trim()))
-    .check(Schema.isMaxLength(max))
 
 const makeInvoiceFields = (text: (max: number) => Schema.Schema<string>) =>
   Schema.Struct({
@@ -261,13 +268,15 @@ export const InvoiceFieldsInput = makeInvoiceFields(trimMax)
 export const InvoiceFieldsDb = makeInvoiceFields(bounded)
 ```
 
-#### Transform trade-offs
+Trade-off: more exports, must pick the right schema per call site. Overkill unless trim overhead on DB reads is measurable.
+
+#### Schema approach trade-offs
 
 | Approach | Pros | Cons |
 | --- | --- | --- |
-| Validation-only (`trimmedMax`) | Schema never mutates; trim lives in form/input layer; simplest mental model | Requires all input paths to trim before validation |
-| Single transform (`trimMax`) | One export; always normalized | Trim runs on every decode; masks untrimmed DB values |
-| Split schemas | Trim only at boundaries; DB reads stay exact | More exports; must pick the right schema per call site |
+| `trimMax` (transform, recommended) | One schema everywhere; server trims on decode; form validates correctly | Trim runs on every decode; form state stays untrimmed |
+| `trimmedMax` (validation-only) | Schema never mutates; strict checking | Requires all input paths to normalize before validation |
+| Split schemas | DB reads avoid trim overhead | More exports; must pick the right schema per call site |
 
 ### SQLite DDL — CHECK constraints
 
@@ -353,19 +362,21 @@ check(length(period) <= 50)
 
 3. **`extractedJson`**: Cap at 100KB.
 
-4. **Normalization strategy**: Normalize in the form component layer before blur validation; schemas validate only. See details below.
+4. **Trimming strategy**: Use `trimMax` (transform schema) as both the form validator and server decoder. TanStack Form discards the transform output ([#1723](https://github.com/TanStack/form/issues/1723)), but validation passes/fails correctly. The server fn decodes through the same schema — trim is applied, DB gets clean data. No component-level normalization needed for trimming.
 
-### Field normalization in TanStack Form
+   The user sees untrimmed text in the form field (e.g. `" John Smith "` stays as-is after blur). This is acceptable — the server normalizes before persistence.
 
-Normalization is the general pattern of transforming a field value before validation: trimming whitespace, formatting dates (`"march 5"` → `"2026-03-05"`), formatting currency, phone numbers, etc. The shape is always the same:
+### Field normalization in TanStack Form (for visual feedback)
+
+For cases where the field value should visually update on blur — date formatting (`"march 5"` → `"2026-03-05"`), currency, phone numbers — component-level normalization is needed. Trimming does **not** require this (server handles it), but the pattern is documented here for other normalizers.
+
+TanStack Form has no first-class normalization API ([#418](https://github.com/TanStack/form/issues/418)). The shape is always the same:
 
 1. User types freely
-2. On blur, normalize the value (trim, format, parse)
+2. On blur, normalize the value (format, parse)
 3. Then validate the normalized value
 
-TanStack Form has no first-class normalization API. Validators are pure checks, listeners are side effects, and they run in a fixed order we can't control. But the building blocks exist.
-
-### Normalize-before-blur in a field component (recommended)
+### Normalize-before-blur in a field component
 
 Normalize in the input's `onBlur` handler **before** calling `field.handleBlur()`, so blur validators always see the normalized value. Centralize in a pre-bound component via `createFormHook`.
 
@@ -430,12 +441,12 @@ No spurious errors. No flash. Blur validator sees clean data.
 
 #### Normalizing field component
 
-Centralize in a pre-bound component via `createFormHook`. The `normalize` prop accepts any `string → string` function — trim, date formatting, currency formatting, etc.
+Centralize in a pre-bound component via `createFormHook`. The optional `normalize` prop accepts any `string → string` function — date formatting, currency formatting, etc. No default normalizer — trimming is handled by the schema/server path.
 
 ```tsx
 function TextField({
   label,
-  normalize = (v: string) => v.trim(),
+  normalize,
 }: {
   label: string
   normalize?: (value: string) => string
@@ -448,9 +459,11 @@ function TextField({
         value={field.state.value}
         onChange={(e) => field.handleChange(e.target.value)}
         onBlur={(e) => {
-          const normalized = normalize(e.target.value)
-          if (normalized !== field.state.value) {
-            field.setValue(normalized, { dontValidate: true })
+          if (normalize) {
+            const normalized = normalize(e.target.value)
+            if (normalized !== field.state.value) {
+              field.setValue(normalized, { dontValidate: true })
+            }
           }
           field.handleBlur()
         }}
@@ -467,19 +480,17 @@ const { useAppForm } = createFormHook({
 })
 ```
 
-Default normalizer is `trim()` since it applies to nearly all text fields. Fields that need additional normalization override it.
-
 Usage examples:
 
 ```tsx
-// Trimming (default — no normalize prop needed)
+// Plain text field — no normalize prop needed. Trim handled by schema/server.
 <form.AppField
   name="vendorName"
   validators={{ onBlur: vendorNameSchema }}
   children={(field) => <field.TextField label="Vendor Name" />}
 />
 
-// Date normalization — parse loose input into canonical format
+// Date normalization — parse loose input into canonical format on blur
 <form.AppField
   name="invoiceDate"
   validators={{ onBlur: invoiceDateSchema }}
@@ -488,7 +499,7 @@ Usage examples:
   )}
 />
 
-// Composed normalizers — trim then format
+// Currency — uppercase on blur for visual feedback
 <form.AppField
   name="currency"
   validators={{ onBlur: currencySchema }}
@@ -505,36 +516,12 @@ Docs:
 - Custom form hooks: `refs/tan-form/docs/framework/react/guides/form-composition.md:10-44`
 - Pre-bound field components: `refs/tan-form/docs/framework/react/guides/form-composition.md:46-104`
 
-   **Background on Effect Schema checks vs transforms:**
+   **Background on TanStack Form and schema transforms:**
 
-   `Schema.Trimmed` (`isTrimmed()`) is a check — it rejects untrimmed strings with an error, does not modify them. `Schema.decode(SchemaTransformation.trim())` is a transform — it always trims, never errors about whitespace. We use validation-only schemas (`isTrimmed()` + `isMaxLength()`), so normalization must happen before the schema sees the data.
+   TanStack Form discards schema transform output ([#1723](https://github.com/TanStack/form/issues/1723)). Transform schemas (like `trimMax`) still work as validators — the form checks pass/fail correctly. But the form state retains the raw value. The server fn decodes through the same schema and gets the transformed value.
 
-   TanStack Form does not apply transformed schema output to form state:
    - "Validation will not provide you with transformed values." `refs/tan-form/docs/framework/react/guides/validation.md:461`
    - "The value passed to the onSubmit function will always be the input data... parse it in the onSubmit function." `refs/tan-form/docs/framework/react/guides/submission-handling.md:67-90`
-
-#### Alternative: form-level onBlur listener (deferred normalization)
-
-A form-level listener works for generic normalization (trim all strings) but with caveats:
-- Blur validators see pre-normalized values (listener runs after `validate('blur')`)
-- Only viable if the schema drops checks that fail on unnormalized input (e.g. drop `isTrimmed()`, keep only `isMaxLength()`)
-- Can't express field-specific normalization (date parsing) without knowing which field triggered the event
-
-```tsx
-const form = useForm({
-  listeners: {
-    onBlur: ({ fieldApi }) => {
-      const value = fieldApi.state.value
-      if (typeof value === "string") {
-        const trimmed = value.trim()
-        if (trimmed !== value) fieldApi.setValue(trimmed, { dontValidate: true })
-      }
-    },
-  },
-})
-```
-
-Trade-off: no schema-level guarantee that values are trimmed. DB admits untrimmed strings since CHECK only enforces length.
 
 ### TanStack Form GitHub issues: normalization is a known gap
 
@@ -643,8 +630,7 @@ export const handleForm = createServerFn({ method: 'POST' })
   .handler(async (ctx) => {
     try {
       const validatedData = await serverValidate(ctx.data)
-      // Trim + validate with Effect Schema before persisting
-      // This is where trimming happens on the server path
+      // Server decodes through trimMax schemas — trim is applied here
     } catch (e) {
       if (e instanceof ServerValidateError) return e.response
       throw e
@@ -706,10 +692,10 @@ Parsing in `onSubmit` produces a transformed output value but does not mutate fo
 
 ## Next Steps
 
-- [ ] Add `trimmedMax()` helper and constrained fields to `OrganizationDomain.ts`
+- [ ] Add `trimMax()` helper and constrained fields to `OrganizationDomain.ts`
 - [ ] Add CHECK constraints to SQLite DDL in `organization-agent.ts`
-- [ ] Create `createFormHook` with pre-bound `TextField` that normalizes on blur via `setValue(normalized, { dontValidate: true })` + `handleBlur()` (default: trim)
-- [ ] Wire `validators.onBlur` using the constrained schemas on form fields
-- [ ] Ensure extraction workflow decodes/validates through the constrained schemas
+- [ ] Wire `trimMax` schemas as form validators (onBlur) — form validates, server trims on decode
+- [ ] Ensure extraction workflow decodes through the constrained schemas (AI output gets trimmed)
+- [ ] Create `createFormHook` with pre-bound `TextField` supporting optional `normalize` prop for visual normalization (dates, currency — not needed for trim)
 - [ ] Decide on SSR form adoption (see trade-offs above)
 - [ ] Verify UI form validation surfaces constraint violations before DB write
