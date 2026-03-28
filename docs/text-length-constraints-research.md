@@ -156,7 +156,7 @@ All fields are bare `Schema.String` with no constraints.
 ## Proposed Domain Schema Changes
 
 Two viable approaches. Both keep length rules in one place.
-Code-controlled columns (`id`, `status`, `r2ObjectKey`, `idempotencyKey`) left unconstrained per decision #1.
+Code-controlled columns (`id`, `status`, `idempotencyKey`) left unconstrained per decision #1.
 
 ### Option A: Single schema (trim + length everywhere)
 
@@ -274,6 +274,7 @@ If you want the fewest moving parts, **Option A** is fine — trim cost is small
 check(length(name) <= 500),
 check(length(fileName) <= 500),
 check(length(contentType) <= 100),
+check(length(r2ObjectKey) <= 200),
 check(length(invoiceNumber) <= 100),
 check(length(invoiceDate) <= 50),
 check(length(dueDate) <= 50),
@@ -341,21 +342,22 @@ check(length(period) <= 50)
 | `id` (both tables) | Code-controlled UUIDs. Harmless to add but not critical. |
 | `status`           | Code-controlled enum.                                    |
 | `idempotencyKey`   | Code-controlled UUID.                                    |
-| `r2ObjectKey`      | Code-constructed.                                        |
 
 ## Decisions
 
-1. **Code-controlled columns** (`id`, `status`, `r2ObjectKey`, `idempotencyKey`): Skip constraints. No DB CHECK, no Effect Schema checks.
+1. **Code-controlled columns** (`id`, `status`, `idempotencyKey`): Skip constraints. No DB CHECK, no Effect Schema checks.
 
-2. **`extractedJson`**: Cap at 100KB.
+2. **`r2ObjectKey`**: Cap at 200 chars.
 
-3. **Trimming strategy**: Transform at input boundaries. DB read strategy is open (single vs split), see trade-offs below.
+3. **`extractedJson`**: Cap at 100KB.
+
+4. **Trimming strategy**: Transform at input boundaries. DB read strategy is open (single vs split), see trade-offs below.
 
    **Background:** `Schema.Trimmed` is a check — it rejects untrimmed strings with an error, does not modify them. `Schema.decode(SchemaTransformation.trim())` is a transform — it always trims, never errors about whitespace.
 
-4. **Branded types**: No brands for now.
+5. **Branded types**: No brands for now.
 
-5. **Date format validation**: Defer.
+6. **Date format validation**: Defer.
 
 ## Next Steps
 
