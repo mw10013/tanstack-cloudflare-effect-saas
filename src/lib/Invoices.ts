@@ -20,8 +20,8 @@ export const updateInvoiceSchema = Schema.Struct({
   organizationId: Schema.NonEmptyString,
   invoiceId: Schema.NonEmptyString,
   name: Schema.String,
-  ...OrganizationDomain.InvoiceExtractionFields.fields,
-  invoiceItems: Schema.Array(OrganizationDomain.InvoiceItemFields),
+  ...OrganizationDomain.InvoiceUpdateFields.fields,
+  invoiceItems: Schema.Array(OrganizationDomain.InvoiceItemUpdateFields),
 });
 
 interface UpdateInvoiceInput {
@@ -41,7 +41,7 @@ interface UpdateInvoiceInput {
   readonly tax: string;
   readonly total: string;
   readonly amountDue: string;
-  readonly invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemFields.Type)[];
+  readonly invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemUpdateFields.Type)[];
 }
 
 export const invoicesQueryKey = (organizationId: string) =>

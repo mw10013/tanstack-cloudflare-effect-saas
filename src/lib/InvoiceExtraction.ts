@@ -6,12 +6,12 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
-import { InvoiceExtractionFields, InvoiceItemFields } from "./OrganizationDomain";
+import { InvoiceExtractionFields, InvoiceItemExtractionFields } from "./OrganizationDomain";
 
 const InvoiceExtractionSchema = Schema.Struct({
   ...InvoiceExtractionFields.fields,
   invoiceItems: Schema.Array(Schema.Struct({
-    ...InvoiceItemFields.fields,
+    ...InvoiceItemExtractionFields.fields,
   })),
 });
 

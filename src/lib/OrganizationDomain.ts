@@ -29,7 +29,33 @@ export const InvoiceExtractionFields = Schema.Struct({
   amountDue: maxLength(50),
 });
 
-export const InvoiceItemFields = Schema.Struct({
+export const InvoiceItemExtractionFields = Schema.Struct({
+  description: maxLength(2000),
+  quantity: maxLength(50),
+  unitPrice: maxLength(50),
+  amount: maxLength(50),
+  period: maxLength(50),
+});
+
+export const InvoiceUpdateFields = Schema.Struct({
+  invoiceConfidence: Schema.Number,
+  invoiceNumber: maxLength(100),
+  invoiceDate: maxLength(50),
+  dueDate: maxLength(50),
+  currency: maxLength(10),
+  vendorName: maxLength(500),
+  vendorEmail: maxLength(254),
+  vendorAddress: maxLength(2000),
+  billToName: maxLength(500),
+  billToEmail: maxLength(254),
+  billToAddress: maxLength(2000),
+  subtotal: maxLength(50),
+  tax: maxLength(50),
+  total: maxLength(50),
+  amountDue: maxLength(50),
+});
+
+export const InvoiceItemUpdateFields = Schema.Struct({
   description: maxLength(2000),
   quantity: maxLength(50),
   unitPrice: maxLength(50),
@@ -47,7 +73,7 @@ export const Invoice = Schema.Struct({
   idempotencyKey: Schema.NullOr(Schema.String),
   r2ObjectKey: Schema.String,
   status: InvoiceStatus,
-  ...InvoiceExtractionFields.fields,
+  ...InvoiceUpdateFields.fields,
   extractedJson: Schema.NullOr(maxLength(100_000)),
   error: Schema.NullOr(maxLength(10_000)),
 });
@@ -57,7 +83,7 @@ export const InvoiceItem = Schema.Struct({
   id: Schema.String,
   invoiceId: Schema.String,
   order: Schema.Number,
-  ...InvoiceItemFields.fields,
+  ...InvoiceItemUpdateFields.fields,
 });
 export type InvoiceItem = typeof InvoiceItem.Type;
 

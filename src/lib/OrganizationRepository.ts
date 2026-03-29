@@ -160,7 +160,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
           invoiceId: string;
           idempotencyKey: string;
           extracted: typeof OrganizationDomain.InvoiceExtractionFields.Type;
-          invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemFields.Type)[];
+          invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemExtractionFields.Type)[];
           extractedJson: string;
         }) {
           const updated = yield* sql`
@@ -240,7 +240,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
           tax: string;
           total: string;
           amountDue: string;
-          invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemFields.Type)[];
+          invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemUpdateFields.Type)[];
         }) {
           return yield* Effect.gen(function* () {
             const updated = yield* sql`

@@ -8,7 +8,7 @@ import type { ActivityMessage } from "@/lib/Activity";
 import { ActivityAction } from "@/lib/Activity";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { makeLoggerLayer } from "@/lib/LoggerLayer";
-import type { InvoiceExtractionFields, InvoiceItemFields } from "@/lib/OrganizationDomain";
+import type { InvoiceExtractionFields, InvoiceItemExtractionFields, InvoiceItemUpdateFields } from "@/lib/OrganizationDomain";
 import {
   OrganizationAgentError,
   activeWorkflowStatuses,
@@ -250,7 +250,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     tax: string;
     total: string;
     amountDue: string;
-    invoiceItems: readonly (typeof InvoiceItemFields.Type)[];
+    invoiceItems: readonly (typeof InvoiceItemUpdateFields.Type)[];
   }) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
@@ -332,7 +332,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     invoiceId: string;
     idempotencyKey: string;
     extracted: typeof InvoiceExtractionFields.Type;
-    invoiceItems: readonly (typeof InvoiceItemFields.Type)[];
+    invoiceItems: readonly (typeof InvoiceItemExtractionFields.Type)[];
     extractedJson: string;
   }) {
     return this.runEffect(
