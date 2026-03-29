@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
-
-const maxLength = (max: number) => Schema.String.check(Schema.isMaxLength(max));
+import * as Struct from "effect/Struct";
+import { trimFields } from "./SchemaEx";
 
 export const InvoiceStatusValues = [
   "extracting",
@@ -11,71 +11,45 @@ export const InvoiceStatusValues = [
 export const InvoiceStatus = Schema.Literals(InvoiceStatusValues);
 export type InvoiceStatus = typeof InvoiceStatus.Type;
 
-export const InvoiceExtractionFields = Schema.Struct({
-  invoiceConfidence: Schema.Number,
-  invoiceNumber: maxLength(100),
-  invoiceDate: maxLength(50),
-  dueDate: maxLength(50),
-  currency: maxLength(10),
-  vendorName: maxLength(500),
-  vendorEmail: maxLength(254),
-  vendorAddress: maxLength(2000),
-  billToName: maxLength(500),
-  billToEmail: maxLength(254),
-  billToAddress: maxLength(2000),
-  subtotal: maxLength(50),
-  tax: maxLength(50),
-  total: maxLength(50),
-  amountDue: maxLength(50),
-});
-
-export const InvoiceItemExtractionFields = Schema.Struct({
-  description: maxLength(2000),
-  quantity: maxLength(50),
-  unitPrice: maxLength(50),
-  amount: maxLength(50),
-  period: maxLength(50),
-});
-
 export const InvoiceUpdateFields = Schema.Struct({
   invoiceConfidence: Schema.Number,
-  invoiceNumber: maxLength(100),
-  invoiceDate: maxLength(50),
-  dueDate: maxLength(50),
-  currency: maxLength(10),
-  vendorName: maxLength(500),
-  vendorEmail: maxLength(254),
-  vendorAddress: maxLength(2000),
-  billToName: maxLength(500),
-  billToEmail: maxLength(254),
-  billToAddress: maxLength(2000),
-  subtotal: maxLength(50),
-  tax: maxLength(50),
-  total: maxLength(50),
-  amountDue: maxLength(50),
+  invoiceNumber: Schema.String.check(Schema.isMaxLength(100)),
+  invoiceDate: Schema.String.check(Schema.isMaxLength(50)),
+  dueDate: Schema.String.check(Schema.isMaxLength(50)),
+  currency: Schema.String.check(Schema.isMaxLength(10)),
+  vendorName: Schema.String.check(Schema.isMaxLength(500)),
+  vendorEmail: Schema.String.check(Schema.isMaxLength(254)),
+  vendorAddress: Schema.String.check(Schema.isMaxLength(2000)),
+  billToName: Schema.String.check(Schema.isMaxLength(500)),
+  billToEmail: Schema.String.check(Schema.isMaxLength(254)),
+  billToAddress: Schema.String.check(Schema.isMaxLength(2000)),
+  subtotal: Schema.String.check(Schema.isMaxLength(50)),
+  tax: Schema.String.check(Schema.isMaxLength(50)),
+  total: Schema.String.check(Schema.isMaxLength(50)),
+  amountDue: Schema.String.check(Schema.isMaxLength(50)),
 });
 
 export const InvoiceItemUpdateFields = Schema.Struct({
-  description: maxLength(2000),
-  quantity: maxLength(50),
-  unitPrice: maxLength(50),
-  amount: maxLength(50),
-  period: maxLength(50),
+  description: Schema.String.check(Schema.isMaxLength(2000)),
+  quantity: Schema.String.check(Schema.isMaxLength(50)),
+  unitPrice: Schema.String.check(Schema.isMaxLength(50)),
+  amount: Schema.String.check(Schema.isMaxLength(50)),
+  period: Schema.String.check(Schema.isMaxLength(50)),
 });
 
 export const Invoice = Schema.Struct({
   id: Schema.String,
-  name: maxLength(500),
-  fileName: maxLength(500),
-  contentType: maxLength(100),
+  name: Schema.String.check(Schema.isMaxLength(500)),
+  fileName: Schema.String.check(Schema.isMaxLength(500)),
+  contentType: Schema.String.check(Schema.isMaxLength(100)),
   createdAt: Schema.Number,
   r2ActionTime: Schema.NullOr(Schema.Number),
   idempotencyKey: Schema.NullOr(Schema.String),
   r2ObjectKey: Schema.String,
   status: InvoiceStatus,
   ...InvoiceUpdateFields.fields,
-  extractedJson: Schema.NullOr(maxLength(100_000)),
-  error: Schema.NullOr(maxLength(10_000)),
+  extractedJson: Schema.NullOr(Schema.String.check(Schema.isMaxLength(100_000))),
+  error: Schema.NullOr(Schema.String.check(Schema.isMaxLength(10_000))),
 });
 export type Invoice = typeof Invoice.Type;
 
@@ -86,6 +60,40 @@ export const InvoiceItem = Schema.Struct({
   ...InvoiceItemUpdateFields.fields,
 });
 export type InvoiceItem = typeof InvoiceItem.Type;
+
+export const InvoiceExtractionFields = Schema.Struct(
+  trimFields(
+    Struct.pick(Invoice.fields, [
+      "invoiceConfidence",
+      "invoiceNumber",
+      "invoiceDate",
+      "dueDate",
+      "currency",
+      "vendorName",
+      "vendorEmail",
+      "vendorAddress",
+      "billToName",
+      "billToEmail",
+      "billToAddress",
+      "subtotal",
+      "tax",
+      "total",
+      "amountDue",
+    ]),
+  ),
+);
+
+export const InvoiceItemExtractionFields = Schema.Struct(
+  trimFields(
+    Struct.pick(InvoiceItem.fields, [
+      "description",
+      "quantity",
+      "unitPrice",
+      "amount",
+      "period",
+    ]),
+  ),
+);
 
 export const InvoiceWithItems = Schema.Struct({
   ...Invoice.fields,

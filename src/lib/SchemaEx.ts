@@ -1,4 +1,16 @@
-import { Array as Arr, Option, Schema, SchemaGetter, SchemaTransformation, Struct } from "effect";
+import { Array as Arr, Option, Schema, SchemaAST, SchemaGetter, SchemaTransformation, Struct } from "effect";
+
+/** Type guard that checks if a schema's AST root is the `string` type. */
+const isStringSchema = (s: Schema.Top): s is Schema.Schema<string> => SchemaAST.isString(s.ast);
+
+/**
+ * Wrap every string-typed field in a struct fields record with a `trim()` decode step.
+ * Non-string fields are passed through unchanged.
+ */
+export const trimFields = <F extends Record<string, Schema.Top>>(fields: F) =>
+  Object.fromEntries(
+    Object.entries(fields).map(([k, v]) => [k, isStringSchema(v) ? v.pipe(Schema.decode(SchemaTransformation.trim())) : v]),
+  ) as F;
 
 /**
  * Extract a single field from a struct schema, returning the unwrapped value.
