@@ -157,7 +157,7 @@ function RouteComponent() {
               <form.Field
                 name="email"
                 validators={{
-                  onChange: ({ value }) =>
+                  onBlur: ({ value }) =>
                     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
                       ? { message: "Please enter a valid email address" }
                       : undefined,
