@@ -55,6 +55,7 @@ const handleLoginForm = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context: { runEffect } }) => {
     try {
+      // eslint-disable-next-line typescript-eslint/no-unsafe-assignment -- createServerValidate returns any; validated by onServerValidate
       const validatedData = await serverValidate(data);
       const result = await runEffect(
         Effect.gen(function* () {
@@ -67,10 +68,8 @@ const handleLoginForm = createServerFn({ method: "POST" })
           const sendResult = yield* Effect.tryPromise(() =>
             auth.api.signInMagicLink({
               headers: request.headers,
-              body: {
-                email: validatedData.email,
-                callbackURL: "/magic-link",
-              },
+              // eslint-disable-next-line typescript-eslint/no-unsafe-assignment, typescript-eslint/no-unsafe-member-access -- validated by onServerValidate
+              body: { email: validatedData.email, callbackURL: "/magic-link" },
             }),
           );
           if (!sendResult.status) {
@@ -85,13 +84,14 @@ const handleLoginForm = createServerFn({ method: "POST" })
           return { magicLink };
         }),
       );
+      // oxlint-disable-next-line typescript-eslint(only-throw-error) -- TanStack Router expects redirect() to be thrown as a Response
       throw redirect({
         to: "/login1-success",
         search: result.magicLink ? { magicLink: result.magicLink } : {},
       });
-    } catch (e) {
-      if (e instanceof ServerValidateError) return e.response;
-      throw e;
+    } catch (error) {
+      if (error instanceof ServerValidateError) return error.response;
+      throw error;
     }
   });
 
