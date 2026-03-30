@@ -4,7 +4,6 @@ import * as Schema from "effect/Schema";
 export const ActivityAction = Schema.Literals([
   "invoice.uploaded",
   "invoice.created",
-  "invoice.updated",
   "invoice.deleted",
   "invoice.extraction.completed",
   "invoice.extraction.failed",
@@ -35,7 +34,6 @@ export const decodeActivityMessage = (
 const INVALIDATING_ACTIONS: ReadonlySet<string> = new Set([
   "invoice.uploaded",
   "invoice.created",
-  "invoice.updated",
   "invoice.deleted",
   "invoice.extraction.completed",
   "invoice.extraction.failed",

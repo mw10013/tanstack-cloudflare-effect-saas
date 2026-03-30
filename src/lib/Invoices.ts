@@ -103,4 +103,52 @@ export const getInvoiceWithItems = createServerFn({ method: "GET" })
     ),
   );
 
+const getInvoiceViewUrl = (
+  organizationId: string,
+  invoice: OrganizationDomain.InvoiceWithItems,
+) =>
+  Effect.gen(function* () {
+    if (!invoice.r2ObjectKey) return;
+    const environment = yield* Config.nonEmptyString("ENVIRONMENT");
+    if (environment === "local")
+      return `/api/org/${organizationId}/invoice/${encodeURIComponent(invoice.id)}`;
+    const r2BucketName = yield* Config.nonEmptyString("R2_BUCKET_NAME");
+    const r2S3AccessKeyId = yield* Config.redacted("R2_S3_ACCESS_KEY_ID");
+    const r2S3SecretAccessKey = yield* Config.redacted("R2_S3_SECRET_ACCESS_KEY");
+    const cfAccountId = yield* Config.nonEmptyString("CF_ACCOUNT_ID");
+    const { AwsClient } = yield* Effect.tryPromise(() => import("aws4fetch"));
+    const client = new AwsClient({
+      service: "s3",
+      region: "auto",
+      accessKeyId: Redacted.value(r2S3AccessKeyId),
+      secretAccessKey: Redacted.value(r2S3SecretAccessKey),
+    });
+    const signed = yield* Effect.tryPromise(() =>
+      client.sign(
+        new Request(
+          `https://${cfAccountId}.r2.cloudflarestorage.com/${r2BucketName}/${invoice.r2ObjectKey}?X-Amz-Expires=900`,
+          { method: "GET" },
+        ),
+        { aws: { signQuery: true } },
+      ),
+    );
+    return signed.url;
+  });
+
+export const getInvoiceDetail = createServerFn({ method: "GET" })
+  .inputValidator(Schema.toStandardSchemaV1(getInvoiceWithItemsSchema))
+  .handler(({ context: { runEffect }, data: { organizationId, invoiceId } }) =>
+    runEffect(
+      Effect.gen(function* () {
+        const stub = yield* getOrganizationAgentStub(organizationId);
+        const invoice: OrganizationDomain.InvoiceWithItems | null = yield* Effect.tryPromise(
+          () => stub.getInvoiceWithItems(invoiceId),
+        );
+        if (!invoice) return { invoice: null, viewUrl: undefined as string | undefined };
+        const viewUrl = yield* getInvoiceViewUrl(organizationId, invoice);
+        return { invoice: structuredClone(invoice), viewUrl };
+      }),
+    ),
+  );
+
 export type InvoiceListItem = Awaited<ReturnType<typeof getInvoices>>[number];

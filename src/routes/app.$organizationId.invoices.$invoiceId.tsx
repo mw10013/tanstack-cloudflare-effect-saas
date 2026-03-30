@@ -1,11 +1,12 @@
-import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+/* oxlint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-confusing-void-expression -- TanStack Form: number-indexed template literals, void-returning field methods */
+import { useForm } from "@tanstack/react-form";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createFileRoute,
   Link,
   useHydrated,
 } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
+import * as Schema from "effect/Schema";
 import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, ExternalLink, FilePenLine, Loader2, Plus, Trash2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -21,46 +22,17 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  getInvoices,
-  getInvoiceWithItems,
-  invoiceQueryKey,
+  getInvoiceDetail,
   invoicesQueryKey,
 } from "@/lib/Invoices";
 import type * as OrganizationDomain from "@/lib/OrganizationDomain";
+import { InvoiceFormSchema } from "@/lib/OrganizationDomain";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 import { Textarea } from "@/components/ui/textarea";
 
-interface InvoiceFormValues {
-  readonly name: string;
-  readonly invoiceConfidence: number;
-  readonly invoiceNumber: string;
-  readonly invoiceDate: string;
-  readonly dueDate: string;
-  readonly currency: string;
-  readonly vendorName: string;
-  readonly vendorEmail: string;
-  readonly vendorAddress: string;
-  readonly billToName: string;
-  readonly billToEmail: string;
-  readonly billToAddress: string;
-  readonly subtotal: string;
-  readonly tax: string;
-  readonly total: string;
-  readonly amountDue: string;
-  readonly invoiceItems: readonly InvoiceItemFormValues[];
-}
+const invoiceFormStandardSchema = Schema.toStandardSchemaV1(InvoiceFormSchema);
 
-interface InvoiceItemFormValues {
-  readonly clientId: string;
-  readonly description: string;
-  readonly quantity: string;
-  readonly unitPrice: string;
-  readonly amount: string;
-  readonly period: string;
-}
-
-const emptyInvoiceItem = (): InvoiceItemFormValues => ({
-  clientId: crypto.randomUUID(),
+const emptyInvoiceItem = () => ({
   description: "",
   quantity: "",
   unitPrice: "",
@@ -68,11 +40,8 @@ const emptyInvoiceItem = (): InvoiceItemFormValues => ({
   period: "",
 });
 
-const toFormValues = (
-  invoice: OrganizationDomain.InvoiceWithItems,
-): InvoiceFormValues => ({
+const toDefaultValues = (invoice: OrganizationDomain.InvoiceWithItems) => ({
   name: invoice.name,
-  invoiceConfidence: invoice.invoiceConfidence,
   invoiceNumber: invoice.invoiceNumber,
   invoiceDate: invoice.invoiceDate,
   dueDate: invoice.dueDate,
@@ -90,7 +59,6 @@ const toFormValues = (
   invoiceItems:
     invoice.items.length > 0
       ? invoice.items.map((item) => ({
-          clientId: crypto.randomUUID(),
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
@@ -101,71 +69,23 @@ const toFormValues = (
 });
 
 export const Route = createFileRoute("/app/$organizationId/invoices/$invoiceId")({
-  loader: async ({ params: { organizationId, invoiceId }, context }) => {
-    await Promise.all([
-      context.queryClient.ensureQueryData({
-        queryKey: invoicesQueryKey(organizationId),
-        queryFn: () => getInvoices({ data: { organizationId } }),
-        revalidateIfStale: true,
-      }),
-      context.queryClient.ensureQueryData({
-        queryKey: invoiceQueryKey(organizationId, invoiceId),
-        queryFn: () => getInvoiceWithItems({ data: { organizationId, invoiceId } }),
-        revalidateIfStale: true,
-      }),
-    ]);
-  },
+  loader: ({ params }) => getInvoiceDetail({ data: params }),
   component: RouteComponent,
 });
 
 function RouteComponent() {
   const { organizationId, invoiceId } = Route.useParams();
+  const { invoice, viewUrl } = Route.useLoaderData();
   const isHydrated = useHydrated();
   const queryClient = useQueryClient();
   const { stub } = useOrganizationAgent();
-  const getInvoiceWithItemsFn = useServerFn(getInvoiceWithItems);
-  const invoiceQuery = useQuery({
-    queryKey: [
-      ...invoiceQueryKey(organizationId, invoiceId),
-      getInvoiceWithItemsFn,
-    ],
-    queryFn: () => getInvoiceWithItemsFn({ data: { organizationId, invoiceId } }),
-  });
-  const invoicesQuery = useQuery({
-    queryKey: invoicesQueryKey(organizationId),
-    queryFn: () => getInvoices({ data: { organizationId } }),
-  });
-  const [form, setForm] = React.useState<InvoiceFormValues | null>(null);
-
-  React.useEffect(() => {
-    if (invoiceQuery.data) setForm(toFormValues(invoiceQuery.data));
-  }, [invoiceQuery.data]);
 
   const saveMutation = useMutation({
-    mutationFn: (data: InvoiceFormValues) =>
+    mutationFn: (data: typeof InvoiceFormSchema.Type) =>
       // oxlint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call -- oxlint can't resolve Cloudflare Rpc conditional types; tsc infers correctly
-      stub.updateInvoice({
-        invoiceId,
-        name: data.name,
-        invoiceNumber: data.invoiceNumber,
-        invoiceDate: data.invoiceDate,
-        dueDate: data.dueDate,
-        currency: data.currency,
-        vendorName: data.vendorName,
-        vendorEmail: data.vendorEmail,
-        vendorAddress: data.vendorAddress,
-        billToName: data.billToName,
-        billToEmail: data.billToEmail,
-        billToAddress: data.billToAddress,
-        subtotal: data.subtotal,
-        tax: data.tax,
-        total: data.total,
-        amountDue: data.amountDue,
-        invoiceItems: data.invoiceItems.map(({ clientId: _, ...rest }) => rest),
-      }),
-    onSuccess: (invoice: OrganizationDomain.InvoiceWithItems) => {
-      queryClient.setQueryData(invoiceQueryKey(organizationId, invoiceId), invoice);
-      setForm(toFormValues(invoice));
+      stub.updateInvoice({ invoiceId, ...data }),
+    onSuccess: (result: OrganizationDomain.InvoiceWithItems) => {
+      form.reset(toDefaultValues(result));
     },
     onSettled: () => {
       void queryClient.invalidateQueries({
@@ -174,32 +94,17 @@ function RouteComponent() {
     },
   });
 
-  const invoiceSummary = invoicesQuery.data?.find((invoice) => invoice.id === invoiceId);
-  const invoice = invoiceQuery.data;
+  const form = useForm({
+    defaultValues: invoice ? toDefaultValues(invoice) : toDefaultValues({} as OrganizationDomain.InvoiceWithItems),
+    validators: {
+      onSubmit: invoiceFormStandardSchema,
+    },
+    onSubmit: ({ value }) => {
+      void saveMutation.mutateAsync(value as typeof InvoiceFormSchema.Type);
+    },
+  });
+
   const canEdit = invoice?.status === "ready" || invoice?.status === "error";
-
-  if (invoiceQuery.isLoading || form === null) {
-    return (
-      <div className="flex flex-col gap-6 p-6">
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Loading invoice...
-        </div>
-      </div>
-    );
-  }
-
-  if (invoiceQuery.error) {
-    return (
-      <div className="flex flex-col gap-6 p-6">
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{invoiceQuery.error.message}</AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
 
   if (!invoice) {
     return (
@@ -222,9 +127,9 @@ function RouteComponent() {
             Back to invoices
           </Link>
           <div className="flex items-center gap-2">
-            {invoiceSummary?.viewUrl && (
+            {viewUrl && (
               <a
-                href={invoiceSummary.viewUrl}
+                href={viewUrl}
                 target="_blank"
                 rel="noreferrer"
                 className={buttonVariants({ variant: "outline", size: "sm" })}
@@ -233,21 +138,23 @@ function RouteComponent() {
                 Open source file
               </a>
             )}
-            <Button
-              type="button"
-              size="sm"
-              disabled={!isHydrated || !canEdit || saveMutation.isPending}
-              onClick={() => {
-                if (form) saveMutation.mutate(form);
-              }}
-            >
-              {saveMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <FilePenLine className="size-4" />
+            <form.Subscribe selector={(state) => state.canSubmit}>
+              {(canSubmit) => (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!isHydrated || !canEdit || !canSubmit || saveMutation.isPending}
+                  onClick={() => void form.handleSubmit()}
+                >
+                  {saveMutation.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <FilePenLine className="size-4" />
+                  )}
+                  Save invoice
+                </Button>
               )}
-              Save invoice
-            </Button>
+            </form.Subscribe>
           </div>
         </div>
         <div>
@@ -297,137 +204,32 @@ function RouteComponent() {
           <CardContent>
             <FieldGroup className="gap-6">
               <div className="grid gap-4 md:grid-cols-2">
-                <TextField
-                  label="Invoice Name"
-                  value={form.name}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, name: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Invoice Number"
-                  value={form.invoiceNumber}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, invoiceNumber: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Invoice Date"
-                  value={form.invoiceDate}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, invoiceDate: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Due Date"
-                  value={form.dueDate}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, dueDate: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Currency"
-                  value={form.currency}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, currency: value } : current);
-                  }}
-                />
+                <form.Field name="name">{(field) => (<Field><FieldLabel>Invoice Name</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="invoiceNumber">{(field) => (<Field><FieldLabel>Invoice Number</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="invoiceDate">{(field) => (<Field><FieldLabel>Invoice Date</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="dueDate">{(field) => (<Field><FieldLabel>Due Date</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="currency">{(field) => (<Field><FieldLabel>Currency</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <TextField
-                  label="Vendor Name"
-                  value={form.vendorName}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, vendorName: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Vendor Email"
-                  value={form.vendorEmail}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, vendorEmail: value } : current);
-                  }}
-                />
+                <form.Field name="vendorName">{(field) => (<Field><FieldLabel>Vendor Name</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="vendorEmail">{(field) => (<Field><FieldLabel>Vendor Email</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
               </div>
 
-              <TextAreaField
-                label="Vendor Address"
-                value={form.vendorAddress}
-                disabled={!isHydrated || !canEdit}
-                onChange={(value) => {
-                  setForm((current) => current ? { ...current, vendorAddress: value } : current);
-                }}
-              />
+              <form.Field name="vendorAddress">{(field) => (<Field><FieldLabel>Vendor Address</FieldLabel><Textarea value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <TextField
-                  label="Bill To Name"
-                  value={form.billToName}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, billToName: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Bill To Email"
-                  value={form.billToEmail}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, billToEmail: value } : current);
-                  }}
-                />
+                <form.Field name="billToName">{(field) => (<Field><FieldLabel>Bill To Name</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="billToEmail">{(field) => (<Field><FieldLabel>Bill To Email</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
               </div>
 
-              <TextAreaField
-                label="Bill To Address"
-                value={form.billToAddress}
-                disabled={!isHydrated || !canEdit}
-                onChange={(value) => {
-                  setForm((current) => current ? { ...current, billToAddress: value } : current);
-                }}
-              />
+              <form.Field name="billToAddress">{(field) => (<Field><FieldLabel>Bill To Address</FieldLabel><Textarea value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <TextField
-                  label="Subtotal"
-                  value={form.subtotal}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, subtotal: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Tax"
-                  value={form.tax}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, tax: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Total"
-                  value={form.total}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, total: value } : current);
-                  }}
-                />
-                <TextField
-                  label="Amount Due"
-                  value={form.amountDue}
-                  disabled={!isHydrated || !canEdit}
-                  onChange={(value) => {
-                    setForm((current) => current ? { ...current, amountDue: value } : current);
-                  }}
-                />
+                <form.Field name="subtotal">{(field) => (<Field><FieldLabel>Subtotal</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="tax">{(field) => (<Field><FieldLabel>Tax</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="total">{(field) => (<Field><FieldLabel>Total</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
+                <form.Field name="amountDue">{(field) => (<Field><FieldLabel>Amount Due</FieldLabel><Input value={field.state.value} disabled={!isHydrated || !canEdit} onBlur={field.handleBlur} onChange={(e) => field.handleChange(e.target.value)} /></Field>)}</form.Field>
               </div>
             </FieldGroup>
           </CardContent>
@@ -435,181 +237,140 @@ function RouteComponent() {
 
         <Card className="flex h-0 min-h-full flex-col overflow-hidden">
           <CardHeader className="shrink-0">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>Line Items</CardTitle>
-                <CardDescription>Order follows the row order shown here.</CardDescription>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={!isHydrated || !canEdit}
-                onClick={() => {
-                  setForm((current) =>
-                    current
-                      ? { ...current, invoiceItems: [...current.invoiceItems, emptyInvoiceItem()] }
-                      : current,
-                  );
-                }}
-              >
-                <Plus className="size-4" />
-                Add item
-              </Button>
-            </div>
+            <form.Field name="invoiceItems" mode="array">
+              {(itemsField) => (
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>Line Items</CardTitle>
+                    <CardDescription>Order follows the row order shown here.</CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!isHydrated || !canEdit}
+                    onClick={() => itemsField.pushValue(emptyInvoiceItem())}
+                  >
+                    <Plus className="size-4" />
+                    Add item
+                  </Button>
+                </div>
+              )}
+            </form.Field>
           </CardHeader>
           <CardContent className="min-h-0 flex-1">
             <ScrollArea className="h-full">
-            <div className="flex flex-col gap-4">
-              {form.invoiceItems.map((item, index) => (
-                <div key={item.clientId} className="rounded-lg border p-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">Item {index + 1}</p>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        disabled={!isHydrated || !canEdit || index === 0}
-                        onClick={() => {
-                          setForm((current) => {
-                            if (!current) return current;
-                            const items = [...current.invoiceItems];
-                            [items[index - 1], items[index]] = [items[index], items[index - 1]];
-                            return { ...current, invoiceItems: items };
-                          });
-                        }}
-                      >
-                        <ArrowUp className="size-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        disabled={!isHydrated || !canEdit || index === form.invoiceItems.length - 1}
-                        onClick={() => {
-                          setForm((current) => {
-                            if (!current) return current;
-                            const items = [...current.invoiceItems];
-                            [items[index], items[index + 1]] = [items[index + 1], items[index]];
-                            return { ...current, invoiceItems: items };
-                          });
-                        }}
-                      >
-                        <ArrowDown className="size-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        disabled={!isHydrated || !canEdit || form.invoiceItems.length === 1}
-                        onClick={() => {
-                          setForm((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  invoiceItems: current.invoiceItems.filter((_, itemIndex) => itemIndex !== index),
-                                }
-                              : current,
-                          );
-                        }}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
+              <form.Field name="invoiceItems" mode="array">
+                {(itemsField) => (
+                  <div className="flex flex-col gap-4">
+                    {itemsField.state.value.map((_item, index) => (
+                      <div key={index} className="rounded-lg border p-4">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium">Item {index + 1}</p>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              disabled={!isHydrated || !canEdit || index === 0}
+                              onClick={() => itemsField.swapValues(index - 1, index)}
+                            >
+                              <ArrowUp className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              disabled={!isHydrated || !canEdit || index === itemsField.state.value.length - 1}
+                              onClick={() => itemsField.swapValues(index, index + 1)}
+                            >
+                              <ArrowDown className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              disabled={!isHydrated || !canEdit || itemsField.state.value.length === 1}
+                              onClick={() => itemsField.removeValue(index)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="grid gap-4">
+                          <form.Field name={`invoiceItems[${index}].description`}>
+                            {(subField) => (
+                              <Field>
+                                <FieldLabel>Description</FieldLabel>
+                                <Textarea
+                                  value={subField.state.value}
+                                  disabled={!isHydrated || !canEdit}
+                                  onBlur={subField.handleBlur}
+                                  onChange={(e) => subField.handleChange(e.target.value)}
+                                />
+                              </Field>
+                            )}
+                          </form.Field>
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            <form.Field name={`invoiceItems[${index}].quantity`}>
+                              {(subField) => (
+                                <Field>
+                                  <FieldLabel>Quantity</FieldLabel>
+                                  <Input
+                                    value={subField.state.value}
+                                    disabled={!isHydrated || !canEdit}
+                                    onBlur={subField.handleBlur}
+                                    onChange={(e) => subField.handleChange(e.target.value)}
+                                  />
+                                </Field>
+                              )}
+                            </form.Field>
+                            <form.Field name={`invoiceItems[${index}].unitPrice`}>
+                              {(subField) => (
+                                <Field>
+                                  <FieldLabel>Unit Price</FieldLabel>
+                                  <Input
+                                    value={subField.state.value}
+                                    disabled={!isHydrated || !canEdit}
+                                    onBlur={subField.handleBlur}
+                                    onChange={(e) => subField.handleChange(e.target.value)}
+                                  />
+                                </Field>
+                              )}
+                            </form.Field>
+                            <form.Field name={`invoiceItems[${index}].amount`}>
+                              {(subField) => (
+                                <Field>
+                                  <FieldLabel>Amount</FieldLabel>
+                                  <Input
+                                    value={subField.state.value}
+                                    disabled={!isHydrated || !canEdit}
+                                    onBlur={subField.handleBlur}
+                                    onChange={(e) => subField.handleChange(e.target.value)}
+                                  />
+                                </Field>
+                              )}
+                            </form.Field>
+                            <form.Field name={`invoiceItems[${index}].period`}>
+                              {(subField) => (
+                                <Field>
+                                  <FieldLabel>Period</FieldLabel>
+                                  <Input
+                                    value={subField.state.value}
+                                    disabled={!isHydrated || !canEdit}
+                                    onBlur={subField.handleBlur}
+                                    onChange={(e) => subField.handleChange(e.target.value)}
+                                  />
+                                </Field>
+                              )}
+                            </form.Field>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="grid gap-4">
-                    <TextAreaField
-                      label="Description"
-                      value={item.description}
-                      disabled={!isHydrated || !canEdit}
-                      onChange={(value) => {
-                        setForm((current) =>
-                          current
-                            ? {
-                                ...current,
-                                invoiceItems: current.invoiceItems.map((currentItem, itemIndex) =>
-                                  itemIndex === index ? { ...currentItem, description: value } : currentItem,
-                                ),
-                              }
-                            : current,
-                        );
-                      }}
-                    />
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <TextField
-                        label="Quantity"
-                        value={item.quantity}
-                        disabled={!isHydrated || !canEdit}
-                        onChange={(value) => {
-                          setForm((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  invoiceItems: current.invoiceItems.map((currentItem, itemIndex) =>
-                                    itemIndex === index ? { ...currentItem, quantity: value } : currentItem,
-                                  ),
-                                }
-                              : current,
-                          );
-                        }}
-                      />
-                      <TextField
-                        label="Unit Price"
-                        value={item.unitPrice}
-                        disabled={!isHydrated || !canEdit}
-                        onChange={(value) => {
-                          setForm((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  invoiceItems: current.invoiceItems.map((currentItem, itemIndex) =>
-                                    itemIndex === index ? { ...currentItem, unitPrice: value } : currentItem,
-                                  ),
-                                }
-                              : current,
-                          );
-                        }}
-                      />
-                      <TextField
-                        label="Amount"
-                        value={item.amount}
-                        disabled={!isHydrated || !canEdit}
-                        onChange={(value) => {
-                          setForm((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  invoiceItems: current.invoiceItems.map((currentItem, itemIndex) =>
-                                    itemIndex === index ? { ...currentItem, amount: value } : currentItem,
-                                  ),
-                                }
-                              : current,
-                          );
-                        }}
-                      />
-                      <TextField
-                        label="Period"
-                        value={item.period}
-                        disabled={!isHydrated || !canEdit}
-                        onChange={(value) => {
-                          setForm((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  invoiceItems: current.invoiceItems.map((currentItem, itemIndex) =>
-                                    itemIndex === index ? { ...currentItem, period: value } : currentItem,
-                                  ),
-                                }
-                              : current,
-                          );
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </form.Field>
             </ScrollArea>
           </CardContent>
         </Card>
@@ -618,52 +379,4 @@ function RouteComponent() {
   );
 }
 
-function TextField({
-  label,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
-      <Input
-        value={value}
-        disabled={disabled}
-        onChange={(e) => {
-          onChange(e.target.value);
-        }}
-      />
-    </Field>
-  );
-}
 
-function TextAreaField({
-  label,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
-      <Textarea
-        value={value}
-        disabled={disabled}
-        onChange={(e) => {
-          onChange(e.target.value);
-        }}
-      />
-    </Field>
-  );
-}

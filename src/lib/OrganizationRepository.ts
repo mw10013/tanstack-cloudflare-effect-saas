@@ -224,25 +224,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
       );
 
       const updateInvoice = Effect.fn("OrganizationRepository.updateInvoice")(
-        function* (input: {
-          invoiceId: string;
-          name: string;
-          invoiceNumber: string;
-          invoiceDate: string;
-          dueDate: string;
-          currency: string;
-          vendorName: string;
-          vendorEmail: string;
-          vendorAddress: string;
-          billToName: string;
-          billToEmail: string;
-          billToAddress: string;
-          subtotal: string;
-          tax: string;
-          total: string;
-          amountDue: string;
-          invoiceItems: readonly (typeof OrganizationDomain.InvoiceItemUpdateFields.Type)[];
-        }) {
+        function* (input: { invoiceId: string } & typeof OrganizationDomain.InvoiceFormSchema.Type) {
           return yield* Effect.gen(function* () {
             const updated = yield* sql`
               update Invoice

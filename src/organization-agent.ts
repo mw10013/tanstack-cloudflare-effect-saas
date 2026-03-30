@@ -9,9 +9,9 @@ import { ActivityAction } from "@/lib/Activity";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { makeLoggerLayer } from "@/lib/LoggerLayer";
 import type { InvoiceExtractionSchema } from "@/lib/InvoiceExtraction";
-import type { InvoiceItemUpdateFields } from "@/lib/OrganizationDomain";
 import {
   OrganizationAgentError,
+  type InvoiceFormSchema,
   activeWorkflowStatuses,
 } from "@/lib/OrganizationDomain";
 import { OrganizationRepository } from "@/lib/OrganizationRepository";
@@ -234,25 +234,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
-  updateInvoice(input: {
-    invoiceId: string;
-    name: string;
-    invoiceNumber: string;
-    invoiceDate: string;
-    dueDate: string;
-    currency: string;
-    vendorName: string;
-    vendorEmail: string;
-    vendorAddress: string;
-    billToName: string;
-    billToEmail: string;
-    billToAddress: string;
-    subtotal: string;
-    tax: string;
-    total: string;
-    amountDue: string;
-    invoiceItems: readonly (typeof InvoiceItemUpdateFields.Type)[];
-  }) {
+  updateInvoice(input: { invoiceId: string } & typeof InvoiceFormSchema.Type) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
         const repo = yield* OrganizationRepository;
@@ -260,11 +242,6 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           Effect.map(Option.getOrNull),
         );
         if (!invoice) return yield* new OrganizationAgentError({ message: "Invoice not found after update" });
-        yield* broadcastActivity(this, {
-          action: "invoice.updated",
-          level: "success",
-          text: `Invoice updated: ${invoice.name ?? invoice.fileName ?? invoice.id}`,
-        });
         return invoice;
       }),
     );
