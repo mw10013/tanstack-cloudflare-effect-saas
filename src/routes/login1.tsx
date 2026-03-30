@@ -162,10 +162,7 @@ function RouteComponent() {
                 }
                 if (error && typeof error === "object") {
                   return Object.values(
-                    error as Record<
-                      string,
-                      { message: string }[] | undefined
-                    >,
+                    error as Record<string, { message: string }[] | undefined>,
                   ).flatMap((issues, j) =>
                     (issues ?? []).map((issue) => (
                       <Alert
@@ -185,11 +182,10 @@ function RouteComponent() {
                 name="email"
                 validators={{
                   // eslint-disable-next-line unicorn/no-useless-undefined -- noop placeholder while client validation is disabled for testing
-                  onBlur: () => undefined,
-                  // onBlur: ({ value }) =>
-                  // !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-                  //   ? { message: "Please enter a valid email address" }
-                  //   : undefined,
+                  onBlur: ({ value }) =>
+                    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+                      ? { message: "Please enter a valid email address" }
+                      : undefined,
                 }}
               >
                 {(field) => {
@@ -200,7 +196,7 @@ function RouteComponent() {
                       <Input
                         id={field.name}
                         name={field.name}
-                        // type="email"
+                        type="email"
                         value={field.state.value}
                         onBlur={field.handleBlur}
                         onChange={(e) => {
