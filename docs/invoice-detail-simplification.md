@@ -1,193 +1,187 @@
 # Invoice Detail Route Simplification
 
-## Goal
+## Summary
 
-Simplify `app.$organizationId.invoices.$invoiceId.tsx` to use a straightforward loader pattern like `login.tsx`, remove broadcast-triggered query invalidation for the edit form, and keep `useMutation` for saves.
+Research and decisions from simplifying `app.$organizationId.invoices.$invoiceId.tsx`. Covers the form save pattern, loader design, domain type alignment, `defaultValues` handling, and Effect/TanStack Router control flow.
 
-## Current Architecture (What's Wrong)
+## 1. Form Save Pattern: The Revert Bug
 
-### 1. Loader uses `ensureQueryData` + redundant invoice list fetch
+### Problem
+
+After saving, the form reverted to the original (pre-edit) values. Multiple approaches were tried.
+
+### What didn't work
+
+**`form.reset(newValues)` in mutation `onSuccess`:**
+After `reset(newValues)`, the form's internal `defaultValues` updated to the server response and `isTouched` became `false`. On the next React render, `useForm`'s internal `update()` compared options `defaultValues` (still the old loader data from `useLoaderData()`) against the form's internal `defaultValues` (new server data). Since `isTouched` was false and they differed, `update()` reverted the form to the old loader data.
+
+**`await router.invalidate()` then `formApi.reset()`:**
+`reset()` runs synchronously before the re-render from `invalidate()`. So it resets to the old `defaultValues`, causing a visible flash of old values before the fresh loader data arrives.
+
+**`useState` to track current invoice:**
+Works but is a hack -- doesn't follow any TanStack pattern and adds state management that shouldn't be needed.
+
+### What works: fire-and-forget `router.invalidate()` in `onSuccess`
+
+This is the pattern used by members, invitations, and every other mutation in the codebase:
 
 ```ts
-// app.$organizationId.invoices.$invoiceId.tsx loader
-loader: async ({ params, context }) => {
-  await Promise.all([
-    context.queryClient.ensureQueryData({ queryKey: invoicesQueryKey(...) }),  // ← why?
-    context.queryClient.ensureQueryData({ queryKey: invoiceQueryKey(...) }),
-  ]);
-}
-```
+const saveMutation = useMutation({
+  mutationFn: (data) => stub.updateInvoice({ invoiceId, ...data }),
+  onSuccess: () => {
+    void router.invalidate();
+  },
+});
 
-**Problems:**
-
-- Fetches the full invoices list (`getInvoices`) on a single-invoice edit page — only used for `invoiceSummary?.viewUrl` (one field).
-- Returns nothing from loader — data consumed via `useQuery` in component, duplicating the query config.
-- `ensureQueryData` coordinates with TanStack Query cache but adds complexity vs. just returning data.
-
-### 2. Component re-fetches what the loader already ensured
-
-```ts
-// Component creates its own useQuery with a DIFFERENT queryKey (appends getInvoiceWithItemsFn)
-const invoiceQuery = useQuery({
-  queryKey: [...invoiceQueryKey(orgId, invoiceId), getInvoiceWithItemsFn],
-  queryFn: () => getInvoiceWithItemsFn({ data: { organizationId, invoiceId } }),
+const form = useForm({
+  defaultValues: { ...invoice fields... },
+  onSubmit: ({ value }) => {
+    void saveMutation.mutateAsync(value);
+  },
 });
 ```
 
-The `queryKey` includes `getInvoiceWithItemsFn` (the `useServerFn` wrapper), making it a _different_ cache entry from what the loader seeded. The loader's `ensureQueryData` call seeds `invoiceQueryKey(orgId, invoiceId)` but the component queries a different key — so the loader's cache hit may not apply.
+The form values stay as-is after save (showing what the user typed). `router.invalidate()` re-runs the loader in the background. When the fresh loader data arrives, `useForm`'s `update()` sees new `defaultValues` that match the current form values, so nothing visually changes and dirty state clears naturally.
 
-### 3. Broadcast activity triggers global query invalidation
+### Key insight
 
-In `app.$organizationId.tsx`, the `useAgent` `onMessage` handler invalidates _all_ invoice queries on `invoice.updated`:
+Members and invitations routes don't use `formApi.reset()` at all. They fire the mutation, invalidate, done. The invoice route was overcomplicating things with reset/refetch choreography.
 
-```ts
-if (shouldInvalidateForInvoice(message.action)) {
-  void queryClient.invalidateQueries({
-    queryKey: ["organization", organizationId, "invoices"],
-  });
-  void queryClient.invalidateQueries({
-    queryKey: ["organization", organizationId, "invoice"],
-  });
-}
-```
+## 2. Loader Design: Nullable Invoice
 
-`"invoice.updated"` is in `INVALIDATING_ACTIONS` (Activity.ts L38). When the user saves _their own_ edit, the mutation's `onSuccess` already calls `setQueryData` + `invalidateQueries` — then the broadcast echo arrives and invalidates _again_. For a form that the user is actively editing, this creates an unnecessary re-fetch cycle that overwrites the form's local state via the `useEffect` sync.
+### Problem
 
-### 4. Form state synced via `useEffect`
+The loader returned `{ invoice: null, viewUrl: undefined }` when invoice wasn't found. This forced:
+- `invoice?.status` optional chaining throughout the component
+- `toDefaultValues({} as InvoiceWithItems)` fallback hack
+- A null-check early return in the component
+
+### Decision
+
+The loader should either have concrete data or 404. Server fn returns `null` for not found, route loader throws `notFound()`:
 
 ```ts
-const [form, setForm] = React.useState<InvoiceFormValues | null>(null);
-React.useEffect(() => {
-  if (invoiceQuery.data) setForm(toFormValues(invoiceQuery.data));
-}, [invoiceQuery.data]);
+// Invoices.ts -- server fn returns null cleanly
+if (!invoice) return null;
+
+// Route loader -- translates to 404
+loader: async ({ params }) => {
+  const data = await getInvoiceDetail({ data: params });
+  if (!data) throw notFound();
+  return data;
+},
 ```
 
-Any query invalidation (including the broadcast echo) replaces the user's in-progress edits. This is the concrete bug created by the broadcast pattern on an edit form.
+This separates concerns: the server fn is a data fetcher (null is valid), the route owns UX decisions (null means 404 for this page).
 
-## Proposed Architecture
+### notFound() inside Effect
 
-### Pattern: `login.tsx`-style
-
-```
-loader → return server fn data directly → useLoaderData in component
-mutation → useMutation calling stub.updateInvoice → invalidate on settle
-```
-
-No TanStack Query for reading the invoice on this route. No broadcast invalidation touching this form.
-
-### Loader: return data directly
+The codebase already uses `Effect.die(notFound())` and `Effect.die(redirect(...))` throughout (app.tsx, admin.tsx, pricing.tsx, etc.). `runEffect` in worker.ts already catches these:
 
 ```ts
-// Proposed loader
+const squashed = Cause.squash(exit.cause);
+if (isRedirect(squashed) || isNotFound(squashed)) throw squashed;
+```
+
+Using `die` for control flow is semantically impure (defects are for bugs), but it works reliably and is the established pattern across 7+ call sites. Not worth changing.
+
+## 3. Domain Type Alignment: `items` vs `invoiceItems`
+
+### Problem
+
+`InvoiceWithItems` had `items` but `InvoiceFormSchema` had `invoiceItems`. This mismatch required `toDefaultValues` to manually remap every field from the domain type to the form shape.
+
+### Decision
+
+Renamed `items` -> `invoiceItems` on `InvoiceWithItems` (domain type) and the SQL query in `OrganizationRepository.ts`. This aligns with:
+- `InvoiceFormSchema.invoiceItems`
+- `InvoiceExtractionSchema.invoiceItems`
+- `OrganizationRepository` destructuring (`const { invoiceItems, ...extracted }`)
+
+The rename was the smaller change -- `items` was only used in 3 places (domain schema, SQL query, invoices index template). `invoiceItems` was used everywhere else.
+
+## 4. Killing `toDefaultValues`
+
+### Problem
+
+`toDefaultValues` manually copied 15 invoice fields and 5 item fields from the domain type to the form shape. Verbose, fragile, and looked like a made-up pattern.
+
+### What other routes do
+
+Members and invitations routes inline `defaultValues` as plain object literals with hardcoded defaults (empty strings). They don't edit existing server data, so there's no domain-to-form mapping needed.
+
+### Decision
+
+The mapping IS needed because the form only uses a subset of invoice fields (not `id`, `status`, `createdAt`, etc.) and a subset of item fields (not `id`, `invoiceId`, `order`). But it's done inline using `Struct.pick`:
+
+```ts
+defaultValues: {
+  ...Struct.pick(invoice, ["name", "invoiceNumber", ...]),
+  invoiceItems: invoice.invoiceItems.map((item) =>
+    Struct.pick(item, ["description", "quantity", "unitPrice", "amount", "period"])
+  ),
+},
+```
+
+No intermediate function, no separate key constants -- all inline where it's used.
+
+## 5. NonEmptyArray -> Array for invoiceItems
+
+`InvoiceFormSchema` used `Schema.NonEmptyArray` for `invoiceItems`. This was wrong -- an invoice can legitimately have zero line items (newly created, extraction found none). Changed to `Schema.Array`. Removed the empty-item fallback in `defaultValues`.
+
+## 6. Removing TanStack Query from the detail route
+
+The detail route used `useQueryClient` and `queryClient.invalidateQueries({ queryKey: invoicesQueryKey(...) })` in `onSettled` to refresh the invoices list cache. But this route doesn't use any TanStack Query queries -- it uses loader data. The list route's own loader will re-run when the user navigates back.
+
+Removed `useQueryClient`, `invoicesQueryKey` import, and the `onSettled` handler. The route no longer knows about TanStack Query.
+
+## 7. Next Steps: getLoaderData pattern
+
+### Current state
+
+`getInvoiceDetail` in `Invoices.ts` is a server fn that composes `getInvoice` + `getInvoiceViewUrl`. It's called by one route's loader.
+
+### Proposed
+
+Follow the `login.tsx` pattern: local `getLoaderData` server fn in the route file that composes domain Effects.
+
+- `Invoices.ts` exports clean domain Effects: `getInvoice` (returns `Option`), `getInvoiceViewUrl`
+- Route file has local `getLoaderData` server fn that composes them via `runEffect`
+- `getInvoice` returns `Option` (idiomatic Effect for "may not exist")
+- `getLoaderData` translates `Option.None` -> `Effect.die(notFound())`
+
+```ts
+// Route file
 const getLoaderData = createServerFn({ method: "GET" })
-  .inputValidator(Schema.toStandardSchemaV1(paramsSchema))
-  .handler(({ data: { organizationId, invoiceId }, context: { runEffect } }) =>
+  .inputValidator(...)
+  .handler(({ context: { runEffect }, data: { organizationId, invoiceId } }) =>
     runEffect(
       Effect.gen(function* () {
-        // auth check + get stub (same as existing getInvoiceWithItems)
-        const stub = yield* getOrganizationAgentStub(organizationId);
-        const invoice = yield* Effect.tryPromise(() =>
-          stub.getInvoiceWithItems(invoiceId),
+        const invoice = yield* getInvoice(organizationId, invoiceId).pipe(
+          Effect.flatMap(Effect.fromOption),
+          Effect.catchTag("NoSuchElementError", () => Effect.die(notFound())),
         );
-        // also get viewUrl for this single invoice if needed
-        // ...
-        return { invoice: invoice ? structuredClone(invoice) : null };
+        const viewUrl = yield* getInvoiceViewUrl(organizationId, invoice);
+        return { invoice: structuredClone(invoice), viewUrl };
       }),
     ),
   );
 
-export const Route = createFileRoute(
-  "/app/$organizationId/invoices/$invoiceId",
-)({
+export const Route = createFileRoute(...)({
   loader: ({ params }) => getLoaderData({ data: params }),
   component: RouteComponent,
 });
 ```
 
-Component consumes via:
+This eliminates:
+- `getInvoiceDetail` from `Invoices.ts`
+- The async loader wrapper with `throw notFound()`
+- The route becomes a one-liner loader again
 
-```ts
-const { invoice } = Route.useLoaderData();
-```
+### Naming: `getInvoiceWithItems` -> `getInvoice`
 
-**Key difference from login.tsx**: login returns a simple object. Here we return `{ invoice }`. No `ensureQueryData`, no `useQuery` for read.
+The "WithItems" suffix implies there's a version without items. There isn't. Items are just part of an invoice. Rename to `getInvoice` (including the DO stub method).
 
-### Mutation: keep `useMutation`, use `router.invalidate()` for refresh
+### General pattern: server fn per route
 
-```ts
-const router = useRouter();
-const saveMutation = useMutation({
-  mutationFn: (data: InvoiceFormValues) => stub.updateInvoice({ ... }),
-  onSuccess: (invoice) => {
-    setForm(toFormValues(invoice));
-    // Optionally invalidate the router to refetch loader data
-    // But since we already set form from the response, we may not need to
-  },
-  onSettled: () => {
-    // Invalidate the invoices list query for the parent route
-    void queryClient.invalidateQueries({ queryKey: invoicesQueryKey(organizationId) });
-  },
-});
-```
-
-After save, the mutation response contains the updated `InvoiceWithItems`. We set form state directly — no need to refetch.
-
-### Remove `invoice.updated` broadcast entirely
-
-Remove everything related to broadcasting on invoice update:
-
-1. **`organization-agent.ts`** — Remove the `broadcastActivity` call from `updateInvoice` (L263-267).
-2. **`Activity.ts`** — Remove `"invoice.updated"` from `ActivityAction` literals (L7) and from `INVALIDATING_ACTIONS` (L38).
-
-The form should behave like a regular web form — saving doesn't trigger background activity messages or query invalidation cascades. Broadcasts continue for uploads, extractions, creates, and deletes.
-
-### Form state initialization
-
-```ts
-const { invoice } = Route.useLoaderData();
-const [form, setForm] = React.useState<InvoiceFormValues | null>(
-  invoice ? toFormValues(invoice) : null,
-);
-```
-
-No `useEffect` sync — `useLoaderData` is available synchronously on initial render. When navigating between invoices, `params` change → loader re-runs → component remounts with new data (TanStack Router behavior for param changes).
-
-### viewUrl for "Open source file"
-
-Currently fetched via `invoicesQuery.data?.find(...)`. Options:
-
-1. **Include in `getLoaderData`** — compute the viewUrl for this single invoice in the server fn.
-2. **Separate server fn** — `getInvoiceViewUrl` if the R2 signing logic should stay isolated.
-3. **Drop it** — if the source file link isn't essential on the edit form.
-
-Recommendation: Option 1 — one server call, no extra round trip.
-
-## What Changes
-
-| File                                          | Change                                                                                                                                                                                                        |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app.$organizationId.invoices.$invoiceId.tsx` | Replace `ensureQueryData` loader with `createServerFn` returning data. Replace `useQuery` with `useLoaderData`. Remove `useEffect` form sync. Remove `invoicesQuery`. Keep `useMutation`.                     |
-| `app.$organizationId.invoices.tsx` (layout)   | Remove the `getInvoiceWithItems` prefetch for first invoice (optional cleanup — it pre-warms a TanStack Query cache entry that the detail route won't use anymore). Keep `getInvoices` prefetch for the list. |
-| `lib/Invoices.ts`                             | Possibly add a new server fn for the detail page, or keep `getInvoiceWithItems` and call it from the new loader's server fn.                                                                                  |
-| `Activity.ts`                                 | Remove `"invoice.updated"` from `ActivityAction` literals and `INVALIDATING_ACTIONS`.                                                                                                                         |
-| `organization-agent.ts`                       | Remove `broadcastActivity` call from `updateInvoice`.                                                                                                                                                         |
-| `app.$organizationId.tsx`                     | No change needed. Broadcast invalidation continues for remaining actions (upload/extraction/create/delete).                                                                                                   |
-
-## What Stays the Same
-
-- `useMutation` for save via `stub.updateInvoice` (Cloudflare RPC)
-- `useOrganizationAgent` for the stub
-- Form state management via `useState` + `setForm`
-- All the form UI (TextField, TextAreaField, line items CRUD)
-- Broadcast activity for uploads/extractions/deletes (list page)
-- Activity feed in sidebar
-
-## Decisions
-
-1. **Use `useForm` (TanStack Form)** for client-side validation — adopt the same pattern as login.tsx (`useForm` + `useMutation`). No SSR form patterns.
-
-2. **`staleTime` stays at 0 (default)** — navigating away and back refetches. This is standard form behavior. No route in this app has a compelling case for `staleTime > 0`; the data is always fresh from the server on navigation.
-
-3. **No concurrent edit support** — this is a regular form, not a real-time collaborative editor. Broadcast invalidation for `invoice.updated` is removed entirely.
-
-4. **No `useServerFn` on this route** — loader calls server fn directly; mutation uses `stub.updateInvoice` via Cloudflare RPC. No wrapping needed.
+Routes that need multiple pieces of data compose them in a local `getLoaderData` server fn. Domain functions (`getInvoice`, `getInvoiceViewUrl`) stay clean and reusable. The server fn is the route's data contract -- named for the route, not the domain.
