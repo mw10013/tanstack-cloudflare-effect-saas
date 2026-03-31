@@ -4,19 +4,8 @@ import * as Struct from "effect/Struct";
 import { Invoice, InvoiceItem } from "./OrganizationDomain";
 import { trimFields } from "./SchemaEx";
 
-export const InvoiceItemFormSchema = Schema.Struct(
-  trimFields(
-    Struct.pick(InvoiceItem.fields, [
-      "description",
-      "quantity",
-      "unitPrice",
-      "amount",
-      "period",
-    ]),
-  ),
-);
-
-export const InvoiceFormSchema = Schema.Struct({
+export const UpdateInvoiceInput = Schema.Struct({
+  invoiceId: Invoice.fields.id,
   ...trimFields(
     Struct.pick(Invoice.fields, [
       "name",
@@ -36,12 +25,17 @@ export const InvoiceFormSchema = Schema.Struct({
       "amountDue",
     ]),
   ),
-  invoiceItems: Schema.mutable(Schema.Array(InvoiceItemFormSchema)),
-});
-
-export const UpdateInvoiceInput = Schema.Struct({
-  invoiceId: Invoice.fields.id,
-  ...InvoiceFormSchema.fields,
+  invoiceItems: Schema.Array(Schema.Struct(
+    trimFields(
+      Struct.pick(InvoiceItem.fields, [
+        "description",
+        "quantity",
+        "unitPrice",
+        "amount",
+        "period",
+      ]),
+    ),
+  )),
 });
 
 export const UploadInvoiceInput = Schema.Struct({

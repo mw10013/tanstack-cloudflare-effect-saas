@@ -27,12 +27,17 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getInvoiceViewUrl, getOrganizationAgentStub } from "@/lib/Invoices";
-import { InvoiceFormSchema } from "@/lib/OrganizationAgentSchemas";
+import { UpdateInvoiceInput } from "@/lib/OrganizationAgentSchemas";
 import { Organization } from "@/lib/Domain";
 import * as OrganizationDomain from "@/lib/OrganizationDomain";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 import { Textarea } from "@/components/ui/textarea";
 
+const UpdateInvoiceFields = UpdateInvoiceInput.mapFields(Struct.omit(["invoiceId"]));
+const InvoiceFormSchema = Schema.Struct({
+  ...UpdateInvoiceFields.fields,
+  invoiceItems: Schema.mutable(UpdateInvoiceFields.fields.invoiceItems),
+});
 const invoiceFormStandardSchema = Schema.toStandardSchemaV1(InvoiceFormSchema);
 const emptyInvoiceItem = () => ({ description: "", quantity: "", unitPrice: "", amount: "", period: "" });
 
