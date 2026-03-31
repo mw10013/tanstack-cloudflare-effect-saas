@@ -24,17 +24,18 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Auth } from "@/lib/Auth";
+import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
 
-const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
+const organizationIdSchema = Schema.Struct({ organizationId: Domain.Organization.fields.id });
 
 const acceptInvitationSchema = Schema.Struct({
-  invitationId: Schema.String,
-  organizationId: Schema.String,
+  invitationId: Domain.Invitation.fields.id,
+  organizationId: Domain.Organization.fields.id,
 });
 
-const invitationIdSchema = Schema.Struct({ invitationId: Schema.String });
+const invitationIdSchema = Schema.Struct({ invitationId: Domain.Invitation.fields.id });
 
 export const Route = createFileRoute("/app/$organizationId/")({
   loader: ({ params: data }) => getLoaderData({ data }),

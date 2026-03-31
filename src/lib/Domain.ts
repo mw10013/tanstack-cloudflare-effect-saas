@@ -75,10 +75,10 @@ export const SubscriptionStatus = Schema.Literals(SubscriptionStatusValues);
 export type SubscriptionStatus = typeof SubscriptionStatus.Type;
 
 export const Invitation = Schema.Struct({
-  id: Schema.String,
+  id: Schema.NonEmptyString,
   email: emailSchema,
-  inviterId: Schema.String,
-  organizationId: Schema.String,
+  inviterId: Schema.NonEmptyString,
+  organizationId: Schema.NonEmptyString,
   role: MemberRole,
   status: InvitationStatus,
   expiresAt: isoDatetimeToDate,
@@ -86,7 +86,7 @@ export const Invitation = Schema.Struct({
 export type Invitation = typeof Invitation.Type;
 
 export const User = Schema.Struct({
-  id: Schema.String,
+  id: Schema.NonEmptyString,
   name: Schema.String,
   email: emailSchema,
   emailVerified: intToBoolean,
@@ -102,30 +102,30 @@ export const User = Schema.Struct({
 export type User = typeof User.Type;
 
 export const Session = Schema.Struct({
-  id: Schema.String,
+  id: Schema.NonEmptyString,
   expiresAt: isoDatetimeToDate,
-  token: Schema.String,
+  token: Schema.NonEmptyString,
   createdAt: isoDatetimeToDate,
   updatedAt: isoDatetimeToDate,
   ipAddress: Schema.NullOr(Schema.String),
   userAgent: Schema.NullOr(Schema.String),
-  userId: Schema.String,
-  impersonatedBy: Schema.NullOr(Schema.String),
-  activeOrganizationId: Schema.NullOr(Schema.String),
+  userId: Schema.NonEmptyString,
+  impersonatedBy: Schema.NullOr(Schema.NonEmptyString),
+  activeOrganizationId: Schema.NullOr(Schema.NonEmptyString),
 });
 export type Session = typeof Session.Type;
 
 export const Member = Schema.Struct({
-  id: Schema.String,
-  userId: Schema.String,
-  organizationId: Schema.String,
+  id: Schema.NonEmptyString,
+  userId: Schema.NonEmptyString,
+  organizationId: Schema.NonEmptyString,
   role: MemberRole,
   createdAt: isoDatetimeToDate,
 });
 export type Member = typeof Member.Type;
 
 export const Organization = Schema.Struct({
-  id: Schema.String,
+  id: Schema.NonEmptyString,
   name: Schema.NonEmptyString,
   slug: Schema.NonEmptyString,
   logo: Schema.NullOr(Schema.String),
@@ -174,9 +174,9 @@ export const Plan = Schema.Struct({
 export type Plan = typeof Plan.Type;
 
 export const Subscription = Schema.Struct({
-  id: Schema.String,
+  id: Schema.NonEmptyString,
   plan: Schema.NonEmptyString,
-  referenceId: Schema.String,
+  referenceId: Schema.NonEmptyString,
   stripeCustomerId: Schema.NullOr(Schema.String),
   stripeSubscriptionId: Schema.NullOr(Schema.String),
   status: SubscriptionStatus,

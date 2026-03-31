@@ -21,13 +21,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Auth } from "@/lib/Auth";
+import * as Domain from "@/lib/Domain";
 import { Request } from "@/lib/Request";
 
-const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
+const organizationIdSchema = Schema.Struct({ organizationId: Domain.Organization.fields.id });
 
 const subscriptionActionSchema = Schema.Struct({
-  organizationId: Schema.String,
-  subscriptionId: Schema.String,
+  organizationId: Domain.Organization.fields.id,
+  subscriptionId: Domain.Subscription.fields.id,
 });
 
 export const Route = createFileRoute("/app/$organizationId/billing")({

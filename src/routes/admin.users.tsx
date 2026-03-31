@@ -63,6 +63,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Auth } from "@/lib/Auth";
+import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
 
@@ -78,7 +79,7 @@ const userSearchSchema = Schema.Struct({
   filter: Schema.optional(Schema.Trim),
 });
 
-const userIdSchema = Schema.Struct({ userId: Schema.String });
+const userIdSchema = Schema.Struct({ userId: Domain.User.fields.id });
 
 export const getUsers = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(userSearchSchema))
@@ -361,7 +362,7 @@ function RouteComponent() {
 }
 
 const banUserSchema = Schema.Struct({
-  userId: Schema.String,
+  userId: Domain.User.fields.id,
   banReason: Schema.String.check(Schema.isMaxLength(100)),
 });
 

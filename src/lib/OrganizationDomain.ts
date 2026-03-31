@@ -10,14 +10,14 @@ export const InvoiceStatus = Schema.Literals(InvoiceStatusValues);
 export type InvoiceStatus = typeof InvoiceStatus.Type;
 
 export const Invoice = Schema.Struct({
-  id: Schema.String,
+  id: Schema.NonEmptyString,
   name: Schema.String.check(Schema.isMaxLength(500)),
-  fileName: Schema.String.check(Schema.isMaxLength(500)),
-  contentType: Schema.String.check(Schema.isMaxLength(100)),
+  fileName: Schema.NonEmptyString.check(Schema.isMaxLength(500)),
+  contentType: Schema.NonEmptyString.check(Schema.isMaxLength(100)),
   createdAt: Schema.Number,
   r2ActionTime: Schema.NullOr(Schema.Number),
   idempotencyKey: Schema.NullOr(Schema.String),
-  r2ObjectKey: Schema.String,
+  r2ObjectKey: Schema.NonEmptyString,
   status: InvoiceStatus,
   invoiceConfidence: Schema.Number,
   invoiceNumber: Schema.String.check(Schema.isMaxLength(100)),
@@ -40,8 +40,8 @@ export const Invoice = Schema.Struct({
 export type Invoice = typeof Invoice.Type;
 
 export const InvoiceItem = Schema.Struct({
-  id: Schema.String,
-  invoiceId: Schema.String,
+  id: Schema.NonEmptyString,
+  invoiceId: Schema.NonEmptyString,
   order: Schema.Number,
   description: Schema.String.check(Schema.isMaxLength(2000)),
   quantity: Schema.String.check(Schema.isMaxLength(50)),

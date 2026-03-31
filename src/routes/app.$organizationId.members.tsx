@@ -30,16 +30,16 @@ import { Auth } from "@/lib/Auth";
 import * as Domain from "@/lib/Domain";
 import { Request } from "@/lib/Request";
 
-const organizationIdSchema = Schema.Struct({ organizationId: Schema.String });
+const organizationIdSchema = Schema.Struct({ organizationId: Domain.Organization.fields.id });
 
 const removeMemberSchema = Schema.Struct({
-  organizationId: Schema.String,
-  memberId: Schema.String,
+  organizationId: Domain.Organization.fields.id,
+  memberId: Domain.Member.fields.id,
 });
 
 const updateMemberRoleSchema = Schema.Struct({
-  organizationId: Schema.String,
-  memberId: Schema.String,
+  organizationId: Domain.Organization.fields.id,
+  memberId: Domain.Member.fields.id,
   role: Schema.Literals(Domain.AssignableMemberRoleValues),
 });
 

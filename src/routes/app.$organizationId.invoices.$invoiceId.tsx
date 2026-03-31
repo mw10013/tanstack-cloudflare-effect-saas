@@ -28,7 +28,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getInvoiceViewUrl, getOrganizationAgentStub } from "@/lib/Invoices";
 import { InvoiceFormSchema } from "@/lib/OrganizationAgentSchemas";
-import type * as OrganizationDomain from "@/lib/OrganizationDomain";
+import { Organization } from "@/lib/Domain";
+import * as OrganizationDomain from "@/lib/OrganizationDomain";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -36,7 +37,7 @@ const invoiceFormStandardSchema = Schema.toStandardSchemaV1(InvoiceFormSchema);
 const emptyInvoiceItem = () => ({ description: "", quantity: "", unitPrice: "", amount: "", period: "" });
 
 const getLoaderData = createServerFn({ method: "GET" })
-  .inputValidator(Schema.toStandardSchemaV1(Schema.Struct({ organizationId: Schema.NonEmptyString, invoiceId: Schema.NonEmptyString })))
+  .inputValidator(Schema.toStandardSchemaV1(Schema.Struct({ organizationId: Organization.fields.id, invoiceId: OrganizationDomain.Invoice.fields.id })))
   .handler(({ context: { runEffect }, data: { organizationId, invoiceId } }) =>
     runEffect(
       Effect.gen(function* () {

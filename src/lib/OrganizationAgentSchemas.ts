@@ -40,7 +40,7 @@ export const InvoiceFormSchema = Schema.Struct({
 });
 
 export const UpdateInvoiceInput = Schema.Struct({
-  invoiceId: Schema.NonEmptyString,
+  invoiceId: Invoice.fields.id,
   ...InvoiceFormSchema.fields,
 });
 
@@ -51,9 +51,9 @@ export const UploadInvoiceInput = Schema.Struct({
 });
 
 export const GetInvoiceInput = Schema.Struct({
-  invoiceId: Schema.NonEmptyString,
+  invoiceId: Invoice.fields.id,
 });
 
 export const SoftDeleteInvoiceInput = Schema.Struct({
-  invoiceId: Schema.NonEmptyString,
+  invoiceId: Invoice.fields.id,
 });

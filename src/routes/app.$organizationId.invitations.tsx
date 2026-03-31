@@ -134,7 +134,7 @@ function RouteComponent() {
 }
 
 const inviteSchema = Schema.Struct({
-  organizationId: Schema.String,
+  organizationId: Domain.Organization.fields.id,
   emails: Schema.String.pipe(
     Schema.decodeTo(
       Schema.Array(Schema.String.check(Schema.isPattern(emailPattern)))
@@ -149,7 +149,7 @@ const inviteSchema = Schema.Struct({
   role: Schema.Literals(Domain.AssignableMemberRoleValues),
 });
 
-const invitationIdSchema = Schema.Struct({ invitationId: Schema.String });
+const invitationIdSchema = Schema.Struct({ invitationId: Domain.Invitation.fields.id });
 
 /**
  * Authorization is enforced by better-auth createInvitation.
