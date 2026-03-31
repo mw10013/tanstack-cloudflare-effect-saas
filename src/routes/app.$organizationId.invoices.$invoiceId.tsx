@@ -5,6 +5,7 @@ import {
   createFileRoute,
   Link,
   useHydrated,
+  useRouter,
 } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, ExternalLink, FilePenLine, Loader2, Plus, Trash2 } from "lucide-react";
@@ -40,32 +41,14 @@ const emptyInvoiceItem = () => ({
   period: "",
 });
 
-const toDefaultValues = (invoice: OrganizationDomain.InvoiceWithItems) => ({
-  name: invoice.name,
-  invoiceNumber: invoice.invoiceNumber,
-  invoiceDate: invoice.invoiceDate,
-  dueDate: invoice.dueDate,
-  currency: invoice.currency,
-  vendorName: invoice.vendorName,
-  vendorEmail: invoice.vendorEmail,
-  vendorAddress: invoice.vendorAddress,
-  billToName: invoice.billToName,
-  billToEmail: invoice.billToEmail,
-  billToAddress: invoice.billToAddress,
-  subtotal: invoice.subtotal,
-  tax: invoice.tax,
-  total: invoice.total,
-  amountDue: invoice.amountDue,
-  invoiceItems:
-    invoice.items.length > 0
-      ? invoice.items.map((item) => ({
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          amount: item.amount,
-          period: item.period,
-        }))
-      : [emptyInvoiceItem()],
+const toDefaultValues = ({ name, invoiceNumber, invoiceDate, dueDate, currency, vendorName, vendorEmail, vendorAddress, billToName, billToEmail, billToAddress, subtotal, tax, total, amountDue, items }: OrganizationDomain.InvoiceWithItems) => ({
+  name, invoiceNumber, invoiceDate, dueDate, currency,
+  vendorName, vendorEmail, vendorAddress,
+  billToName, billToEmail, billToAddress,
+  subtotal, tax, total, amountDue,
+  invoiceItems: items.length > 0
+    ? items.map(({ description, quantity, unitPrice, amount, period }) => ({ description, quantity, unitPrice, amount, period }))
+    : [emptyInvoiceItem()],
 });
 
 export const Route = createFileRoute("/app/$organizationId/invoices/$invoiceId")({
@@ -77,6 +60,7 @@ function RouteComponent() {
   const { organizationId, invoiceId } = Route.useParams();
   const { invoice, viewUrl } = Route.useLoaderData();
   const isHydrated = useHydrated();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { stub } = useOrganizationAgent();
 
@@ -84,8 +68,8 @@ function RouteComponent() {
     mutationFn: (data: typeof InvoiceFormSchema.Type) =>
       // oxlint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call -- oxlint can't resolve Cloudflare Rpc conditional types; tsc infers correctly
       stub.updateInvoice({ invoiceId, ...data }),
-    onSuccess: (result: OrganizationDomain.InvoiceWithItems) => {
-      form.reset(toDefaultValues(result));
+    onSuccess: () => {
+      void router.invalidate();
     },
     onSettled: () => {
       void queryClient.invalidateQueries({
