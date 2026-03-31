@@ -130,7 +130,7 @@ function RouteComponent() {
   const softDeleteInvoiceMutation = useMutation({
     // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- oxlint can't resolve Cloudflare Rpc conditional types; tsc infers correctly
     mutationFn: ({ invoiceId }: { invoiceId: string }) =>
-      stub.softDeleteInvoice(invoiceId),
+      stub.softDeleteInvoice({ invoiceId }),
     onSettled: () => {
       void queryClient.invalidateQueries({
         queryKey: invoicesQueryKey(organizationId),

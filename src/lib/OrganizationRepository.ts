@@ -2,6 +2,7 @@ import { Effect, Layer, Option, Schema, ServiceMap } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import type { InvoiceExtractionSchema } from "./InvoiceExtraction";
+import type { UpdateInvoiceInput } from "./OrganizationAgentSchemas";
 import * as OrganizationDomain from "./OrganizationDomain";
 import { JsonDataFieldHead } from "./SchemaEx";
 
@@ -224,7 +225,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
       );
 
       const updateInvoice = Effect.fn("OrganizationRepository.updateInvoice")(
-        function* (input: { invoiceId: string } & typeof OrganizationDomain.InvoiceFormSchema.Type) {
+        function* (input: typeof UpdateInvoiceInput.Type) {
           return yield* Effect.gen(function* () {
             const updated = yield* sql`
               update Invoice

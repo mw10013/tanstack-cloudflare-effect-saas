@@ -1,7 +1,4 @@
 import * as Schema from "effect/Schema";
-import * as Struct from "effect/Struct";
-
-import { trimFields } from "./SchemaEx";
 
 export const InvoiceStatusValues = [
   "extracting",
@@ -60,40 +57,6 @@ export const InvoiceWithItems = Schema.Struct({
 });
 export type InvoiceWithItems = typeof InvoiceWithItems.Type;
 
-export const InvoiceItemFormSchema = Schema.Struct(
-  trimFields(
-    Struct.pick(InvoiceItem.fields, [
-      "description",
-      "quantity",
-      "unitPrice",
-      "amount",
-      "period",
-    ]),
-  ),
-);
-
-export const InvoiceFormSchema = Schema.Struct({
-  ...trimFields(
-    Struct.pick(Invoice.fields, [
-      "name",
-      "invoiceNumber",
-      "invoiceDate",
-      "dueDate",
-      "currency",
-      "vendorName",
-      "vendorEmail",
-      "vendorAddress",
-      "billToName",
-      "billToEmail",
-      "billToAddress",
-      "subtotal",
-      "tax",
-      "total",
-      "amountDue",
-    ]),
-  ),
-  invoiceItems: Schema.mutable(Schema.Array(InvoiceItemFormSchema)),
-});
 
 export class OrganizationAgentError extends Schema.TaggedErrorClass<OrganizationAgentError>()(
   "OrganizationAgentError",

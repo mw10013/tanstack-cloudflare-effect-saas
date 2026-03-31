@@ -94,7 +94,7 @@ export const getInvoice = createServerFn({ method: "GET" })
       Effect.gen(function* () {
         const stub = yield* getOrganizationAgentStub(organizationId);
         const invoice: OrganizationDomain.InvoiceWithItems | null = yield* Effect.tryPromise(
-          () => stub.getInvoice(invoiceId),
+          () => stub.getInvoice({ invoiceId }),
         );
         return invoice ? structuredClone(invoice) : null;
       }),

@@ -11,9 +11,14 @@ import { makeLoggerLayer } from "@/lib/LoggerLayer";
 import type { InvoiceExtractionSchema } from "@/lib/InvoiceExtraction";
 import {
   OrganizationAgentError,
-  type InvoiceFormSchema,
   activeWorkflowStatuses,
 } from "@/lib/OrganizationDomain";
+import {
+  GetInvoiceInput,
+  SoftDeleteInvoiceInput,
+  UpdateInvoiceInput,
+  UploadInvoiceInput,
+} from "@/lib/OrganizationAgentSchemas";
 import { OrganizationRepository } from "@/lib/OrganizationRepository";
 import { R2 } from "@/lib/R2";
 
@@ -234,11 +239,12 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
-  updateInvoice(input: { invoiceId: string } & typeof InvoiceFormSchema.Type) {
+  updateInvoice(input: typeof UpdateInvoiceInput.Type) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
+        const data = yield* Schema.decodeUnknownEffect(UpdateInvoiceInput)(input);
         const repo = yield* OrganizationRepository;
-        const invoice = yield* repo.updateInvoice(input).pipe(
+        const invoice = yield* repo.updateInvoice(data).pipe(
           Effect.map(Option.getOrNull),
         );
         if (!invoice) return yield* new OrganizationAgentError({ message: "Invoice not found after update" });
@@ -248,27 +254,28 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
-  uploadInvoice(input: { fileName: string; contentType: string; base64: string }) {
+  uploadInvoice(input: typeof UploadInvoiceInput.Type) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
+        const data = yield* Schema.decodeUnknownEffect(UploadInvoiceInput)(input);
         yield* getConnectionIdentity();
-        if (input.base64.length > MAX_BASE64_SIZE)
+        if (data.base64.length > MAX_BASE64_SIZE)
           return yield* new OrganizationAgentError({ message: "File too large" });
-        if (!invoiceMimeTypes.includes(input.contentType as (typeof invoiceMimeTypes)[number]))
+        if (!invoiceMimeTypes.includes(data.contentType as (typeof invoiceMimeTypes)[number]))
           return yield* new OrganizationAgentError({ message: "Invalid file type" });
         const invoiceId = crypto.randomUUID();
         const idempotencyKey = crypto.randomUUID();
         const key = `${this.name}/invoices/${invoiceId}`;
-        const bytes = Uint8Array.from(atob(input.base64), (c) => c.codePointAt(0) ?? 0);
+        const bytes = Uint8Array.from(atob(data.base64), (c) => c.codePointAt(0) ?? 0);
         const r2 = yield* R2;
         yield* r2.put(key, bytes, {
-          httpMetadata: { contentType: input.contentType },
+          httpMetadata: { contentType: data.contentType },
           customMetadata: {
             organizationId: this.name,
             invoiceId,
             idempotencyKey,
-            fileName: input.fileName,
-            contentType: input.contentType,
+            fileName: data.fileName,
+            contentType: data.contentType,
           },
         });
         const environment = yield* Config.nonEmptyString("ENVIRONMENT");
@@ -291,9 +298,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
-  softDeleteInvoice(invoiceId: string) {
+  softDeleteInvoice(input: typeof SoftDeleteInvoiceInput.Type) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
+        const { invoiceId } = yield* Schema.decodeUnknownEffect(SoftDeleteInvoiceInput)(input);
         const repo = yield* OrganizationRepository;
         const deleted = yield* repo.softDeleteInvoice(invoiceId);
         if (deleted.length === 0) return;
@@ -375,9 +383,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
-  getInvoice(invoiceId: string) {
+  getInvoice(input: typeof GetInvoiceInput.Type) {
     return this.runEffect(
       Effect.gen(function* () {
+        const { invoiceId } = yield* Schema.decodeUnknownEffect(GetInvoiceInput)(input);
         const repo = yield* OrganizationRepository;
         return yield* repo.getInvoice(invoiceId).pipe(
           Effect.map(Option.getOrNull),

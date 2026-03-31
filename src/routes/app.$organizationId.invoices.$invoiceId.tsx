@@ -27,7 +27,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getInvoiceViewUrl, getOrganizationAgentStub } from "@/lib/Invoices";
-import { InvoiceFormSchema } from "@/lib/OrganizationDomain";
+import { InvoiceFormSchema } from "@/lib/OrganizationAgentSchemas";
 import type * as OrganizationDomain from "@/lib/OrganizationDomain";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,7 +43,7 @@ const getLoaderData = createServerFn({ method: "GET" })
         const stub = yield* getOrganizationAgentStub(organizationId);
         // oxlint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call -- oxlint can't resolve Cloudflare Rpc conditional types; tsc infers correctly
         const invoice: OrganizationDomain.InvoiceWithItems | null = yield* Effect.tryPromise(
-          () => stub.getInvoice(invoiceId),
+          () => stub.getInvoice({ invoiceId }),
         );
         if (!invoice) return yield* Effect.die(notFound());
         const viewUrl = yield* getInvoiceViewUrl(organizationId, invoice);
