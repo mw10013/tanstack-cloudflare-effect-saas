@@ -14,8 +14,8 @@ import {
   activeWorkflowStatuses,
 } from "@/lib/OrganizationDomain";
 import {
+  DeleteInvoiceInput,
   GetInvoiceInput,
-  SoftDeleteInvoiceInput,
   UpdateInvoiceInput,
   UploadInvoiceInput,
 } from "@/lib/OrganizationAgentSchemas";
@@ -281,9 +281,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const environment = yield* Config.nonEmptyString("ENVIRONMENT");
         if (environment === "local") {
           const env = yield* CloudflareEnv;
-          const queue = yield* Effect.fromNullishOr(env.INVOICE_INGEST_Q);
+          const queue = yield* Effect.fromNullishOr(env.ORGANIZATION_Q);
           yield* Effect.tryPromise(() =>
             queue.send({
+              // Local dev uses placeholder account/bucket names because the consumer only reads action/object/eventTime.
               account: "local",
               action: "PutObject",
               bucket: "tcei-r2-local",
@@ -298,18 +299,42 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   @callable()
-  softDeleteInvoice(input: typeof SoftDeleteInvoiceInput.Type) {
+  deleteInvoice(input: typeof DeleteInvoiceInput.Type) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
-        const { invoiceId } = yield* Schema.decodeUnknownEffect(SoftDeleteInvoiceInput)(input);
+        const { invoiceId } = yield* Schema.decodeUnknownEffect(DeleteInvoiceInput)(input);
         const repo = yield* OrganizationRepository;
-        const deleted = yield* repo.softDeleteInvoice(invoiceId);
-        if (deleted.length === 0) return;
-        yield* broadcastActivity(this, {
-          action: "invoice.deleted",
-          level: "info",
-          text: "Invoice deleted",
+        const invoice = yield* repo.findInvoice(invoiceId);
+        if (Option.isNone(invoice)) return;
+        if (invoice.value.status !== "ready" && invoice.value.status !== "error") return;
+        const { ORGANIZATION_Q: queue } = yield* CloudflareEnv;
+        if (!queue)
+          return yield* new OrganizationAgentError({
+            message: "Invoice delete queue unavailable",
+          });
+        yield* Effect.tryPromise({
+          try: () =>
+            queue.send({
+              action: "DeleteInvoice",
+              organizationId: this.name,
+              invoiceId,
+              r2ObjectKey: invoice.value.r2ObjectKey,
+            }),
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
         });
+        yield* repo.deleteInvoiceRecord(invoiceId);
+      }),
+    );
+  }
+
+  deleteInvoiceRecord(invoiceId: string) {
+    return this.runEffect(
+      Effect.gen(function* () {
+        const repo = yield* OrganizationRepository;
+        yield* repo.deleteInvoiceRecord(invoiceId);
       }),
     );
   }

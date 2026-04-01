@@ -140,10 +140,22 @@ declare module "@tanstack/react-start" {
 }
 
 const r2QueueMessageSchema = Schema.Struct({
-  action: Schema.NonEmptyString,
+  action: Schema.Literals(["PutObject"]),
   object: Schema.Struct({ key: Schema.NonEmptyString }),
   eventTime: Schema.NonEmptyString,
 });
+
+const invoiceDeleteQueueMessageSchema = Schema.Struct({
+  action: Schema.Literals(["DeleteInvoice"]),
+  organizationId: Schema.NonEmptyString,
+  invoiceId: Schema.NonEmptyString,
+  r2ObjectKey: Schema.String,
+});
+
+const queueMessageSchema = Schema.Union([
+  r2QueueMessageSchema,
+  invoiceDeleteQueueMessageSchema,
+]);
 
 const r2ObjectCustomMetadataSchema = Schema.Struct({
   organizationId: Schema.NonEmptyString,
@@ -195,13 +207,28 @@ const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
   );
 });
 
+const processInvoiceDelete = Effect.fn("processInvoiceDelete")(function* (
+  notification: typeof invoiceDeleteQueueMessageSchema.Type,
+) {
+  const stub = yield* getOrganizationAgentStub(notification.organizationId);
+  yield* Effect.tryPromise(() => stub.deleteInvoiceRecord(notification.invoiceId));
+  if (!notification.r2ObjectKey) return;
+  const r2 = yield* R2;
+  yield* r2.delete(notification.r2ObjectKey);
+});
+
 const processQueueMessage = Effect.fn("processQueueMessage")(function* (
   messageBody: unknown,
 ) {
-  const notification =
-    yield* Schema.decodeUnknownEffect(r2QueueMessageSchema)(messageBody);
-  if (notification.action !== "PutObject") return;
-  yield* processInvoiceUpload(notification);
+  const notification = yield* Schema.decodeUnknownEffect(queueMessageSchema)(messageBody);
+  switch (notification.action) {
+    case "DeleteInvoice": {
+      return yield* processInvoiceDelete(notification);
+    }
+    case "PutObject": {
+      return yield* processInvoiceUpload(notification);
+    }
+  }
 });
 
 const authorizeAgentRequest = Effect.fn("authorizeAgentRequest")(function* (
@@ -282,7 +309,7 @@ export default {
     const envLayer = makeEnvLayer(env);
     const r2Layer = Layer.provideMerge(R2.layer, envLayer);
     const runtimeLayer = Layer.merge(r2Layer, makeLoggerLayer(env));
-    const effect = Effect.forEach(
+    await Effect.forEach(
       // oxlint-disable-next-line unicorn/no-array-method-this-argument -- Effect.forEach is not Array.prototype.forEach
       batch.messages,
       (message) =>
@@ -303,7 +330,6 @@ export default {
             }),
           ),
         ),
-    );
-    await effect.pipe(Effect.provide(runtimeLayer), Effect.runPromise);
+    ).pipe(Effect.provide(runtimeLayer), Effect.runPromise);
   },
 } satisfies ExportedHandler<Env>;

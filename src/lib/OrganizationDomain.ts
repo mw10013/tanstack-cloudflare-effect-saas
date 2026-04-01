@@ -4,7 +4,6 @@ export const InvoiceStatusValues = [
   "extracting",
   "ready",
   "error",
-  "deleted",
 ] as const;
 export const InvoiceStatus = Schema.Literals(InvoiceStatusValues);
 export type InvoiceStatus = typeof InvoiceStatus.Type;

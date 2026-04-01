@@ -48,6 +48,6 @@ export const GetInvoiceInput = Schema.Struct({
   invoiceId: Invoice.fields.id,
 });
 
-export const SoftDeleteInvoiceInput = Schema.Struct({
+export const DeleteInvoiceInput = Schema.Struct({
   invoiceId: Invoice.fields.id,
 });

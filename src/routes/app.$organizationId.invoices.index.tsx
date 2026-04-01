@@ -185,10 +185,10 @@ function RouteComponent() {
       });
     },
   });
-  const softDeleteInvoiceMutation = useMutation({
+  const deleteInvoiceMutation = useMutation({
     // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- oxlint can't resolve Cloudflare Rpc conditional types; tsc infers correctly
     mutationFn: ({ invoiceId }: { invoiceId: string }) =>
-      stub.softDeleteInvoice({ invoiceId }),
+      stub.deleteInvoice({ invoiceId }),
     onSettled: () => {
       void router.invalidate({
         filter: (match) => match.routeId === Route.id,
@@ -383,9 +383,9 @@ function RouteComponent() {
                               size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                softDeleteInvoiceMutation.mutate({ invoiceId: invoice.id });
+                                deleteInvoiceMutation.mutate({ invoiceId: invoice.id });
                               }}
-                              disabled={softDeleteInvoiceMutation.isPending}
+                              disabled={deleteInvoiceMutation.isPending}
                             >
                               <Trash2 className="size-4" />
                             </Button>
@@ -432,8 +432,6 @@ function RouteComponent() {
               {(() => {
                 if (displayedInvoice === null)
                   return <p className="text-sm text-muted-foreground">No invoice selected.</p>;
-                if (displayedInvoice.status === "deleted")
-                  return <p className="text-sm text-muted-foreground">This invoice has been deleted.</p>;
                 if (displayedInvoice.status === "error")
                   return (
                     <Alert variant="destructive">

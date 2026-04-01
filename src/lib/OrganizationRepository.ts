@@ -144,11 +144,10 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
         },
       );
 
-      const softDeleteInvoice = Effect.fn("OrganizationRepository.softDeleteInvoice")(
+      const deleteInvoiceRecord = Effect.fn("OrganizationRepository.deleteInvoiceRecord")(
         function* (invoiceId: string) {
           return yield* sql`
-            update Invoice
-            set status = 'deleted'
+            delete from Invoice
             where id = ${invoiceId} and status in ('ready', 'error')
             returning id
           `;
@@ -272,7 +271,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
         upsertInvoice,
         createInvoice,
         updateInvoice,
-        softDeleteInvoice,
+        deleteInvoiceRecord,
         saveInvoiceExtraction,
         setError,
       };

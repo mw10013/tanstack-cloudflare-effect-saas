@@ -70,17 +70,17 @@
   "queues": {
     "producers": [
       {
-        "queue": "invoice-ingest",
-        "binding": "INVOICE_INGEST_Q"
+        "queue": "organization",
+        "binding": "ORGANIZATION_Q"
       }
     ],
     "consumers": [
       {
-        "queue": "invoice-ingest",
+        "queue": "organization",
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_retries": 3,
-        "dead_letter_queue": "invoice-ingest-dlq"
+        "dead_letter_queue": "organization-dlq"
       }
     ]
   },
@@ -143,17 +143,17 @@
       "queues": {
         "producers": [
           {
-            "queue": "invoice-ingest",
-            "binding": "INVOICE_INGEST_Q"
+            "queue": "organization",
+            "binding": "ORGANIZATION_Q"
           }
         ],
         "consumers": [
           {
-            "queue": "invoice-ingest",
+            "queue": "organization",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
             "max_retries": 3,
-            "dead_letter_queue": "invoice-ingest-dlq"
+            "dead_letter_queue": "organization-dlq"
           }
         ]
       },
