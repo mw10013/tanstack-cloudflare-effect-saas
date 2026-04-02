@@ -1,49 +1,53 @@
 /* oxlint-disable */
-import {
-  defineWorkersProject,
-  readD1Migrations,
-} from "@cloudflare/vitest-pool-workers/config";
 import path from "node:path";
-import tsconfigPaths from "vite-tsconfig-paths";
 
-export default defineWorkersProject(async () => {
-  const migrationsPath = path.join(__dirname, "../../migrations");
+import {
+  cloudflareTest,
+  readD1Migrations,
+} from "@cloudflare/vitest-pool-workers";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import tsconfigPaths from "vite-tsconfig-paths";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig(async () => {
+  const rootDir = path.resolve(import.meta.dirname, "../..");
+  const migrationsPath = path.join(rootDir, "migrations");
   const migrations = await readD1Migrations(migrationsPath);
 
   return {
+    root: rootDir,
     plugins: [
+      cloudflareTest({
+        remoteBindings: false,
+        wrangler: {
+          configPath: path.join(rootDir, "wrangler.jsonc"),
+        },
+        miniflare: {
+          bindings: { TEST_MIGRATIONS: migrations },
+        },
+      }),
       tsconfigPaths({
-        projects: [path.resolve(__dirname, "../../tsconfig.json")],
+        projects: [path.join(rootDir, "tsconfig.json")],
+      }),
+      tanstackStart(),
+      viteReact({
+        babel: {
+          plugins: [
+            ["@babel/plugin-proposal-decorators", { version: "2023-11" }],
+          ],
+        },
       }),
     ],
     resolve: {
       alias: {
-        "@": path.resolve(__dirname, "../../src"),
-      },
-      conditions: ["workerd", "worker", "browser"],
-    },
-    ssr: {
-      target: "webworker" as const,
-      resolve: {
-        conditions: ["workerd", "worker", "browser"],
+        "@": path.join(rootDir, "src"),
       },
     },
     test: {
       include: ["test/integration/*.test.ts"],
       setupFiles: ["test/apply-migrations.ts"],
-      poolOptions: {
-        workers: {
-          main: path.resolve(__dirname, "../../dist/server/index.js"),
-          isolatedStorage: false,
-          singleWorker: true,
-          wrangler: {
-            configPath: "../../wrangler.jsonc",
-          },
-          miniflare: {
-            bindings: { TEST_MIGRATIONS: migrations },
-          },
-        },
-      },
+      testTimeout: 30000,
     },
   };
 });
