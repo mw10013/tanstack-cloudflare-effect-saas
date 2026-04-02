@@ -281,7 +281,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const environment = yield* Config.nonEmptyString("ENVIRONMENT");
         if (environment === "local") {
           const env = yield* CloudflareEnv;
-          const queue = yield* Effect.fromNullishOr(env.ORGANIZATION_Q);
+          const queue = yield* Effect.fromNullishOr(env.Q);
           yield* Effect.tryPromise(() =>
             queue.send({
               // Local dev uses placeholder account/bucket names because the consumer only reads action/object/eventTime.
@@ -307,7 +307,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const invoice = yield* repo.findInvoice(invoiceId);
         if (Option.isNone(invoice)) return;
         if (invoice.value.status !== "ready" && invoice.value.status !== "error") return;
-        const { ORGANIZATION_Q: queue } = yield* CloudflareEnv;
+        const { Q: queue } = yield* CloudflareEnv;
         if (!queue)
           return yield* new OrganizationAgentError({
             message: "Invoice delete queue unavailable",

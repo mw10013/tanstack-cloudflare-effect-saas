@@ -70,17 +70,17 @@
   "queues": {
     "producers": [
       {
-        "queue": "organization",
-        "binding": "ORGANIZATION_Q"
+        "queue": "q",
+        "binding": "Q"
       }
     ],
     "consumers": [
       {
-        "queue": "organization",
+        "queue": "q",
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_retries": 3,
-        "dead_letter_queue": "organization-dlq"
+        "dead_letter_queue": "dlq"
       }
     ]
   },
@@ -143,17 +143,17 @@
       "queues": {
         "producers": [
           {
-            "queue": "organization",
-            "binding": "ORGANIZATION_Q"
+            "queue": "q",
+            "binding": "Q"
           }
         ],
         "consumers": [
           {
-            "queue": "organization",
+            "queue": "q",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
             "max_retries": 3,
-            "dead_letter_queue": "organization-dlq"
+            "dead_letter_queue": "dlq"
           }
         ]
       },
