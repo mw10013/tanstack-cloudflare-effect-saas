@@ -41,7 +41,10 @@ if (env === "local") {
   if (migrationFiles.length > 0) {
     await $`wrangler d1 migrations apply ${databaseName} --local`;
   }
-  const sqliteFiles = await glob("./.wrangler/state/v3/d1/**/*.sqlite");
+  const localSqliteFiles = await glob("./.wrangler/state/v3/d1/**/*.sqlite");
+  const sqliteFiles = localSqliteFiles.filter(
+    (file: string) => !file.endsWith("/metadata.sqlite"),
+  );
   console.log({ sqliteFiles });
   if (sqliteFiles.length !== 1) {
     console.error("Expected exactly one sqlite file under .wrangler");
