@@ -4,6 +4,7 @@
 
 Vitest is integrated here as a Cloudflare Worker test harness around the real app Worker.
 
+- current Cloudflare versions here are `wrangler@4.80.0` and `@cloudflare/vitest-pool-workers@0.14.1`
 - `pnpm test` runs `vitest run`
 - `pnpm test:integration` runs `pnpm vitest --config test/integration/vitest.config.ts run`
 - root `vitest.config.ts` re-exports `test/integration/vitest.config`
@@ -180,7 +181,8 @@ Migrations are loaded in the Vitest config and applied before tests execute.
 `test/apply-migrations.ts`
 
 ```ts
-import { applyD1Migrations, env } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import { applyD1Migrations } from "cloudflare:test";
 
 await applyD1Migrations(env.D1, env.TEST_MIGRATIONS);
 ```
@@ -188,14 +190,32 @@ await applyD1Migrations(env.D1, env.TEST_MIGRATIONS);
 `test/env.d.ts`
 
 ```ts
-declare namespace Cloudflare {
-  interface Env {
-    TEST_MIGRATIONS: import("cloudflare:test").D1Migration[];
+import type { D1Migration } from "cloudflare:test";
+
+declare global {
+  namespace Cloudflare {
+    interface Env {
+      TEST_MIGRATIONS: D1Migration[];
+    }
   }
 }
 ```
 
 This gives the test runtime a typed `TEST_MIGRATIONS` binding while keeping the real D1 binding on `env.D1`.
+
+The current shape intentionally combines two Cloudflare patterns:
+
+- keep the D1 helper import on `cloudflare:test`
+- use the non-deprecated `env` import from `cloudflare:workers`
+- type the test-only binding by augmenting `Cloudflare.Env`
+
+That last part is the important workaround. In this repo, the generated runtime types still export `cloudflare:workers.env` as `Cloudflare.Env`:
+
+```ts
+export const env: Cloudflare.Env;
+```
+
+So `TEST_MIGRATIONS` has to exist on `Cloudflare.Env` for `env.TEST_MIGRATIONS` to typecheck.
 
 ## TypeScript Wiring
 
@@ -207,6 +227,7 @@ This gives the test runtime a typed `TEST_MIGRATIONS` binding while keeping the 
     "types": [
       "vitest",
       "node",
+      "@cloudflare/vitest-pool-workers",
       "@cloudflare/vitest-pool-workers/types",
       "@playwright/test"
     ],
@@ -218,6 +239,52 @@ This gives the test runtime a typed `TEST_MIGRATIONS` binding while keeping the 
 ```
 
 That gives the tests Vitest globals, Cloudflare Worker test types, and access to the generated Worker bindings in `worker-configuration.d.ts`.
+
+The extra `@cloudflare/vitest-pool-workers/types` entry still matters in practice. In `0.14.1`, `cloudflare:test` is declared in `types/cloudflare-test.d.ts`, and the package root types do not themselves expose a `ProvidedEnv` declaration.
+
+## ProvidedEnv Research
+
+Cloudflare docs still present `ProvidedEnv` as the intended hook for typing `cloudflare:workers.env`:
+
+```ts
+declare module "cloudflare:workers" {
+  interface ProvidedEnv extends Env {}
+}
+```
+
+But the current repo state does not line up cleanly with that guidance.
+
+What the aligned `wrangler@4.80.0` and `@cloudflare/vitest-pool-workers@0.14.1` sources show:
+
+- `worker-configuration.d.ts` exports `env` as `Cloudflare.Env`, not `ProvidedEnv`
+- installed `@cloudflare/vitest-pool-workers` shipped types contain no `ProvidedEnv` declaration
+- Cloudflare's own D1 fixture still types `TEST_MIGRATIONS` by augmenting `Cloudflare.Env`
+
+Cloudflare D1 fixture:
+
+```ts
+declare namespace Cloudflare {
+  interface Env {
+    DATABASE: D1Database;
+    TEST_MIGRATIONS: import("cloudflare:test").D1Migration[];
+  }
+}
+```
+
+That fixture is from the same aligned Workers SDK snapshot now vendored in `refs/workers-sdk`.
+
+I also tested a local `ProvidedEnv` override in `test/env.d.ts` and `pnpm typecheck:test` still failed with:
+
+```txt
+Property 'TEST_MIGRATIONS' does not exist on type 'Env'.
+```
+
+So the working conclusion here is:
+
+- docs mention `ProvidedEnv`
+- actual D1 example fixtures use `Cloudflare.Env`
+- actual generated/runtime-consumed types in this repo also use `Cloudflare.Env`
+- therefore the reliable local workaround is to augment `Cloudflare.Env` directly
 
 ## Test Invocation Pattern
 
@@ -270,5 +337,6 @@ Vitest is integrated here as a Worker-first integration setup:
 - the test Vite config includes the TanStack Start and React plugins the app depends on
 - D1 migrations are injected into Miniflare and applied in a setup file
 - tests exercise the Worker by calling `exports.default.fetch()`
+- `ProvidedEnv` is not currently the effective source of truth for `env` typing here; `Cloudflare.Env` is
 
 That is the current integration model in this repo.

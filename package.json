@@ -48,7 +48,7 @@
     "refs:aws4fetch": "rm -rf refs/aws4fetch && mkdir -p refs/aws4fetch && curl -L https://github.com/mhart/aws4fetch/archive/refs/tags/v1.0.20.tar.gz | tar -xz -C refs/aws4fetch --strip-components=1",
     "refs:effect4": "rm -rf refs/effect4 && mkdir -p refs/effect4 && curl -L https://github.com/Effect-TS/effect-smol/archive/refs/tags/effect@4.0.0-beta.42.tar.gz | tar -xz -C refs/effect4 --strip-components=1",
     "refs:tca": "rm -rf refs/tca && mkdir -p refs/tca && curl -L https://github.com/mw10013/tanstack-cloudflare-agent/archive/refs/heads/main.tar.gz | tar -xz -C refs/tca --strip-components=1",
-    "refs:workers-sdk": "rm -rf refs/workers-sdk && mkdir -p refs/workers-sdk && curl -L https://github.com/cloudflare/workers-sdk/archive/refs/tags/wrangler@4.79.0.tar.gz | tar -xz -C refs/workers-sdk --strip-components=1",
+    "refs:workers-sdk": "rm -rf refs/workers-sdk && mkdir -p refs/workers-sdk && curl -L https://github.com/cloudflare/workers-sdk/archive/refs/tags/wrangler@4.80.0.tar.gz | tar -xz -C refs/workers-sdk --strip-components=1",
     "clone:links": "[ ! -e refs ] && ln -s ../tanstack-cloudflare-effect-invoice/refs refs; [ ! -e todo.md ] && ln -s ../tanstack-cloudflare-effect-invoice/todo.md todo.md"
   },
   "dependencies": {
@@ -91,8 +91,8 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-decorators": "^7.28.6",
-    "@cloudflare/vite-plugin": "1.30.3",
-    "@cloudflare/vitest-pool-workers": "0.14.0",
+    "@cloudflare/vite-plugin": "1.31.0",
+    "@cloudflare/vitest-pool-workers": "0.14.1",
     "@fontsource-variable/inter": "5.2.8",
     "@playwright/test": "1.57.0",
     "@tanstack/devtools-vite": "0.6.0",
@@ -110,7 +110,7 @@
     "typescript": "5.9.3",
     "vite": "7.3.0",
     "vitest": "4.1.0",
-    "wrangler": "4.79.0",
+    "wrangler": "4.80.0",
     "zx": "^8.8.5"
   },
   "engines": {
