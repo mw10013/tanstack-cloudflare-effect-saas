@@ -24,7 +24,7 @@ export const getOrganizationAgentStub = Effect.fn(
     return ORGANIZATION_AGENT.get(id);
   });
 
-export const getInvoices = Effect.fn("getInvoices")(function* (
+export const getInvoicesWithViewUrl = Effect.fn("getInvoicesWithViewUrl")(function* (
   organizationId: Organization["id"],
 ) {
   const stub = yield* getOrganizationAgentStub(organizationId);
@@ -85,6 +85,7 @@ export const getInvoiceViewUrl = Effect.fn("getInvoiceViewUrl")(function* (
   organizationId: Organization["id"],
   invoice: OrganizationDomain.InvoiceWithItems,
 ) {
+    if (!invoice.r2ObjectKey) return;
     const environment = yield* Config.nonEmptyString("ENVIRONMENT");
     if (environment === "local")
       return `/api/org/${organizationId}/invoice/${encodeURIComponent(invoice.id)}`;

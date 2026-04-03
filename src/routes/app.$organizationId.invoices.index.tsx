@@ -1,5 +1,3 @@
-import type * as OrganizationDomain from "@/lib/OrganizationDomain";
-
 import * as React from "react";
 
 import { useMutation } from "@tanstack/react-query";
@@ -45,7 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getInvoice, getInvoices } from "@/lib/Invoices";
+import { getInvoice, getInvoicesWithViewUrl } from "@/lib/Invoices";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 
 const getStatusVariant = (
@@ -73,7 +71,7 @@ const getLoaderData = createServerFn({ method: "GET" })
     ({ context: { runEffect }, data: { organizationId, selectedInvoiceId } }) =>
       runEffect(
         Effect.gen(function* () {
-          const invoices = yield* getInvoices(organizationId);
+          const invoices = yield* getInvoicesWithViewUrl(organizationId);
 
           if (!selectedInvoiceId)
             return {
@@ -81,11 +79,6 @@ const getLoaderData = createServerFn({ method: "GET" })
               invoices,
               selectedInvoice: null,
               selectedInvoiceId: null,
-            } satisfies {
-              invoice: OrganizationDomain.InvoiceWithItems | null;
-              invoices: readonly OrganizationDomain.Invoice[];
-              selectedInvoice: OrganizationDomain.Invoice | null;
-              selectedInvoiceId: string | null;
             };
 
           const selectedInvoice =
@@ -111,11 +104,6 @@ const getLoaderData = createServerFn({ method: "GET" })
             invoices,
             selectedInvoice,
             selectedInvoiceId: selectedInvoice.id,
-          } satisfies {
-            invoice: OrganizationDomain.InvoiceWithItems | null;
-            invoices: readonly OrganizationDomain.Invoice[];
-            selectedInvoice: OrganizationDomain.Invoice | null;
-            selectedInvoiceId: string | null;
           };
         }),
       ),
@@ -216,10 +204,7 @@ function RouteComponent() {
       });
     },
   });
-  const displayedInvoice:
-    | OrganizationDomain.InvoiceWithItems
-    | OrganizationDomain.Invoice
-    | null =
+  const displayedInvoice =
     selectedInvoice?.status === "ready"
       ? (invoice ?? selectedInvoice)
       : selectedInvoice;
@@ -572,10 +557,7 @@ function RouteComponent() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {invoice.invoiceItems.map(
-                                  (
-                                    item: OrganizationDomain.InvoiceWithItems["invoiceItems"][number],
-                                  ) => (
+                                {invoice.invoiceItems.map((item) => (
                                     <TableRow key={item.id}>
                                       <TableCell>
                                         <p>{item.description || "—"}</p>
@@ -595,8 +577,7 @@ function RouteComponent() {
                                         {item.amount || "—"}
                                       </TableCell>
                                     </TableRow>
-                                  ),
-                                )}
+                                  ))}
                               </TableBody>
                             </Table>
                           );

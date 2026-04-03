@@ -17,7 +17,6 @@ export const Invoice = Schema.Struct({
   r2ActionTime: Schema.NullOr(Schema.Number),
   idempotencyKey: Schema.NullOr(Schema.String),
   r2ObjectKey: Schema.String,
-  viewUrl: Schema.optional(Schema.String),
   status: InvoiceStatus,
   invoiceConfidence: Schema.Number,
   invoiceNumber: Schema.String.check(Schema.isMaxLength(100)),
