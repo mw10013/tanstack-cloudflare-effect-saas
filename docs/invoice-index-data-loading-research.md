@@ -225,6 +225,41 @@ This gives clean invalidation boundaries:
 
 That boundary matters for broadcasts.
 
+## Naming For Augmented List Reads
+
+If the helper in `src/lib/Invoices.ts` adds `viewUrl`, `getInvoices` is the wrong name.
+
+Current code is already doing augmentation:
+
+```ts
+return invoices.map((invoice) => ({
+  ...invoice,
+  viewUrl: ...,
+}));
+```
+
+Recommendation:
+
+- rename it to `getInvoicesWithViewUrl`
+- keep `getInvoice` as the pure aggregate read for one invoice
+- remove `viewUrl` from `OrganizationDomain.Invoice`
+
+Type-wise, yes: this can stay inferred.
+
+The route can just do:
+
+```ts
+const invoices = await getInvoicesWithViewUrl({ data: { organizationId } });
+```
+
+and let the type flow from the function body.
+
+If a named type is ever needed later, derive it instead of writing it by hand:
+
+```ts
+type InvoiceWithViewUrl = Awaited<ReturnType<typeof getInvoicesWithViewUrl>>[number];
+```
+
 ## Recommended Selection Semantics
 
 Treat `selectedInvoiceId` as **optional view state**, not route identity.
@@ -284,7 +319,7 @@ export const Route = createFileRoute("/app/$organizationId/invoices/")({
   validateSearch: Schema.toStandardSchemaV1(invoiceSearchSchema),
   loaderDeps: ({ search: { selectedInvoiceId } }) => ({ selectedInvoiceId }),
   loader: async ({ params: { organizationId }, deps: { selectedInvoiceId } }) => {
-    const invoices = await getInvoices({ data: { organizationId } });
+    const invoices = await getInvoicesWithViewUrl({ data: { organizationId } });
 
     if (!selectedInvoiceId) {
       return {
