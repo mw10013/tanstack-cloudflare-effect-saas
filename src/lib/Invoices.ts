@@ -7,20 +7,10 @@ import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import type * as OrganizationDomain from "@/lib/OrganizationDomain";
 import { Request as AppRequest } from "@/lib/Request";
 
-const OrganizationIdSchema = Schema.Struct({
-  organizationId: Schema.NonEmptyString,
-});
-
 const InvoiceParamsSchema = Schema.Struct({
   organizationId: Schema.NonEmptyString,
   invoiceId: Schema.NonEmptyString,
 });
-
-export const invoicesQueryKey = (organizationId: string) =>
-  ["organization", organizationId, "invoices"] as const;
-
-export const invoiceQueryKey = (organizationId: string, invoiceId: string) =>
-  ["organization", organizationId, "invoice", invoiceId] as const;
 
 export const getOrganizationAgentStub = (organizationId: string) =>
   Effect.gen(function* () {
@@ -94,12 +84,6 @@ export const getInvoiceEffect = Effect.fn("getInvoiceEffect")(function* (
   return invoice ? structuredClone(invoice) : null;
 });
 
-export const getInvoices = createServerFn({ method: "GET" })
-  .inputValidator(Schema.toStandardSchemaV1(OrganizationIdSchema))
-  .handler(({ context: { runEffect }, data: { organizationId } }) =>
-    runEffect(getInvoicesEffect(organizationId)),
-  );
-
 export const getInvoice = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(InvoiceParamsSchema))
   .handler(({ context: { runEffect }, data: { organizationId, invoiceId } }) =>
@@ -137,6 +121,3 @@ export const getInvoiceViewUrl = (
     );
     return signed.url;
   });
-
-
-export type InvoiceListItem = Awaited<ReturnType<typeof getInvoices>>[number];

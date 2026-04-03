@@ -36,9 +36,8 @@ import {
 import {
   getInvoiceEffect,
   getInvoicesEffect,
-  type InvoiceListItem,
 } from "@/lib/Invoices";
-import type { InvoiceWithItems } from "@/lib/OrganizationDomain";
+import type * as OrganizationDomain from "@/lib/OrganizationDomain";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 
 const getStatusVariant = (
@@ -65,7 +64,7 @@ const getLoaderData = createServerFn({ method: "GET" })
   .handler(({ context: { runEffect }, data: { organizationId, selectedInvoiceId } }) =>
     runEffect(
       Effect.gen(function* () {
-        const invoices: readonly InvoiceListItem[] = yield* getInvoicesEffect(organizationId);
+        const invoices: readonly OrganizationDomain.Invoice[] = yield* getInvoicesEffect(organizationId);
 
         if (!selectedInvoiceId)
           return {
@@ -74,9 +73,9 @@ const getLoaderData = createServerFn({ method: "GET" })
             selectedInvoice: null,
             selectedInvoiceId: null,
           } satisfies {
-            invoice: InvoiceWithItems | null;
-            invoices: readonly InvoiceListItem[];
-            selectedInvoice: InvoiceListItem | null;
+            invoice: OrganizationDomain.InvoiceWithItems | null;
+            invoices: readonly OrganizationDomain.Invoice[];
+            selectedInvoice: OrganizationDomain.Invoice | null;
             selectedInvoiceId: string | null;
           };
 
@@ -103,9 +102,9 @@ const getLoaderData = createServerFn({ method: "GET" })
           selectedInvoice,
           selectedInvoiceId: selectedInvoice.id,
         } satisfies {
-          invoice: InvoiceWithItems | null;
-          invoices: readonly InvoiceListItem[];
-          selectedInvoice: InvoiceListItem | null;
+          invoice: OrganizationDomain.InvoiceWithItems | null;
+          invoices: readonly OrganizationDomain.Invoice[];
+          selectedInvoice: OrganizationDomain.Invoice | null;
           selectedInvoiceId: string | null;
         };
       }),
@@ -195,7 +194,7 @@ function RouteComponent() {
       });
     },
   });
-  const displayedInvoice: InvoiceWithItems | InvoiceListItem | null =
+  const displayedInvoice: OrganizationDomain.InvoiceWithItems | OrganizationDomain.Invoice | null =
     selectedInvoice?.status === "ready" ? invoice ?? selectedInvoice : selectedInvoice;
 
   return (
@@ -495,7 +494,7 @@ function RouteComponent() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {invoice.invoiceItems.map((item: InvoiceWithItems["invoiceItems"][number]) => (
+                                {invoice.invoiceItems.map((item: OrganizationDomain.InvoiceWithItems["invoiceItems"][number]) => (
                                   <TableRow key={item.id}>
                                     <TableCell>
                                       <p>{item.description || "—"}</p>
