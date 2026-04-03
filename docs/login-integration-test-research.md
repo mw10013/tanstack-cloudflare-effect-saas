@@ -105,6 +105,182 @@ new Set([
 
 So the app does allow Worker fetch coverage for magic-link verification, but not direct POST to Better Auth's sign-in endpoint.
 
+## Implemented Browser Test Flow
+
+The browser test that now exists in this repo does **not** use the in-process `exports.default.fetch(...)` Worker harness.
+
+It uses Browser Mode to get the **client-compiled** `login` server-fn caller, then forwards that HTTP request to the app's real local dev server at `http://localhost:$(pnpm port)`.
+
+Relevant code:
+
+`test/browser/login.test.ts` imports the server fn and passes a custom fetch:
+
+```ts
+const result = await login({
+  data: { email: "u@u.com" },
+  fetch: async (url, init) => {
+    const appResult = await fetchThroughApp(url, init)
+    request = appResult.request
+    return appResult.response
+  },
+})
+```
+
+`test/browser/app-fetch-command.ts` sends that request to the local app URL:
+
+```ts
+const requestUrl = new URL(url, appUrl)
+const response = await fetch(requestUrl, {
+  body: init.body ?? undefined,
+  headers: init.headers,
+  method: init.method,
+})
+```
+
+`test/browser/global-setup.ts` starts the app with `pnpm dev` and sets `VITEST_BROWSER_APP_URL`:
+
+```ts
+const devServer = spawn("pnpm", ["dev"], { ... })
+process.env.VITEST_BROWSER_APP_URL = appUrl
+```
+
+And `pnpm dev` is Vite dev server:
+
+```json
+"dev": "mkdir -p logs && source .env && vite dev --port $PORT --force 2>&1 | tee logs/server.log"
+```
+
+The app's Vite config includes the Cloudflare plugin:
+
+```ts
+plugins: [
+  cloudflare({ viteEnvironment: { name: "ssr" } }),
+  tanstackStart(),
+]
+```
+
+That request path does reach the app Worker entrypoint. `src/worker.ts` logs every fetch before passing to Start:
+
+```ts
+export default {
+  async fetch(request, env, _ctx) {
+    console.log(`[${new Date().toISOString()}] fetch: ${request.url}`)
+    ...
+    return serverEntry.fetch(request, {
+      context: { env, runEffect },
+    })
+  },
+}
+```
+
+Observed log line from `logs/server.log` during the browser test:
+
+```text
+[2026-04-03T04:48:09.277Z] fetch: http://localhost:3100/_serverFn/...
+```
+
+So the actual boundary is:
+
+```mermaid
+sequenceDiagram
+  participant BrowserTest as Vitest Browser test
+  participant ClientRpc as client-compiled login server fn
+  participant Command as browser command appFetch
+  participant DevServer as pnpm dev / Vite local app
+  participant Worker as src/worker.ts fetch()
+  participant Start as TanStack Start serverEntry.fetch()
+  participant LoginFn as login handler
+  participant Auth as Better Auth
+  participant D1 as Cloudflare D1
+  participant KV as Cloudflare KV
+
+  BrowserTest->>ClientRpc: login({ data, fetch })
+  ClientRpc->>Command: appFetch(_serverFn/... , RequestInit)
+  Command->>DevServer: fetch(http://localhost:3100/_serverFn/...)
+  DevServer->>Worker: HTTP request
+  Worker->>Start: serverEntry.fetch(request, { context })
+  Start->>LoginFn: invoke login server fn
+  LoginFn->>Auth: auth.api.signInMagicLink(...)
+  Auth->>D1: read/write auth records
+  Auth->>KV: store demo:magicLink
+  KV-->>LoginFn: magic link URL
+  LoginFn-->>Start: { success, magicLink }
+  Start-->>Worker: HTTP response
+  Worker-->>DevServer: HTTP response
+  DevServer-->>Command: HTTP response
+  Command-->>ClientRpc: Response
+  ClientRpc-->>BrowserTest: decoded result
+```
+
+### Is It Hitting The Worker Fetch Handler?
+
+Yes, but via the **local app dev server**, not via `exports.default.fetch(...)` inside the Vitest Worker pool.
+
+More precisely:
+
+- Browser Mode gives us the client RPC path.
+- The custom fetch override sends the RPC request to `http://localhost:PORT/_serverFn/...`.
+- The local app started by `pnpm dev` routes that request through `src/worker.ts`.
+- `src/worker.ts` then calls `serverEntry.fetch(...)`.
+
+So this test covers the app's actual HTTP handling path in local dev, but **not** the in-process `cloudflare:workers` integration harness used by `test/integration/*.test.ts`.
+
+### Is It Hitting D1?
+
+Very likely yes.
+
+Reasoning from app code:
+
+`src/lib/Auth.ts` constructs Better Auth with Cloudflare D1 directly:
+
+```ts
+const { D1: database } = yield* CloudflareEnv
+
+const auth = makeAuth({
+  database,
+  ...authConfig,
+})
+```
+
+and the Better Auth config maps auth tables including `Session` and `Verification`:
+
+```ts
+session: { modelName: "Session", storeSessionInDatabase: true },
+verification: { modelName: "Verification" },
+```
+
+Those tables exist in the D1 migration:
+
+```sql
+create table Session (...);
+create table Verification (...);
+```
+
+The login server fn itself calls Better Auth:
+
+```ts
+auth.api.signInMagicLink({
+  headers: request.headers,
+  body: { email: data.email, callbackURL: "/magic-link" },
+})
+```
+
+and in demo mode it also reads the generated link from KV:
+
+```ts
+const magicLink = demoMode
+  ? ((yield* (yield* KV).get("demo:magicLink")) ?? undefined)
+  : undefined
+```
+
+So the login initiation path is best understood as:
+
+- HTTP request hits `src/worker.ts`
+- Worker/Start invokes `login`
+- `login` calls Better Auth
+- Better Auth uses D1-backed auth storage
+- demo-mode magic link is surfaced back out of KV for the test assertion
+
 ## TanStack Start Findings
 
 ### Public docs: direct call on server is idiomatic
