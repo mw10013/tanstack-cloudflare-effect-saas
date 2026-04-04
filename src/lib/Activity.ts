@@ -18,9 +18,6 @@ export const ActivityMessageSchema = Schema.Struct({
 
 export type ActivityMessage = typeof ActivityMessageSchema.Type;
 
-export const activityQueryKey = (organizationId: string) =>
-  ["organization", organizationId, "activity"] as const;
-
 export const decodeActivityMessage = (
   event: MessageEvent,
 ): ActivityMessage | null => {

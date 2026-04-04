@@ -1,7 +1,6 @@
 import type { AuthInstance } from "@/lib/Auth";
 import type { OrganizationAgent, OrganizationAgentState } from "@/organization-agent";
 
-import { useQueryClient } from "@tanstack/react-query";
 import {
   createFileRoute,
   getRouteApi,
@@ -17,10 +16,7 @@ import { useAgent } from "agents/react";
 import { Cause, Effect } from "effect";
 import { ChevronsUpDown, LogOut } from "lucide-react";
 
-import { useQuery } from "@tanstack/react-query";
-
 import { AppLogo } from "@/components/app-logo";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,28 +27,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
-  useSidebar,
 } from "@/components/ui/sidebar";
-import {
-  activityQueryKey,
-  decodeActivityMessage,
-  shouldInvalidateForInvoice,
-} from "@/lib/Activity";
-import type { ActivityMessage } from "@/lib/Activity";
+import { decodeActivityMessage, shouldInvalidateForInvoice } from "@/lib/Activity";
 import { Auth, signOutServerFn } from "@/lib/Auth";
 import { OrganizationAgentProvider } from "@/lib/OrganizationAgentContext";
 import { Request } from "@/lib/Request";
@@ -116,7 +104,6 @@ export const Route = createFileRoute("/app/$organizationId")({
 function RouteComponent() {
   const { organizationId } = Route.useParams();
   const { organization, organizations, sessionUser } = Route.useRouteContext();
-  const queryClient = useQueryClient();
   const router = useRouter();
 
   const agent = useAgent<OrganizationAgent, OrganizationAgentState>({
@@ -125,11 +112,6 @@ function RouteComponent() {
     onMessage: (event) => {
       const message = decodeActivityMessage(event);
       if (!message) return;
-      queryClient.setQueryData(
-        activityQueryKey(organizationId),
-        (current: readonly ActivityMessage[] | undefined) =>
-          [message, ...(current ?? [])].slice(0, 50),
-      );
       if (shouldInvalidateForInvoice(message.action)) {
         void router.invalidate({
           filter: (match) => match.routeId === invoicesIndexRoute.id,
@@ -152,7 +134,6 @@ function RouteComponent() {
           organization={organization}
           organizations={organizations}
           user={sessionUser}
-          organizationId={organizationId}
         />
         <main className="flex h-svh w-full flex-col overflow-x-hidden">
           <SidebarTrigger />
@@ -167,12 +148,10 @@ function AppSidebar({
   organization,
   organizations,
   user,
-  organizationId,
 }: {
   organization: AuthInstance["$Infer"]["Organization"];
   organizations: AuthInstance["$Infer"]["Organization"][];
   user: { email: string };
-  organizationId: string;
 }) {
   const matchRoute = useMatchRoute();
 
@@ -275,69 +254,11 @@ function AppSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupLabel>Activity</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <ActivityFeed organizationId={organizationId} />
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
       </SidebarFooter>
     </Sidebar>
-  );
-}
-
-const getActivityVariant = (
-  level: ActivityMessage["level"],
-): "default" | "destructive" | "secondary" => {
-  if (level === "error") return "destructive";
-  if (level === "success") return "default";
-  return "secondary";
-};
-
-function ActivityFeed({ organizationId }: { organizationId: string }) {
-  const { state } = useSidebar();
-  const { data: messages = [] } = useQuery({
-    queryKey: activityQueryKey(organizationId),
-    queryFn: () => [] as readonly ActivityMessage[],
-    staleTime: Infinity,
-  });
-
-  if (state === "collapsed") {
-    return messages.length > 0 ? (
-      <div className="flex justify-center">
-        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
-          {messages.length}
-        </span>
-      </div>
-    ) : null;
-  }
-
-  if (messages.length === 0) {
-    return <p className="px-2 text-xs text-muted-foreground">No activity yet.</p>;
-  }
-
-  return (
-    <ScrollArea className="h-32">
-      <div className="flex flex-col gap-1.5 px-2">
-        {messages.map((message) => (
-          <div
-            key={`${message.createdAt}-${message.text}`}
-            className="flex items-center justify-between gap-2 text-xs"
-          >
-            <span className="min-w-0 truncate">{message.text}</span>
-            <Badge
-              variant={getActivityVariant(message.level)}
-              className="shrink-0 text-[10px]"
-            >
-              {message.level}
-            </Badge>
-          </div>
-        ))}
-      </div>
-    </ScrollArea>
   );
 }
 

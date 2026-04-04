@@ -1,11 +1,11 @@
-import { env, runInDurableObject } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import { runInDurableObject } from "cloudflare:test";
 import { Effect, Layer, Option } from "effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { describe, expect, it } from "vitest";
 import { SqliteClient } from "@effect/sql-sqlite-do";
 
-import type { InvoiceExtractionSchema } from "@/lib/InvoiceExtraction";
 import * as OrganizationDomain from "@/lib/OrganizationDomain";
 import { OrganizationRepository } from "@/lib/OrganizationRepository";
 import type { OrganizationAgent } from "@/organization-agent";
@@ -31,15 +31,15 @@ const runInOrg = <A>(
 
 const seedInvoice = Effect.fn("seed.invoice")(function* (overrides?: {
   id?: OrganizationDomain.Invoice["id"];
-  name?: string;
-  fileName?: string;
-  contentType?: string;
-  status?: OrganizationDomain.InvoiceStatus;
-  r2ObjectKey?: string;
-  r2ActionTime?: number;
-  idempotencyKey?: string;
-  invoiceConfidence?: number;
-  invoiceNumber?: string;
+  name?: OrganizationDomain.Invoice["name"];
+  fileName?: OrganizationDomain.Invoice["fileName"];
+  contentType?: OrganizationDomain.Invoice["contentType"];
+  status?: OrganizationDomain.Invoice["status"];
+  r2ObjectKey?: OrganizationDomain.Invoice["r2ObjectKey"];
+  r2ActionTime?: OrganizationDomain.Invoice["r2ActionTime"];
+  idempotencyKey?: OrganizationDomain.Invoice["idempotencyKey"];
+  invoiceConfidence?: OrganizationDomain.Invoice["invoiceConfidence"];
+  invoiceNumber?: OrganizationDomain.Invoice["invoiceNumber"];
 }) {
   const sql = yield* SqlClient.SqlClient;
   const id = overrides?.id ?? makeInvoiceId();
@@ -62,13 +62,13 @@ const seedInvoice = Effect.fn("seed.invoice")(function* (overrides?: {
 });
 
 const seedInvoiceItem = Effect.fn("seed.invoiceItem")(function* (input: {
-  invoiceId: OrganizationDomain.Invoice["id"];
-  order: number;
-  description?: string;
-  quantity?: string;
-  unitPrice?: string;
-  amount?: string;
-  period?: string;
+  invoiceId: OrganizationDomain.InvoiceItem["invoiceId"];
+  order: OrganizationDomain.InvoiceItem["order"];
+  description?: OrganizationDomain.InvoiceItem["description"];
+  quantity?: OrganizationDomain.InvoiceItem["quantity"];
+  unitPrice?: OrganizationDomain.InvoiceItem["unitPrice"];
+  amount?: OrganizationDomain.InvoiceItem["amount"];
+  period?: OrganizationDomain.InvoiceItem["period"];
 }) {
   const sql = yield* SqlClient.SqlClient;
   const id = makeInvoiceItemId();
@@ -340,7 +340,7 @@ describe("OrganizationRepository", () => {
       const repo = yield* OrganizationRepository;
       const idempotencyKey = crypto.randomUUID();
       const inv = yield* seedInvoice({ status: "extracting", idempotencyKey });
-      const extractedInvoice: typeof InvoiceExtractionSchema.Type = {
+      const extractedInvoice = {
         invoiceConfidence: 0.92,
         invoiceNumber: "INV-001",
         invoiceDate: "2024-01-15",
@@ -422,7 +422,7 @@ describe("OrganizationRepository", () => {
       const idempotencyKey = crypto.randomUUID();
       const inv = yield* seedInvoice({ status: "extracting", idempotencyKey });
       yield* seedInvoiceItem({ invoiceId: inv.id, order: 1, description: "Old item" });
-      const extractedInvoice: typeof InvoiceExtractionSchema.Type = {
+      const extractedInvoice = {
         invoiceConfidence: 0.8,
         invoiceNumber: "INV-002",
         invoiceDate: "",
