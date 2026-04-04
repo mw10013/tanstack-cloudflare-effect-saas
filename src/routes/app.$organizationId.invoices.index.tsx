@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import * as Domain from "@/lib/Domain";
 import { getInvoice, getInvoicesWithViewUrl } from "@/lib/Invoices";
 import { useOrganizationAgent } from "@/lib/OrganizationAgentContext";
 
@@ -62,7 +63,7 @@ const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator(
     Schema.toStandardSchemaV1(
       Schema.Struct({
-        organizationId: Schema.NonEmptyString,
+        organizationId: Domain.OrganizationId,
         selectedInvoiceId: Schema.optional(Schema.String),
       }),
     ),

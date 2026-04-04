@@ -74,11 +74,29 @@ export const SubscriptionStatusValues = [
 export const SubscriptionStatus = Schema.Literals(SubscriptionStatusValues);
 export type SubscriptionStatus = typeof SubscriptionStatus.Type;
 
+export const InvitationId = Schema.NonEmptyString.pipe(Schema.brand("InvitationId"));
+export type InvitationId = typeof InvitationId.Type;
+
+export const UserId = Schema.NonEmptyString.pipe(Schema.brand("UserId"));
+export type UserId = typeof UserId.Type;
+
+export const SessionId = Schema.NonEmptyString.pipe(Schema.brand("SessionId"));
+export type SessionId = typeof SessionId.Type;
+
+export const MemberId = Schema.NonEmptyString.pipe(Schema.brand("MemberId"));
+export type MemberId = typeof MemberId.Type;
+
+export const OrganizationId = Schema.NonEmptyString.pipe(Schema.brand("OrganizationId"));
+export type OrganizationId = typeof OrganizationId.Type;
+
+export const SubscriptionId = Schema.NonEmptyString.pipe(Schema.brand("SubscriptionId"));
+export type SubscriptionId = typeof SubscriptionId.Type;
+
 export const Invitation = Schema.Struct({
-  id: Schema.NonEmptyString,
+  id: InvitationId,
   email: emailSchema,
-  inviterId: Schema.NonEmptyString,
-  organizationId: Schema.NonEmptyString,
+  inviterId: UserId,
+  organizationId: OrganizationId,
   role: MemberRole,
   status: InvitationStatus,
   expiresAt: isoDatetimeToDate,
@@ -86,7 +104,7 @@ export const Invitation = Schema.Struct({
 export type Invitation = typeof Invitation.Type;
 
 export const User = Schema.Struct({
-  id: Schema.NonEmptyString,
+  id: UserId,
   name: Schema.String,
   email: emailSchema,
   emailVerified: intToBoolean,
@@ -102,30 +120,30 @@ export const User = Schema.Struct({
 export type User = typeof User.Type;
 
 export const Session = Schema.Struct({
-  id: Schema.NonEmptyString,
+  id: SessionId,
   expiresAt: isoDatetimeToDate,
   token: Schema.NonEmptyString,
   createdAt: isoDatetimeToDate,
   updatedAt: isoDatetimeToDate,
   ipAddress: Schema.NullOr(Schema.String),
   userAgent: Schema.NullOr(Schema.String),
-  userId: Schema.NonEmptyString,
-  impersonatedBy: Schema.NullOr(Schema.NonEmptyString),
-  activeOrganizationId: Schema.NullOr(Schema.NonEmptyString),
+  userId: UserId,
+  impersonatedBy: Schema.NullOr(UserId),
+  activeOrganizationId: Schema.NullOr(OrganizationId),
 });
 export type Session = typeof Session.Type;
 
 export const Member = Schema.Struct({
-  id: Schema.NonEmptyString,
-  userId: Schema.NonEmptyString,
-  organizationId: Schema.NonEmptyString,
+  id: MemberId,
+  userId: UserId,
+  organizationId: OrganizationId,
   role: MemberRole,
   createdAt: isoDatetimeToDate,
 });
 export type Member = typeof Member.Type;
 
 export const Organization = Schema.Struct({
-  id: Schema.NonEmptyString,
+  id: OrganizationId,
   name: Schema.NonEmptyString,
   slug: Schema.NonEmptyString,
   logo: Schema.NullOr(Schema.String),
@@ -174,7 +192,7 @@ export const Plan = Schema.Struct({
 export type Plan = typeof Plan.Type;
 
 export const Subscription = Schema.Struct({
-  id: Schema.NonEmptyString,
+  id: SubscriptionId,
   plan: Schema.NonEmptyString,
   referenceId: Schema.NonEmptyString,
   stripeCustomerId: Schema.NullOr(Schema.String),

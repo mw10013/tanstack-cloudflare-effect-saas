@@ -402,7 +402,7 @@ function BanDialog({
   const defaultValues = {
     userId: userId ?? "",
     banReason: "",
-  } satisfies typeof banUserSchema.Type;
+  } satisfies typeof banUserSchema.Encoded;
 
   const banUserMutation = useMutation({
     mutationFn: async (data: typeof defaultValues) =>

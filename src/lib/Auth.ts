@@ -15,8 +15,10 @@ import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
+import * as Domain from "@/lib/Domain";
 
 import { KV } from "./KV";
 import { Repository } from "./Repository";
@@ -141,8 +143,10 @@ const makeAuth = ({
                   organizationId: org.id,
                 });
                 yield* repository.initializeActiveOrganizationForUserSessions({
-                  organizationId: org.id,
-                  userId: user.id,
+                  organizationId: Schema.decodeUnknownSync(Domain.OrganizationId)(
+                    org.id,
+                  ),
+                  userId: Schema.decodeUnknownSync(Domain.UserId)(user.id),
                 });
               }),
             ),
@@ -160,7 +164,7 @@ const makeAuth = ({
                 const repository = yield* Repository;
                 const activeOrganization =
                   yield* repository.getOwnerOrganizationByUserId(
-                    session.userId,
+                    Schema.decodeUnknownSync(Domain.UserId)(session.userId),
                   );
                 return {
                   data: {
@@ -291,8 +295,10 @@ const makeAuth = ({
               Effect.gen(function* () {
                 const repository = yield* Repository;
                 const member = yield* repository.getMemberByUserAndOrg({
-                  userId: user.id,
-                  organizationId: referenceId,
+                  userId: Schema.decodeUnknownSync(Domain.UserId)(user.id),
+                  organizationId: Schema.decodeUnknownSync(
+                    Domain.OrganizationId,
+                  )(referenceId),
                 });
                 const result =
                   Option.isSome(member) && member.value.role === "owner";

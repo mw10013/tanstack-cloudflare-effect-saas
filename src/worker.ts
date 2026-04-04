@@ -172,7 +172,7 @@ const r2ObjectCustomMetadataSchema = Schema.Struct({
 // like workflows can throw until we set it explicitly. See
 // https://github.com/cloudflare/workerd/issues/2240.
 const getOrganizationAgentStub = Effect.fn("getOrganizationAgentStub")(
-  function* (organizationId: string) {
+  function* (organizationId: Domain.Organization["id"]) {
     const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
     const id = ORGANIZATION_AGENT.idFromName(organizationId);
     const stub = ORGANIZATION_AGENT.get(id);

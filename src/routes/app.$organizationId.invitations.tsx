@@ -47,6 +47,7 @@ import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const organizationIdSchema = Schema.Struct({ organizationId: Domain.OrganizationId });
 
 const splitEmails = (value: string) =>
   value
@@ -60,8 +61,8 @@ export const Route = createFileRoute("/app/$organizationId/invitations")({
 });
 
 const getLoaderData = createServerFn({ method: "GET" })
-  .inputValidator((data: { organizationId: string }) => data)
-  .handler(({ data, context: { runEffect } }) =>
+  .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
+  .handler(({ data: { organizationId }, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
         const request = yield* Request;
@@ -70,7 +71,7 @@ const getLoaderData = createServerFn({ method: "GET" })
           auth.api.hasPermission({
             headers: request.headers,
             body: {
-              organizationId: data.organizationId,
+              organizationId,
               permissions: { invitation: ["create", "cancel"] },
             },
           }),
@@ -78,7 +79,7 @@ const getLoaderData = createServerFn({ method: "GET" })
         const invitations = yield* Effect.tryPromise(() =>
           auth.api.listInvitations({
             headers: request.headers,
-            query: { organizationId: data.organizationId },
+            query: { organizationId },
           }),
         );
         return { canManageInvitations, invitations };
@@ -134,7 +135,7 @@ function RouteComponent() {
 }
 
 const inviteSchema = Schema.Struct({
-  organizationId: Domain.Organization.fields.id,
+  organizationId: Domain.OrganizationId,
   emails: Schema.String.pipe(
     Schema.decodeTo(
       Schema.Array(Schema.String.check(Schema.isPattern(emailPattern)))
@@ -184,7 +185,9 @@ const invite = createServerFn({ method: "POST" })
                 invitationId: result.id,
               });
               yield* repository.updateInvitationRole({
-                invitationId: result.id,
+                invitationId: Schema.decodeUnknownSync(Domain.InvitationId)(
+                  result.id,
+                ),
                 role,
               });
             }
