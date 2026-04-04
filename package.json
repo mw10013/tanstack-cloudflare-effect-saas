@@ -22,7 +22,6 @@
     "clean:etc": "rm -rf .tanstack build dist",
     "clean:playwright-cli": "find .playwright-cli -type f -mtime +1 -delete 2>/dev/null || true",
     "typecheck": "pnpm run cf-typegen && tsc -b . test",
-
     "lint": "oxlint",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
@@ -95,6 +94,7 @@
     "@babel/plugin-proposal-decorators": "^7.28.6",
     "@cloudflare/vite-plugin": "1.31.0",
     "@cloudflare/vitest-pool-workers": "0.14.1",
+    "@effect/vitest": "4.0.0-beta.42",
     "@fontsource-variable/inter": "5.2.8",
     "@playwright/test": "1.57.0",
     "@tanstack/devtools-vite": "0.6.0",

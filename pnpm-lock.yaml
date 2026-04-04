@@ -126,6 +126,9 @@ importers:
       '@cloudflare/vitest-pool-workers':
         specifier: 0.14.1
         version: 0.14.1(@cloudflare/workers-types@4.20260402.1)(@vitest/runner@4.1.2)(@vitest/snapshot@4.1.2)(vitest@4.1.2)
+      '@effect/vitest':
+        specifier: 4.0.0-beta.42
+        version: 4.0.0-beta.42(effect@4.0.0-beta.42)(vitest@4.1.2)
       '@fontsource-variable/inter':
         specifier: 5.2.8
         version: 5.2.8
@@ -562,6 +565,12 @@ packages:
     resolution: {integrity: sha512-gwis/i1SfdYwbr5Wv0dr/ozZsR5ZQJudQRGq4whWZWWb0dw7gxtfpMqX2ktU1b+qGA1rwjXy5Q8WlOd7nE19Xw==}
     peerDependencies:
       effect: ^4.0.0-beta.42
+
+  '@effect/vitest@4.0.0-beta.42':
+    resolution: {integrity: sha512-/11arjUnCRhIrBRvOn/nrbg5p/FadjAPvStddZlpl1VrCxtB2s0n39cbG9uTyDdf1ZrRBG73Upo1ZDF1CTWy8w==}
+    peerDependencies:
+      effect: ^4.0.0-beta.42
+      vitest: ^3.0.0 || ^4.0.0
 
   '@electric-sql/pglite-socket@0.1.1':
     resolution: {integrity: sha512-p2hoXw3Z3LQHwTeikdZNsFBOvXGqKY2hk51BBw+8NKND8eoH+8LFOtW9Z8CQKmTJ2qqGYu82ipqiyFZOTTXNfw==}
@@ -5823,6 +5832,11 @@ snapshots:
   '@effect/sql-sqlite-do@4.0.0-beta.42(effect@4.0.0-beta.42)':
     dependencies:
       effect: 4.0.0-beta.42
+
+  '@effect/vitest@4.0.0-beta.42(effect@4.0.0-beta.42)(vitest@4.1.2)':
+    dependencies:
+      effect: 4.0.0-beta.42
+      vitest: 4.1.2(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(@vitest/browser-playwright@4.1.2)(msw@2.12.14(@types/node@25.0.3)(typescript@5.9.3))(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.3))
 
   '@electric-sql/pglite-socket@0.1.1(@electric-sql/pglite@0.4.1)':
     dependencies:

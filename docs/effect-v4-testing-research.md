@@ -40,10 +40,21 @@ import { it, describe, assert, layer } from "@effect/vitest"
 
 | Runner | Provides | Use when |
 |---|---|---|
-| `it.effect` | `TestClock`, `TestConsole`, `Scope` | Most tests — deterministic time |
+| `it.effect` | `TestClock`, `TestConsole`, `Scope` | **Default — most tests use this** |
 | `it.live` | Real clock, real console, `Scope` | Need actual time/logging |
 | `it.scoped` | `TestClock`, `TestConsole`, `Scope` | Managing `acquireRelease` resources |
 | `it.scopedLive` | Real clock, `Scope` | Scoped + real time |
+
+### Usage in Effect v4 codebase
+
+| Runner | Occurrences |
+|---|---|
+| `it.effect` | **2,356** across 161 files |
+| `it.live` | 28 across 12 files |
+| `it.scoped` | 2 across 2 files |
+| `it.scopedLive` | 0 |
+
+`it.effect` is overwhelmingly the default. `it.live` is only used when tests explicitly need real time (e.g., `Date.now()` comparisons, actual `Effect.sleep` delays). Our integration tests don't need real time — they're request/response cycles — so `it.effect` is correct.
 
 ### Shared layers via `layer()`
 
@@ -62,7 +73,7 @@ layer(MyService.layerTest)("suite name", (it) => {
 
 ### Assertions
 
-`assert` from `@effect/vitest` wraps vitest `expect`:
+`assert` from `@effect/vitest` wraps vitest assertions:
 
 ```ts
 assert.strictEqual(actual, expected)
@@ -74,19 +85,68 @@ Standard `expect()` also works inside `it.effect`.
 
 ---
 
-## Conversion Plan
+## Effect.fn vs Effect.gen
 
-### TestUtils.ts — Effect v4 Services
+From `refs/effect4/ai-docs/src/01_effect/01_basics/02_effect-fn.ts`:
 
-Each helper becomes an Effect or a method on a service. Since these helpers depend on Cloudflare bindings (`env.D1`, `exports.default`), they fit naturally as Effects that access those bindings.
+> **Avoid creating functions that return an Effect.gen**, use `Effect.fn` instead.
 
-#### Option A: Standalone Effects (simpler)
+`Effect.fn` is the idiomatic way to define functions returning Effects. It adds tracing spans and better stack traces. `Effect.gen` is for inline/anonymous Effect blocks (e.g., inside test bodies, Layer.effect constructors).
+
+| Pattern | When to use |
+|---|---|
+| `Effect.fn("name")(function*(...) { ... })` | Named functions that return Effects — helpers, service methods |
+| `Effect.gen(function*() { ... })` | Inline anonymous blocks — test bodies, layer constructors |
+
+### Effect.fn in Effect v4 source
+
+- Used in `Layer.ts` (38x), `LayerMap.ts` (4x), `Effect.ts` (3x), and throughout unstable/ modules
+- Test bodies use `Effect.gen` (the block is anonymous), but helper functions within tests use `Effect.fn`
+- Example from `refs/effect4/ai-docs/src/09_testing/20_layer-tests.ts`:
 
 ```ts
-import { Effect } from "effect"
+const create = Effect.fn("TodoRepo.create")(function*(title: string) {
+  const todos = yield* Ref.get(store)
+  const todo = { id: todos.length + 1, title }
+  yield* Ref.set(store, [...todos, todo])
+  return todo
+})
+```
+
+---
+
+## Effect v4 HTTP Utilities — Cookies
+
+Source: `refs/effect4/packages/effect/src/unstable/http/Cookies.ts`
+
+Effect v4 has a full `Cookies` module at `effect/unstable/http/Cookies`:
+
+| Function | Signature | What it does |
+|---|---|---|
+| `fromSetCookie` | `(headers: Iterable<string> \| string) => Cookies` | Parse `Set-Cookie` header(s) into `Cookies` object |
+| `get` | `(self: Cookies, name: string) => Option<Cookie>` | Get a cookie by name |
+| `getValue` | `(self: Cookies, name: string) => Option<string>` | Get cookie value by name |
+| `toCookieHeader` | `(self: Cookies) => string` | Serialize to `Cookie` header string (e.g., `"name=value; name2=value2"`) |
+| `parseHeader` | `(header: string) => Record<string, string>` | Parse a `Cookie` header into key-value pairs |
+| `toRecord` | `(self: Cookies) => Record<string, string>` | Convert cookies to record |
+
+`HttpClientResponse` already exposes `.cookies: Cookies.Cookies` which auto-parses `Set-Cookie` from the response.
+
+This means `extractSessionCookie`, `parseSetCookie`, and `getSetCookie` can all be replaced by Effect's built-in `Cookies` module.
+
+---
+
+## Conversion Plan
+
+### TestUtils.ts — Effect v4 helpers using `Effect.fn`
+
+```ts
+import * as Cookies from "effect/unstable/http/Cookies"
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import { Effect, Option } from "effect"
 import { env, exports } from "cloudflare:workers"
 
-const resetDb = Effect.gen(function*() {
+export const resetDb = Effect.fn("resetDb")(function*() {
   yield* Effect.promise(() =>
     env.D1.batch([
       ...["Session", "Member", "Invitation", "Verification", "Organization"]
@@ -97,70 +157,69 @@ const resetDb = Effect.gen(function*() {
   )
 })
 
-const fetchWorker = (url: string, init?: RequestInit) =>
-  Effect.promise(() => exports.default.fetch(new Request(new URL(url, "http://example.com"), init)))
+export const fetchWorker = Effect.fn("fetchWorker")(
+  function*(url: string, init?: RequestInit) {
+    return yield* Effect.promise(() =>
+      exports.default.fetch(new Request(new URL(url, "http://example.com"), init))
+    )
+  }
+)
 
-const runServerFn = <TInputValidator, TResponse>(
-  serverFn: ServerFn<TInputValidator, TResponse>,
-  data: Parameters<ServerFn<TInputValidator, TResponse>>[0]["data"],
-) => Effect.gen(function*() {
-  // ... wrap existing logic in Effect.promise / Effect.try
-})
-
-const extractSessionCookie = (response: Response) =>
-  Effect.gen(function*() {
-    const header = response.headers.get("Set-Cookie")
-    if (!header) return yield* Effect.fail(new Error("Expected Set-Cookie header"))
-    const match = header.match(/better-auth\.session_token=([^;]+)/)
-    if (!match) return yield* Effect.fail(new Error(`Missing session cookie: ${header}`))
-    return `better-auth.session_token=${match[1]}`
-  })
-```
-
-#### Option B: Service with Layer (if shared state or lifecycle needed)
-
-```ts
-import { Effect, Layer, ServiceMap } from "effect"
-
-class TestHelpers extends ServiceMap.Service<TestHelpers, {
-  readonly resetDb: Effect.Effect<void>
-  runServerFn<TInputValidator, TResponse>(
+export const runServerFn = Effect.fn("runServerFn")(
+  function*<TInputValidator, TResponse>(
     serverFn: ServerFn<TInputValidator, TResponse>,
     data: Parameters<ServerFn<TInputValidator, TResponse>>[0]["data"],
-  ): Effect.Effect<Awaited<TResponse>>
-  readonly extractSessionCookie: (response: Response) => Effect.Effect<string>
-  readonly fetchWorker: (url: string, init?: RequestInit) => Effect.Effect<Response>
-}>()("test/TestHelpers") {
-  static readonly layer = Layer.succeed(TestHelpers)({
-    resetDb: /* ... */,
-    runServerFn: /* ... */,
-    extractSessionCookie: /* ... */,
-    fetchWorker: /* ... */,
-  })
-}
+  ) {
+    return yield* Effect.promise(() => {
+      // black-box the createClientRpc + runWithStartContext dance
+      const clientRpc = createClientRpc(serverFn.serverFnMeta!.id)
+      const fetchServerFn = (url: string, init?: RequestInit) =>
+        exports.default.fetch(new Request(new URL(url, "http://example.com"), init))
+      return runWithStartContext(/* ... */, () =>
+        clientRpc({ data, method: serverFn.method, fetch: fetchServerFn })
+      ).then((r) => r.result as Awaited<TResponse>)
+    })
+  }
+)
+
+export const extractSessionCookie = Effect.fn("extractSessionCookie")(
+  function*(response: Response) {
+    const cookies = Cookies.fromSetCookie(
+      response.headers.getSetCookie()
+    )
+    const token = Cookies.getValue(cookies, "better-auth.session_token")
+    if (Option.isNone(token))
+      return yield* Effect.fail(new Error("Missing session cookie"))
+    return Cookies.toCookieHeader(cookies)
+  }
+)
 ```
 
-**Recommendation**: Option A (standalone Effects) unless we later need to swap implementations or share lifecycle. The helpers are stateless and always use real Cloudflare bindings.
+### Cookie helpers replaced by Effect v4 builtins
+
+| Old helper | Effect v4 replacement |
+|---|---|
+| `extractSessionCookie(response)` | `Cookies.fromSetCookie(response.headers.getSetCookie())` → `Cookies.getValue(cookies, name)` → `Cookies.toCookieHeader(cookies)` |
+| `parseSetCookie(header)` | `Cookies.parseHeader(header)` |
+| `getSetCookie(response)` | `response.headers.getSetCookie()` (native) or via `HttpClientResponse.cookies` |
 
 ### login.test.ts — Converted
 
 ```ts
-import { describe } from "@effect/vitest"
-import { it, layer } from "@effect/vitest"
+import { describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { exports } from "cloudflare:workers"
 import { login } from "@/lib/Login"
 import { extractSessionCookie, fetchWorker, resetDb, runServerFn } from "../TestUtils"
 
 describe("integration smoke", () => {
-  it.live("renders /login", () =>
+  it.effect("renders /login", () =>
     Effect.gen(function*() {
       const response = yield* fetchWorker("http://example.com/login")
       expect(response.status).toBe(200)
       expect(yield* Effect.promise(() => response.text())).toContain("Sign in / Sign up")
     }))
 
-  it.live("login → verify magic link → access authenticated route", () =>
+  it.effect("login → verify magic link → access authenticated route", () =>
     Effect.gen(function*() {
       yield* resetDb
       const result = yield* runServerFn(login, { email: "u@u.com" })
@@ -185,44 +244,21 @@ describe("integration smoke", () => {
 })
 ```
 
-**Why `it.live`**: These are integration tests hitting real Cloudflare worker fetch — no simulated time needed.
-
 ---
 
-## Key Patterns from Effect v4 Tests
+## Decisions
 
-### Effect.gen + yield* is the core idiom
+1. **`it.effect` not `it.live`** — `it.effect` is the overwhelming default in Effect v4 (2,356 vs 28 uses). Our tests don't need real time. `it.effect` provides `TestClock` + `TestConsole` but that doesn't hurt — unused services are just available, not forced.
 
-Every test body is `Effect.gen(function*() { ... })`. Use `yield*` to unwrap Effects.
+2. **`Effect.fn` for helpers, `Effect.gen` for test bodies** — Per Effect v4 docs: "Avoid creating functions that return an Effect.gen, use Effect.fn instead." Test bodies stay as `Effect.gen` (anonymous blocks).
 
-### Error handling: Effect.fail vs throw
+3. **`Effect.promise` not `Effect.tryPromise`** — `Effect.tryPromise` does exist in Effect v4, but it's for async operations that may fail and need error mapping or recovery. Our `TestUtils.ts` wrappers (`env.D1.batch`, `exports.default.fetch`, `runWithStartContext`) treat rejection as an unexpected test defect, so `Effect.promise` is the better fit. Explicit test-level failures are still modeled separately with `Effect.fail`, e.g. missing session cookie.
 
-Idiomatic Effect uses `Effect.fail(error)` instead of `throw`. Cookie extraction errors become typed failures.
+4. **Plain `Error` for failures** — No custom tagged errors for test helpers. Keep it simple.
 
-### Effect.promise for async interop
+5. **`Cookies` module from `effect/unstable/http`** — Replaces all hand-rolled cookie parsing. `fromSetCookie`, `getValue`, `toCookieHeader` cover our needs.
 
-Wrap any `Promise<T>` with `Effect.promise(() => somePromise)`. This is how we bridge `exports.default.fetch`, `env.D1.batch`, etc.
-
-### Effect.fn for named operations (optional)
-
-```ts
-const resetDb = Effect.fn("resetDb")(function*() {
-  // traced operation
-})
-```
-
-Adds tracing spans. Optional but useful for debugging.
-
-### Layer sharing for expensive setup
-
-If we later have expensive per-suite setup (e.g., seeding a database), use `layer(...)` to share it:
-
-```ts
-layer(DatabaseSeed.layer)("authenticated routes", (it) => {
-  it.live("test 1", () => ...)
-  it.live("test 2", () => ...)
-})
-```
+6. **`@effect/vitest` compatibility** — Needs to be verified in the vitest cloudflare pool environment (`cloudflare:workers` imports suggest a custom pool). Try it and see.
 
 ---
 
@@ -230,14 +266,6 @@ layer(DatabaseSeed.layer)("authenticated routes", (it) => {
 
 | File | Action |
 |---|---|
-| `test/TestUtils.ts` | New — Effect v4 versions of helpers |
-| `test/integration/login.test.ts` | Rewrite — use `@effect/vitest` + `TestUtils.ts` |
+| `test/TestUtils.ts` | New — Effect v4 versions of helpers using `Effect.fn` + `Cookies` module |
+| `test/integration/login.test.ts` | Rewrite — use `@effect/vitest` `it.effect` + `TestUtils.ts` |
 | `test/test-utils.ts` | Keep — other tests may still use it |
-
----
-
-## Open Questions
-
-1. **`runServerFn` wrapping** — The `runWithStartContext` + `createClientRpc` dance is gnarly. Worth wrapping in `Effect.promise` as a black box, or decomposing into smaller Effects?
-2. **Error types** — Should cookie extraction / fetch failures use custom tagged errors (`class SessionCookieError extends Data.TaggedError(...)`) or plain `Error`?
-3. **`@effect/vitest` compatibility** — Confirm it works in the vitest cloudflare pool environment (the `cloudflare:workers` imports suggest a custom pool).
