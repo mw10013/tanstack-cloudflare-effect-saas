@@ -14,7 +14,10 @@ import { resetDb } from "../test-utils";
 type TestServerFn<TInputValidator, TResponse> =
   RequiredFetcher<undefined, TInputValidator, TResponse>;
 
-const runServerFn = async <TInputValidator, TResponse>({
+const runServerFn = async <
+  TInputValidator,
+  TResponse,
+>({
   serverFn,
   data,
 }: {
