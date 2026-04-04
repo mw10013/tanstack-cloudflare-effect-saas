@@ -230,7 +230,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const repo = yield* OrganizationRepository;
         const count = yield* repo.countInvoices();
         if (count >= invoiceLimit)
-          return yield* new InvoiceLimitExceededError({ limit: invoiceLimit, message: `Invoice limit of ${invoiceLimit} reached` });
+          return yield* new InvoiceLimitExceededError({ limit: invoiceLimit, message: `Invoice limit of ${String(invoiceLimit)} reached` });
         const invoiceId: string = crypto.randomUUID();
         yield* repo.createInvoice(invoiceId);
         yield* broadcastActivity(this, {
@@ -281,7 +281,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const repo = yield* OrganizationRepository;
         const count = yield* repo.countInvoices();
         if (count >= invoiceLimit)
-          return yield* new InvoiceLimitExceededError({ limit: invoiceLimit, message: `Invoice limit of ${invoiceLimit} reached` });
+          return yield* new InvoiceLimitExceededError({ limit: invoiceLimit, message: `Invoice limit of ${String(invoiceLimit)} reached` });
         if (data.base64.length > MAX_BASE64_SIZE)
           return yield* new OrganizationAgentError({ message: "File too large" });
         if (!invoiceMimeTypes.includes(data.contentType as (typeof invoiceMimeTypes)[number]))
