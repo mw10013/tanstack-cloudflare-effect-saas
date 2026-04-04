@@ -10,10 +10,6 @@ import viteReact from "@vitejs/plugin-react";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { defineConfig } from "vitest/config";
 
-// Integration tests call TanStack server-fn RPC code directly, so seed the
-// server-fn base here instead of patching the real worker entrypoint.
-process.env.TSS_SERVER_FN_BASE ??= "/_serverFn/";
-
 export default defineConfig(async () => {
   const rootDir = path.resolve(import.meta.dirname, "../..");
   const migrationsPath = path.join(rootDir, "migrations");
@@ -48,17 +44,12 @@ export default defineConfig(async () => {
         "@": path.join(rootDir, "src"),
       },
     },
-    define: {
-      "process.env.TSS_SERVER_FN_BASE": JSON.stringify(
-        process.env.TSS_SERVER_FN_BASE,
-      ),
-      "import.meta.env.TSS_SERVER_FN_BASE": JSON.stringify(
-        process.env.TSS_SERVER_FN_BASE,
-      ),
-    },
     test: {
+      // TanStack server-fn RPC helpers read `process.env.TSS_SERVER_FN_BASE` at
+      // runtime when building their request URL, so the worker test env must
+      // inject it for direct RPC calls used by integration tests.
       env: {
-        TSS_SERVER_FN_BASE: process.env.TSS_SERVER_FN_BASE,
+        TSS_SERVER_FN_BASE: process.env.TSS_SERVER_FN_BASE ?? "/_serverFn/",
       },
       include: ["test/integration/*.test.ts"],
       onUnhandledError: (error: unknown) => {
