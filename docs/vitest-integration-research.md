@@ -348,15 +348,27 @@ describe("integration smoke", () => {
 });
 ```
 
-It also calls a TanStack server function through the real Worker:
+It also calls a TanStack server function through the real Worker using `runServerFn` from `test/test-utils.ts`:
 
 ```ts
-import { createClientRpc } from "@tanstack/react-start/client-rpc";
+import { runServerFn } from "@test/test-utils";
 
-const loginClientRpc = createClientRpc(loginServerFn.serverFnMeta.id);
+const result = await runServerFn({
+  serverFn: login,
+  data: { email: "u@u.com" },
+});
+```
+
+`runServerFn` uses `createClientRpc()` to serialize the server fn call, then routes the request through `exports.default.fetch()`:
+
+```ts
+// test/test-utils.ts
+const clientRpc = createClientRpc(serverFn.serverFnMeta.id);
 const fetchServerFn = (url: string, init?: RequestInit) =>
   exports.default.fetch(new Request(new URL(url, "http://example.com"), init));
 ```
+
+The JSDoc on `runServerFn` clarifies that it bypasses client middleware and routing, running the server fn via the worker fetch handler.
 
 So the core test shapes are:
 
@@ -370,7 +382,16 @@ So the core test shapes are:
 Current integration tests under `test/integration/`:
 
 - `smoke.test.ts` exercises `/login` through `exports.default.fetch()`
-- `smoke.test.ts` also exercises the `login` server fn through `createClientRpc()` routed back into `exports.default.fetch()`
+- `smoke.test.ts` also exercises the `login` server fn through `runServerFn()` from `test/test-utils.ts`
+
+Shared test utilities in `test/test-utils.ts`:
+
+- `resetDb()` - clears D1 tables between tests
+- `runServerFn()` - runs a server fn via client RPC through the Worker fetch handler
+- `ServerFn<TInputValidator, TResponse>` - type for server fns used with `runServerFn`
+- `extractSessionCookie()` - extracts better-auth session cookie from response headers
+- `parseSetCookie()` - parses Set-Cookie header into key-value record
+- `getSetCookie()` - gets the raw Set-Cookie header
 
 ## Bottom Line
 
