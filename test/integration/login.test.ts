@@ -47,4 +47,35 @@ describe("integration smoke", () => {
       expect(new URL(appResponse.url).pathname).toMatch(/^\/app\/.+/);
       expect(yield* Effect.promise(() => appResponse.text())).toContain("Members");
     }));
+
+  it.effect("admin login → verify magic link → access admin route", () =>
+    Effect.gen(function*() {
+      yield* resetDb();
+      const result = yield* runServerFn({
+        serverFn: login,
+        data: { email: "a@a.com" },
+      });
+      expect(result.success).toBe(true);
+      expect(result.magicLink).toContain("/api/auth/magic-link/verify");
+
+      const verifyResponse = yield* fetchWorker(result.magicLink ?? "", {
+        redirect: "manual",
+      });
+      expect(verifyResponse.status).toBe(302);
+      expect(new URL(verifyResponse.headers.get("location") ?? "").pathname).toBe(
+        "/magic-link",
+      );
+
+      const sessionCookie = yield* extractSessionCookie(verifyResponse);
+      expect(sessionCookie).toContain("better-auth.session_token=");
+
+      const appResponse = yield* fetchWorker(
+        new URL(verifyResponse.headers.get("location") ?? "/", result.magicLink)
+          .toString(),
+        { headers: { Cookie: sessionCookie } },
+      );
+      expect(appResponse.status).toBe(200);
+      expect(new URL(appResponse.url).pathname).toBe("/admin");
+      expect(yield* Effect.promise(() => appResponse.text())).toContain("Dashboard");
+    }));
 });
