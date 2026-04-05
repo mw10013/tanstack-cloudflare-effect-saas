@@ -4,12 +4,12 @@ import { expect } from "vitest";
 
 import { login } from "@/lib/Login";
 
-import { extractSessionCookie, fetchWorker, resetDb, runServerFn } from "../TestUtils";
+import { extractSessionCookie, workerFetch, resetDb, runServerFn } from "../TestUtils";
 
 describe("integration smoke", () => {
   it.effect("renders /login", () =>
     Effect.gen(function*() {
-      const response = yield* fetchWorker("http://example.com/login");
+      const response = yield* workerFetch("http://w/login");
       expect(response.status).toBe(200);
       expect(yield* Effect.promise(() => response.text())).toContain("Sign in / Sign up");
     }));
@@ -27,7 +27,7 @@ describe("integration smoke", () => {
       // Use `redirect: "manual"` because `exports.default.fetch` would otherwise
       // follow the first redirect to `/magic-link` without persisting the session
       // cookie from the 302 response like a browser cookie jar would.
-      const verifyResponse = yield* fetchWorker(result.magicLink ?? "", {
+      const verifyResponse = yield* workerFetch(result.magicLink ?? "", {
         redirect: "manual",
       });
       expect(verifyResponse.status).toBe(302);
@@ -38,7 +38,7 @@ describe("integration smoke", () => {
       const sessionCookie = yield* extractSessionCookie(verifyResponse);
       expect(sessionCookie).toContain("better-auth.session_token=");
 
-      const appResponse = yield* fetchWorker(
+      const appResponse = yield* workerFetch(
         new URL(verifyResponse.headers.get("location") ?? "/", result.magicLink)
           .toString(),
         { headers: { Cookie: sessionCookie } },
@@ -58,7 +58,7 @@ describe("integration smoke", () => {
       expect(result.success).toBe(true);
       expect(result.magicLink).toContain("/api/auth/magic-link/verify");
 
-      const verifyResponse = yield* fetchWorker(result.magicLink ?? "", {
+      const verifyResponse = yield* workerFetch(result.magicLink ?? "", {
         redirect: "manual",
       });
       expect(verifyResponse.status).toBe(302);
@@ -69,7 +69,7 @@ describe("integration smoke", () => {
       const sessionCookie = yield* extractSessionCookie(verifyResponse);
       expect(sessionCookie).toContain("better-auth.session_token=");
 
-      const appResponse = yield* fetchWorker(
+      const appResponse = yield* workerFetch(
         new URL(verifyResponse.headers.get("location") ?? "/", result.magicLink)
           .toString(),
         { headers: { Cookie: sessionCookie } },

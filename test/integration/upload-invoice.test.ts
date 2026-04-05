@@ -9,7 +9,7 @@ import * as OrganizationDomain from "@/lib/OrganizationDomain";
 import {
   agentWebSocket,
   callAgentRpc,
-  fetchWorker,
+  workerFetch,
   loginAndGetAuth,
   pollInvoiceStatus,
 } from "../TestUtils";
@@ -129,8 +129,8 @@ layer(configLayer, { excludeTestServices: true })("uploadInvoice", (it) => {
 
   it.effect("rejects WebSocket upgrade without session cookie", () =>
     Effect.gen(function*() {
-      const res = yield* fetchWorker(
-        "http://example.com/agents/organization-agent/test-org",
+      const res = yield* workerFetch(
+        "http://w/agents/organization-agent/test-org",
         { headers: { Upgrade: "websocket" } },
       );
       expect(res.status).toBe(401);

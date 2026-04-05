@@ -157,10 +157,10 @@ export const resetDb = Effect.fn("resetDb")(function*() {
   )
 })
 
-export const fetchWorker = Effect.fn("fetchWorker")(
+export const workerFetch = Effect.fn("workerFetch")(
   function*(url: string, init?: RequestInit) {
     return yield* Effect.promise(() =>
-      exports.default.fetch(new Request(new URL(url, "http://example.com"), init))
+      exports.default.fetch(new Request(url, init))
     )
   }
 )
@@ -174,7 +174,7 @@ export const runServerFn = Effect.fn("runServerFn")(
       // black-box the createClientRpc + runWithStartContext dance
       const clientRpc = createClientRpc(serverFn.serverFnMeta!.id)
       const fetchServerFn = (url: string, init?: RequestInit) =>
-        exports.default.fetch(new Request(new URL(url, "http://example.com"), init))
+        exports.default.fetch(new Request(url, init))
       return runWithStartContext(/* ... */, () =>
         clientRpc({ data, method: serverFn.method, fetch: fetchServerFn })
       ).then((r) => r.result as Awaited<TResponse>)
@@ -209,12 +209,12 @@ export const extractSessionCookie = Effect.fn("extractSessionCookie")(
 import { describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { login } from "@/lib/Login"
-import { extractSessionCookie, fetchWorker, resetDb, runServerFn } from "../TestUtils"
+import { extractSessionCookie, workerFetch, resetDb, runServerFn } from "../TestUtils"
 
 describe("integration smoke", () => {
   it.effect("renders /login", () =>
     Effect.gen(function*() {
-      const response = yield* fetchWorker("http://example.com/login")
+      const response = yield* workerFetch("http://w/login")
       expect(response.status).toBe(200)
       expect(yield* Effect.promise(() => response.text())).toContain("Sign in / Sign up")
     }))
@@ -226,14 +226,14 @@ describe("integration smoke", () => {
       expect(result.success).toBe(true)
       expect(result.magicLink).toContain("/api/auth/magic-link/verify")
 
-      const verifyResponse = yield* fetchWorker(result.magicLink ?? "", { redirect: "manual" })
+      const verifyResponse = yield* workerFetch(result.magicLink ?? "", { redirect: "manual" })
       expect(verifyResponse.status).toBe(302)
       expect(new URL(verifyResponse.headers.get("location") ?? "").pathname).toBe("/magic-link")
 
       const sessionCookie = yield* extractSessionCookie(verifyResponse)
       expect(sessionCookie).toContain("better-auth.session_token=")
 
-      const appResponse = yield* fetchWorker(
+      const appResponse = yield* workerFetch(
         new URL(verifyResponse.headers.get("location") ?? "/", result.magicLink).toString(),
         { headers: { Cookie: sessionCookie } },
       )

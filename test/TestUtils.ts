@@ -31,10 +31,15 @@ export const resetDb = Effect.fn("resetDb")(function*() {
   );
 });
 
-export const fetchWorker = Effect.fn("fetchWorker")(
+/**
+ * Calls the Worker's `fetch` handler directly in-process (no network).
+ * The origin is ignored — the Worker only routes on the pathname — so
+ * any valid URL works (e.g. `http://x/login`).
+ */
+export const workerFetch = Effect.fn("workerFetch")(
   function*(url: string, init?: RequestInit) {
     return yield* Effect.promise(() =>
-      exports.default.fetch(new Request(new URL(url, "http://example.com"), init))
+      exports.default.fetch(new Request(url, init))
     );
   },
 );
@@ -53,7 +58,7 @@ export const runServerFn = Effect.fn("runServerFn")(
       const clientRpc = createClientRpc(serverFn.serverFnMeta.id);
       const fetchServerFn = (url: string, init?: RequestInit) =>
         exports.default.fetch(
-          new Request(new URL(url, "http://example.com"), init),
+          new Request(new URL(url, "http://w"), init),
         );
       return runWithStartContext(
         {
@@ -62,7 +67,7 @@ export const runServerFn = Effect.fn("runServerFn")(
           getRouter: () => {
             throw new Error("unused in integration test");
           },
-          request: new Request("http://example.com"),
+          request: new Request("http://w"),
           startOptions: {},
         },
         () =>
@@ -129,7 +134,7 @@ export const agentWebSocket = Effect.fn("agentWebSocket")(
       Effect.gen(function*() {
         const res = yield* Effect.promise(() =>
           exports.default.fetch(
-            `http://example.com/agents/organization-agent/${orgId}`,
+            `http://w/agents/organization-agent/${orgId}`,
             { headers: { Upgrade: "websocket", Cookie: sessionCookie } },
           )
         );
@@ -151,11 +156,11 @@ export const loginAndGetAuth = Effect.fn("loginAndGetAuth")(function*() {
     serverFn: login,
     data: { email: "u@u.com" },
   });
-  const verifyResponse = yield* fetchWorker(result.magicLink ?? "", {
+  const verifyResponse = yield* workerFetch(result.magicLink ?? "", {
     redirect: "manual",
   });
   const sessionCookie = yield* extractSessionCookie(verifyResponse);
-  const appResponse = yield* fetchWorker(
+  const appResponse = yield* workerFetch(
     new URL(
       verifyResponse.headers.get("location") ?? "/",
       result.magicLink,
