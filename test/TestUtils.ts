@@ -86,32 +86,6 @@ export const extractSessionCookie = Effect.fn("extractSessionCookie")(
   },
 );
 
-const waitForMessage = Effect.fn("waitForMessage")(
-  function*(ws: WebSocket, timeout = 5000) {
-    return yield* Effect.promise<unknown>(() =>
-      new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          reject(new Error("Timeout waiting for WebSocket message"));
-        }, timeout as number);
-        ws.addEventListener(
-          "message",
-          (e: MessageEvent) => {
-            clearTimeout(timer);
-            resolve(JSON.parse(e.data as string));
-          },
-          { once: true },
-        );
-      })
-    );
-  },
-);
-
-const skipInitialMessages = Effect.fn("skipInitialMessages")(
-  function*(ws: WebSocket) {
-    for (let i = 0; i < 3; i++) yield* waitForMessage(ws);
-  },
-);
-
 /**
  * Calls a @callable() method on a Cloudflare Agent over its shared WebSocket.
  *
@@ -162,7 +136,8 @@ export const agentWebSocket = Effect.fn("agentWebSocket")(
         const ws = res.webSocket;
         if (!ws) return yield* Effect.fail(new Error(`WebSocket upgrade failed: ${String(res.status)}`));
         ws.accept();
-        yield* skipInitialMessages(ws);
+        // No need to drain initial protocol messages (identity, state, mcp_servers)
+        // unlike refs/agents tests — callAgentRpc filters by type + id so they're ignored.
         return ws;
       }),
       (ws) => Effect.sync(() => { ws.close(); }),
