@@ -1,9 +1,12 @@
 import { env } from "cloudflare:workers";
 import { Effect } from "effect";
+import * as Schema from "effect/Schema";
 import { describe, it } from "@effect/vitest";
+import { assertFalse, assertInclude, assertTrue } from "@effect/vitest/utils";
 import { expect } from "vitest";
 
-import type { RpcResponse } from "../TestUtils";
+import type { RPCResponse } from "agents";
+import * as OrganizationDomain from "@/lib/OrganizationDomain";
 import {
   agentWebSocket,
   callRpc,
@@ -12,23 +15,23 @@ import {
   pollInvoiceStatus,
 } from "../TestUtils";
 
+const InvoiceIdResult = Schema.Struct({ invoiceId: OrganizationDomain.InvoiceId });
+
 describe("uploadInvoice", () => {
   it.live("upload → queue → workflow → ready invoice", () =>
     Effect.gen(function*() {
       const { sessionCookie, orgId } = yield* loginAndGetAuth();
       const ws = yield* agentWebSocket(orgId, sessionCookie);
 
-      const uploadResult = yield* callRpc(ws, "uploadInvoice", [
+      const uploadResult: RPCResponse = yield* callRpc(ws, "uploadInvoice", [
         {
           fileName: "invoice-1-redacted.png",
           contentType: "image/png",
           base64: env.TEST_INVOICE_PNG_BASE64,
         },
       ]);
-      expect(uploadResult.success).toBe(true);
-      const { invoiceId } = (uploadResult as Extract<RpcResponse, { success: true }>).result as {
-        invoiceId: string;
-      };
+      assertTrue(uploadResult.success);
+      const { invoiceId } = Schema.decodeUnknownSync(InvoiceIdResult)(uploadResult.result);
 
       const r2Key = `${orgId}/invoices/${invoiceId}`;
       const head = yield* Effect.promise(() => env.R2.head(r2Key));
@@ -46,7 +49,7 @@ describe("uploadInvoice", () => {
       const { sessionCookie, orgId } = yield* loginAndGetAuth();
       const ws = yield* agentWebSocket(orgId, sessionCookie);
 
-      const result = yield* callRpc(ws, "uploadInvoice", [
+      const result: RPCResponse = yield* callRpc(ws, "uploadInvoice", [
         {
           fileName: "test.txt",
           contentType: "text/plain",
@@ -54,10 +57,11 @@ describe("uploadInvoice", () => {
         },
       ]);
 
-      expect(result.success).toBe(false);
-      expect((result as Extract<RpcResponse, { success: false }>).error).toContain(
-        "Invalid file type",
-      );
+      assertFalse(result.success);
+      const errorResult = Schema.decodeUnknownSync(
+        Schema.Struct({ success: Schema.Literal(false), error: Schema.String }),
+      )(result);
+      assertInclude(errorResult.error, "Invalid file type");
     }));
 
   it.effect("rejects base64 exceeding size limit", () =>
@@ -68,7 +72,7 @@ describe("uploadInvoice", () => {
       const maxBase64Size = Math.ceil((10_000_000 * 4) / 3) + 4;
       const oversizedBase64 = "A".repeat(maxBase64Size + 1);
 
-      const result = yield* callRpc(ws, "uploadInvoice", [
+      const result: RPCResponse = yield* callRpc(ws, "uploadInvoice", [
         {
           fileName: "huge.png",
           contentType: "image/png",
@@ -76,10 +80,11 @@ describe("uploadInvoice", () => {
         },
       ]);
 
-      expect(result.success).toBe(false);
-      expect((result as Extract<RpcResponse, { success: false }>).error).toContain(
-        "File too large",
-      );
+      assertFalse(result.success);
+      const errorResult = Schema.decodeUnknownSync(
+        Schema.Struct({ success: Schema.Literal(false), error: Schema.String }),
+      )(result);
+      assertInclude(errorResult.error, "File too large");
     }));
 
   it.effect("enforces invoice limit", () =>
@@ -91,11 +96,11 @@ describe("uploadInvoice", () => {
       const invoiceLimit = 3;
 
       for (let i = 0; i < invoiceLimit; i++) {
-        const result = yield* callRpc(ws, "createInvoice", []);
-        expect(result.success).toBe(true);
+        const result: RPCResponse = yield* callRpc(ws, "createInvoice", []);
+        assertTrue(result.success);
       }
 
-      const result = yield* callRpc(ws, "uploadInvoice", [
+      const result: RPCResponse = yield* callRpc(ws, "uploadInvoice", [
         {
           fileName: "over-limit.png",
           contentType: "image/png",
@@ -103,10 +108,11 @@ describe("uploadInvoice", () => {
         },
       ]);
 
-      expect(result.success).toBe(false);
-      expect((result as Extract<RpcResponse, { success: false }>).error).toContain(
-        "Invoice limit",
-      );
+      assertFalse(result.success);
+      const errorResult = Schema.decodeUnknownSync(
+        Schema.Struct({ success: Schema.Literal(false), error: Schema.String }),
+      )(result);
+      assertInclude(errorResult.error, "Invoice limit");
     }));
 
   it.effect("rejects WebSocket upgrade without session cookie", () =>

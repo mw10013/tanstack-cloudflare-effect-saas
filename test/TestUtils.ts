@@ -1,11 +1,15 @@
+import { MessageType } from "agents";
+import type { RPCResponse } from "agents";
 import type { ClientFnMeta, RequiredFetcher } from "@tanstack/react-start";
 import { createClientRpc } from "@tanstack/react-start/client-rpc";
 import { runWithStartContext } from "@tanstack/start-storage-context";
 import { env, exports } from "cloudflare:workers";
 import { Effect, Option, Schedule } from "effect";
+import * as Schema from "effect/Schema";
 import * as Cookies from "effect/unstable/http/Cookies";
 
 import { login } from "@/lib/Login";
+import * as OrganizationDomain from "@/lib/OrganizationDomain";
 
 export type ServerFn<TInputValidator, TResponse> = RequiredFetcher<
   undefined,
@@ -82,23 +86,6 @@ export const extractSessionCookie = Effect.fn("extractSessionCookie")(
   },
 );
 
-export interface RpcSuccessResponse {
-  type: "rpc";
-  id: string;
-  success: true;
-  result: unknown;
-  done: boolean;
-}
-
-export interface RpcErrorResponse {
-  type: "rpc";
-  id: string;
-  success: false;
-  error: string;
-}
-
-export type RpcResponse = RpcSuccessResponse | RpcErrorResponse;
-
 const waitForMessage = Effect.fn("waitForMessage")(
   function*(ws: WebSocket, timeout = 5000) {
     return yield* Effect.promise<unknown>(() =>
@@ -127,7 +114,7 @@ const skipInitialMessages = Effect.fn("skipInitialMessages")(
 
 export const callRpc = Effect.fn("callRpc")(
   function*(ws: WebSocket, method: string, args: unknown[] = [], timeout = 10_000) {
-    return yield* Effect.promise<RpcResponse>(() => {
+    return yield* Effect.promise<RPCResponse>(() => {
       const id = crypto.randomUUID();
       ws.send(JSON.stringify({ type: "rpc", id, method, args }));
       return new Promise((resolve, reject) => {
@@ -135,8 +122,8 @@ export const callRpc = Effect.fn("callRpc")(
           reject(new Error(`RPC timeout: ${method}`));
         }, timeout as number);
         const handler = (e: MessageEvent) => {
-          const msg = JSON.parse(e.data as string) as RpcResponse;
-          if (msg.type === "rpc" && msg.id === id) {
+          const msg = JSON.parse(e.data as string) as RPCResponse;
+          if (msg.type === MessageType.RPC && msg.id === id) {
             if (msg.success && !msg.done) return;
             clearTimeout(timer);
             ws.removeEventListener("message", handler);
@@ -197,7 +184,9 @@ export const pollInvoiceStatus = Effect.fn("pollInvoiceStatus")(
     return yield* callRpc(ws, "getInvoices", []).pipe(
       Effect.flatMap((result) => {
         if (!result.success) return Effect.fail(new Error("getInvoices failed"));
-        const invoices = result.result as { id: string; status: string }[];
+        const invoices = Schema.decodeUnknownSync(
+          Schema.Array(OrganizationDomain.Invoice),
+        )(result.result);
         const inv = invoices.find((i) => i.id === invoiceId);
         if (inv?.status === "ready" || inv?.status === "error") return Effect.succeed(inv);
         return Effect.fail(new Error("not ready"));
