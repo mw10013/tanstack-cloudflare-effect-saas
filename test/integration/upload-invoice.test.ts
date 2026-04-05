@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
-import { Effect } from "effect";
+import { Config, ConfigProvider, Effect, Layer, Schedule, ServiceMap } from "effect";
 import * as Schema from "effect/Schema";
-import { describe, it } from "@effect/vitest";
+import { layer } from "@effect/vitest";
 import { assertFalse, assertInclude, assertTrue } from "@effect/vitest/utils";
 import { expect } from "vitest";
 
@@ -17,8 +17,18 @@ import {
 
 const InvoiceIdResult = Schema.Struct({ invoiceId: OrganizationDomain.InvoiceId });
 
-describe("uploadInvoice", () => {
-  it.live("upload → queue → workflow → ready invoice", () =>
+const configLayer = Layer.succeedServices(
+  ServiceMap.make(
+    ConfigProvider.ConfigProvider,
+    ConfigProvider.fromUnknown(env),
+  ),
+);
+
+/**
+ * excludeTestServices: true keeps real time (no TestClock) so Schedule.spaced delays advance naturally.
+ */
+layer(configLayer, { excludeTestServices: true })("uploadInvoice", (it) => {
+  it.effect("upload → queue → workflow → ready invoice", () =>
     Effect.gen(function*() {
       const { sessionCookie, orgId } = yield* loginAndGetAuth();
       const ws = yield* agentWebSocket(orgId, sessionCookie);
@@ -93,12 +103,15 @@ describe("uploadInvoice", () => {
       const ws = yield* agentWebSocket(orgId, sessionCookie);
 
       const tinyPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-      const invoiceLimit = 3;
+      const invoiceLimit = yield* Config.number("INVOICE_LIMIT");
 
-      for (let i = 0; i < invoiceLimit; i++) {
-        const result: RPCResponse = yield* callRpc(ws, "createInvoice", []);
-        assertTrue(result.success);
-      }
+      yield* Effect.repeat(
+        Effect.gen(function*() {
+          const result: RPCResponse = yield* callRpc(ws, "createInvoice", []);
+          assertTrue(result.success);
+        }),
+        Schedule.recurs(invoiceLimit - 1),
+      );
 
       const result: RPCResponse = yield* callRpc(ws, "uploadInvoice", [
         {
