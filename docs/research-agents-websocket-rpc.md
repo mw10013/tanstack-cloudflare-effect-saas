@@ -1,6 +1,6 @@
 # Cloudflare Agents WebSocket RPC
 
-Research on how `callAgentRpc` in `test/TestUtils.ts:115-137` works, grounded in the Agents library source.
+Research on how `callAgentRpc` in `test/TestUtils.ts` works, grounded in the Agents library source.
 
 ## Protocol overview
 
@@ -75,62 +75,71 @@ So `addEventListener("message", handler)` on a shared socket means the handler f
 
 ## Walking through `callAgentRpc`
 
+### Why `Effect.callback`
+
+`addEventListener` is a callback-based API — it doesn't return a Promise. You pass it a function, and it calls that function later when a message arrives. `Effect.callback` bridges this into Effect: you get a `resume` function, and when the callback fires you call `resume(Effect.succeed(value))` to complete the Effect.
+
+Compare to a Promise constructor:
+- **Promise**: `new Promise((resolve) => { addEventListener(..., () => resolve(value)) })`
+- **Effect.callback**: `Effect.callback((resume) => { addEventListener(..., () => resume(Effect.succeed(value))) })`
+
+The advantage: `Effect.callback` lets you return a finalizer — an Effect that runs when the fiber is interrupted (e.g. by `Effect.timeout`). This removes the event listener automatically on cancellation. `Effect.promise` can't do this because Promises are uninterruptible.
+
+### Line by line
+
 ```ts
 export const callAgentRpc = Effect.fn("callAgentRpc")(
   function*(ws: WebSocket, method: string, args: unknown[] = [], timeout: number = 10_000) {
-    return yield* Effect.promise<RPCResponse>(() => {
+    return yield* Effect.callback<RPCResponse>((resume) => {
+```
+
+`Effect.callback<RPCResponse>` — creates an `Effect<RPCResponse>` that will complete when `resume` is called. The caller of `callAgentRpc` just `yield*`s it and gets an `RPCResponse` back.
+
+```ts
       const id = crypto.randomUUID();
       ws.send(JSON.stringify({ type: "rpc", id, method, args }));
 ```
 
-**Send request** — matches `RPCRequest` shape. The `id` is how we correlate the response.
+**Send request** — matches `RPCRequest` shape. The `id` correlates the response.
 
 ```ts
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          reject(new Error(`RPC timeout: ${method}`));
-        }, timeout);
-```
-
-**Timeout** — the library has **no built-in timeout** (`refs/agents/packages/agents/src/tests/callable.test.ts:84-115`). If the server never responds (bug, crash, hung method), the promise hangs forever. The timeout is purely client-side insurance.
-
-```ts
-        const handler = (e: MessageEvent) => {
-          const msg = JSON.parse(e.data as string) as RPCResponse;
-          if (msg.type === MessageType.RPC && msg.id === id) {
+      const handler = (e: MessageEvent) => {
+        const msg = JSON.parse(e.data as string) as RPCResponse;
+        if (msg.type === MessageType.RPC && msg.id === id) {
 ```
 
 **Filter by type + id** — ignore unrelated messages (state broadcasts, other RPC calls). Only react to RPC responses matching our `id`.
 
 ```ts
-            if (msg.success && !msg.done) return;
+          if (msg.success && !msg.done) return;
 ```
 
-**Skip streaming chunks** — if `done` is `false` (or undefined-ish), this is an intermediate chunk. Don't resolve yet, wait for the final message.
+**Skip streaming chunks** — `done: false` means intermediate chunk; wait for the final `done: true` message.
 
 ```ts
-            clearTimeout(timer);
-            ws.removeEventListener("message", handler);
-            resolve(msg);
+          ws.removeEventListener("message", handler);
+          resume(Effect.succeed(msg));
 ```
 
-**Cleanup + resolve** — once we get the final response (`done: true` or `success: false`):
-
-1. **`clearTimeout`** — cancel the timeout since we got a response
-2. **`removeEventListener`** — stop listening. Without this, the handler stays attached to the shared WebSocket and fires on every future message (memory leak, potential bugs)
-3. **`resolve`** — fulfill the promise with the full `RPCResponse`
+**Cleanup + complete** — remove the listener (so it doesn't fire on future messages), then call `resume` to complete the Effect with the response.
 
 ```ts
-          }
-        };
-        ws.addEventListener("message", handler);
-      });
-    });
-  },
-);
+      };
+      ws.addEventListener("message", handler);
+      return Effect.sync(() => { ws.removeEventListener("message", handler); });
 ```
 
-**Register handler** — must happen after `ws.send()` is called (in Cloudflare Workers miniflare, messages are synchronous within the same isolate, so ordering matters).
+**Register handler + finalizer** — attach the listener, then return a finalizer Effect. The finalizer runs if the Effect is interrupted before `resume` is called (e.g. by timeout), removing the listener so it doesn't leak.
+
+```ts
+    }).pipe(
+      Effect.timeout(timeout),
+      Effect.catchTag("TimeoutError", () =>
+        Effect.die(new Error(`Agent RPC timeout: ${method}`))),
+    );
+```
+
+**Timeout** — the Agents library has no built-in timeout (`refs/agents/packages/agents/src/tests/callable.test.ts:84-115`). If the server never responds, the Effect hangs forever. `Effect.timeout` interrupts the `Effect.callback` after the duration, which triggers the finalizer (removing the listener), then the `TimeoutError` is caught and converted to a defect.
 
 ## Why `addEventListener` / `removeEventListener` instead of `onmessage`
 
@@ -152,17 +161,13 @@ Client                          Server
   |<-- { id, success, done:false } --  (streaming only, 0..N times)
   |<-- { id, success, done:true }  --  final result
   |                               |
-  [clearTimeout, removeListener]
-  [resolve promise]
+  [removeEventListener]
+  [resume(Effect.succeed(msg))]
 ```
 
-## Idiomatic Effect v4 alternative
+## Effect v4 API reference
 
-The current implementation wraps the entire callback+timeout logic inside `Effect.promise`. An idiomatic Effect v4 version would use `Effect.callback` + `Effect.timeout` to let Effect manage the lifecycle.
-
-### Key Effect v4 APIs
-
-**`Effect.callback`** — wraps callback-style async APIs. Returns a finalizer for cleanup on interruption.
+**`Effect.callback`** — wraps callback-based async APIs (was `Effect.async` in v3).
 
 ```ts
 // refs/effect4/packages/effect/src/Effect.ts:1405
@@ -175,7 +180,7 @@ export const callback: <A, E = never, R = never>(
 )
 ```
 
-The register function receives `resume` (call with `Effect.succeed(value)` or `Effect.fail(error)` to complete) and returns an optional finalizer Effect for cleanup. The finalizer runs on interruption (e.g. when a timeout fires).
+The register function receives `resume` (call with `Effect.succeed(value)` or `Effect.fail(error)` to complete the Effect) and returns an optional finalizer Effect for cleanup on interruption.
 
 **`Effect.timeout`** — interrupts an effect after a duration, failing with `Cause.TimeoutError`.
 
@@ -188,52 +193,3 @@ export const timeout: {
 ```
 
 When `timeout` fires, it interrupts the inner effect, which triggers the finalizer returned by `Effect.callback`.
-
-### Idiomatic implementation
-
-```ts
-import { Cause, Effect } from "effect";
-
-export const callAgentRpc = Effect.fn("callAgentRpc")(
-  function*(ws: WebSocket, method: string, args: unknown[] = [], timeout: number = 10_000) {
-    return yield* Effect.callback<RPCResponse>((resume) => {
-      const id = crypto.randomUUID();
-      ws.send(JSON.stringify({ type: "rpc", id, method, args }));
-      const handler = (e: MessageEvent) => {
-        const msg = JSON.parse(e.data as string) as RPCResponse;
-        if (msg.type === MessageType.RPC && msg.id === id) {
-          if (msg.success && !msg.done) return;
-          ws.removeEventListener("message", handler);
-          resume(Effect.succeed(msg));
-        }
-      };
-      ws.addEventListener("message", handler);
-      return Effect.sync(() => ws.removeEventListener("message", handler));
-    }).pipe(
-      Effect.timeout(timeout),
-      Effect.catchTag("TimeoutError", () =>
-        Effect.fail(new Error(`RPC timeout: ${method}`))),
-    );
-  },
-);
-```
-
-**What changes:**
-
-| Concern | Current (`Effect.promise` + `setTimeout`) | Idiomatic (`Effect.callback` + `Effect.timeout`) |
-|---------|------------------------------------------|--------------------------------------------------|
-| Timeout | Manual `setTimeout` / `clearTimeout` | `Effect.timeout(duration)` — Effect manages the timer |
-| Cleanup | Manual `removeEventListener` in handler | Finalizer returned from `Effect.callback` — runs on interruption or completion |
-| Cancellation | Not supported — if the outer Effect is interrupted, the Promise still resolves eventually | Built-in — interruption triggers the finalizer, removing the listener immediately |
-| Error channel | Rejects the Promise (untyped) | `Cause.TimeoutError` in the error channel, caught and mapped to domain error |
-
-**Why `Effect.callback` over `Effect.promise`:**
-
-- `Effect.promise` creates an uninterruptible effect — once started, the Promise runs to completion even if the surrounding Effect is interrupted. The `setTimeout` reject is the only safeguard.
-- `Effect.callback` is interruptible. When the Effect fiber is interrupted (by timeout, scope cleanup, or explicit cancellation), the finalizer runs immediately, cleaning up the event listener. No dangling handlers.
-
-**Why `Effect.timeout` over `setTimeout`:**
-
-- Composes with Effect's interruption model. When `timeout` fires, it interrupts the inner `Effect.callback`, which triggers the finalizer.
-- The timeout error flows through Effect's typed error channel (`Cause.TimeoutError`), making it explicit in the type signature.
-- No need to manually coordinate `clearTimeout` — Effect handles the lifecycle.

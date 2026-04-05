@@ -144,7 +144,7 @@ export const callAgentRpc = Effect.fn("callAgentRpc")(
     }).pipe(
       Effect.timeout(timeout),
       Effect.catchTag("TimeoutError", () =>
-        Effect.die(new Error(`RPC timeout: ${method}`))),
+        Effect.die(new Error(`Agent RPC timeout: ${method}`))),
     );
   },
 );
