@@ -1,4 +1,5 @@
 /* oxlint-disable */
+import fs from "node:fs";
 import path from "node:path";
 
 import {
@@ -14,6 +15,9 @@ export default defineConfig(async () => {
   const rootDir = path.resolve(import.meta.dirname, "../..");
   const migrationsPath = path.join(rootDir, "migrations");
   const migrations = await readD1Migrations(migrationsPath);
+  const invoicePngBase64 = fs
+    .readFileSync(path.join(rootDir, "invoices/invoice-1-redacted.png"))
+    .toString("base64");
 
   return {
     root: rootDir,
@@ -24,7 +28,10 @@ export default defineConfig(async () => {
           configPath: path.join(rootDir, "wrangler.jsonc"),
         },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            TEST_INVOICE_PNG_BASE64: invoicePngBase64,
+          },
         },
       }),
       tsconfigPaths({

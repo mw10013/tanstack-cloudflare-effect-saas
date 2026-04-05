@@ -139,6 +139,8 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       amount text not null default '' check(length(amount) <= 50),
       period text not null default '' check(length(period) <= 50)
     )`;
+    void this.sql`create index if not exists Invoice_createdAt_idx on Invoice(createdAt)`;
+    void this.sql`create index if not exists InvoiceItem_invoiceId_order_idx on InvoiceItem(invoiceId, "order")`;
     this.runEffect = makeRunEffect(ctx, env);
   }
 
