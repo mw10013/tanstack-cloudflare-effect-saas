@@ -191,7 +191,7 @@ export const login = Effect.fn("login")(function*(email: string) {
 
 export const pollInvoiceStatus = Effect.fn("pollInvoiceStatus")(
   function*(ws: WebSocket, invoiceId: string) {
-    return yield* callAgentRpc(ws, "getInvoices", []).pipe(
+    return yield* callAgentRpc(ws, "getInvoices").pipe(
       Effect.flatMap((result) => {
         if (!result.success) return Effect.fail(new Error("getInvoices failed"));
         const invoices = Schema.decodeUnknownSync(
