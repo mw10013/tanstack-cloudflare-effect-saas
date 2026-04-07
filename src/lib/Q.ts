@@ -16,8 +16,8 @@ const r2QueueMessageSchema = Schema.Struct({
   eventTime: Schema.NonEmptyString,
 });
 
-const invoiceDeleteQueueMessageSchema = Schema.Struct({
-  action: Schema.Literals(["DeleteInvoice"]),
+const finalizeInvoiceDeletionQueueMessageSchema = Schema.Struct({
+  action: Schema.Literals(["FinalizeInvoiceDeletion"]),
   organizationId: Domain.Organization.fields.id,
   invoiceId: OrganizationDomain.Invoice.fields.id,
   r2ObjectKey: OrganizationDomain.Invoice.fields.r2ObjectKey,
@@ -38,7 +38,7 @@ export const membershipSyncQueueMessageSchema = Schema.Struct({
 
 const queueMessageSchema = Schema.Union([
   r2QueueMessageSchema,
-  invoiceDeleteQueueMessageSchema,
+  finalizeInvoiceDeletionQueueMessageSchema,
   membershipSyncQueueMessageSchema,
 ]);
 
@@ -102,16 +102,16 @@ const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
   );
 });
 
-const processInvoiceDelete = Effect.fn("processInvoiceDelete")(function* (
-  message: typeof invoiceDeleteQueueMessageSchema.Type,
+const processFinalizeInvoiceDeletion = Effect.fn("processFinalizeInvoiceDeletion")(function* (
+  message: typeof finalizeInvoiceDeletionQueueMessageSchema.Type,
 ) {
   const stub = yield* getOrganizationAgentStub(message.organizationId);
   yield* Effect.tryPromise(() =>
-    stub.deleteInvoiceById(message.invoiceId),
+    stub.onDeleteInvoice({
+      invoiceId: message.invoiceId,
+      r2ObjectKey: message.r2ObjectKey,
+    }),
   );
-  if (!message.r2ObjectKey) return;
-  const r2 = yield* R2;
-  yield* r2.delete(message.r2ObjectKey);
 });
 
 const processMembershipSync = Effect.fn("processMembershipSync")(function* (
@@ -178,8 +178,8 @@ const processQueueMessage = Effect.fn("processQueueMessage")(function* (
   const notification =
     yield* Schema.decodeUnknownEffect(queueMessageSchema)(messageBody);
   switch (notification.action) {
-    case "DeleteInvoice": {
-      return yield* processInvoiceDelete(notification);
+    case "FinalizeInvoiceDeletion": {
+      return yield* processFinalizeInvoiceDeletion(notification);
     }
     case "PutObject": {
       return yield* processInvoiceUpload(notification);

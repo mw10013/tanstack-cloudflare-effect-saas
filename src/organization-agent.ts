@@ -390,6 +390,16 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     );
   }
 
+  /**
+   * Deletes a terminal invoice with queue-backed completion guarantees.
+   *
+   * For terminal invoices (`ready` or `error`), this method first enqueues a
+   * `FinalizeInvoiceDeletion` message with `r2ObjectKey`, then deletes the
+   * invoice row immediately so reads stop returning the invoice.
+   *
+   * Enqueue-first means if execution fails after enqueue but before local delete,
+   * queue processing still calls `onDeleteInvoice` and completes deletion.
+   */
   @callable()
   deleteInvoice(input: typeof DeleteInvoiceInput.Type) {
     return this.runEffect(
@@ -404,16 +414,14 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           invoice.value.status !== "ready" &&
           invoice.value.status !== "error"
         )
-          return;
-        const { Q: queue } = yield* CloudflareEnv;
-        if (!queue)
           return yield* new OrganizationAgentError({
-            message: "Invoice delete queue unavailable",
+            message: `Invoice cannot be deleted in status=${invoice.value.status}`,
           });
+        const { Q: queue } = yield* CloudflareEnv;
         yield* Effect.tryPromise({
           try: () =>
             queue.send({
-              action: "DeleteInvoice",
+              action: "FinalizeInvoiceDeletion",
               organizationId: this.name,
               invoiceId,
               r2ObjectKey: invoice.value.r2ObjectKey,
@@ -428,11 +436,25 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     );
   }
 
-  deleteInvoiceById(invoiceId: Invoice["id"]) {
+  /**
+   * Finalizes deletion from the `FinalizeInvoiceDeletion` queue message.
+   *
+   * `deleteInvoice()` already enqueues this work and deletes the DB row immediately.
+   * Queue delivery is at-least-once, so this handler re-applies the DB delete
+   * idempotently to ensure the invoice row is actually removed, then deletes the
+   * R2 object for eventual consistency of storage cleanup.
+   */
+  onDeleteInvoice(input: {
+    invoiceId: Invoice["id"];
+    r2ObjectKey: Invoice["r2ObjectKey"];
+  }) {
     return this.runEffect(
       Effect.gen(function* () {
         const repo = yield* OrganizationRepository;
-        yield* repo.deleteInvoice(invoiceId);
+        yield* repo.deleteInvoice(input.invoiceId);
+        if (!input.r2ObjectKey) return;
+        const r2 = yield* R2;
+        yield* r2.delete(input.r2ObjectKey);
       }),
     );
   }
