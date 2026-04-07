@@ -1,288 +1,234 @@
-# Organization Bootstrap Fault Tolerance Research
+# Organization Bootstrap Fault Tolerance Research (Revised)
 
 ## TL;DR
 
-- Assume the required Better Auth calls are discrete, can fail independently, and are not idempotent.
-- Therefore the only viable design is a single bootstrap owner that runs synchronously at the auth boundary.
-- Do not let the user into the app until bootstrap invariants are true.
-- Do not depend on a background reconciler for immediate correctness.
-- After any ambiguous failure, do not blindly retry writes. Read current durable state first, then continue from the first unmet invariant.
-- Queue and Durable Object updates are projection work. They cannot be allowed to decide whether the account is usable.
+- Yes: use a Workflow as the bootstrap runner.
+- No: do not rely on Durable Object in-memory state. If Durable Objects are used at all, use their SQLite storage as the durable source, or use D1 as source-of-truth.
+- Authentication success and bootstrap completion are separate distributed events. Treat them independently.
+- App entry must be gated by durable bootstrap invariants on every protected entry path, not only the auth callback redirect.
+- Bootstrap logic must follow a convergent loop: read durable truth -> one write -> read durable truth.
+- On ambiguous failures (timeout, connection reset, worker restart), do not blind retry writes. Re-read first.
 
-## First-Principles Constraints
+## What Was Wrong In The Previous Version
 
-We need a workflow that turns:
+The previous version had the right direction but two major gaps:
 
-1. authenticated user
+1. Crash window was under-modeled.
+   - Login can succeed, session can exist, and process can crash before synchronous bootstrap gate runs.
+2. State machine durability was vague.
+   - "One bootstrap owner" is not enough unless ownership and progress are durable across crashes/restarts.
 
-into:
+Those are correctness issues, not implementation details.
 
-1. authenticated user
-2. organization exists
-3. owner membership exists
-4. active organization is set
-5. app authorization works
+## First-Principles Failure Model
 
-The hard constraints are:
+Assume all of the following are true:
 
-- the Better Auth calls are separate calls
-- any one of them can fail
-- a failure may happen after the side effect already committed
-- immediate success matters; this cannot be left to eventual repair later
-- if the user gets into the app before bootstrap completes, the system is broken
+1. Better Auth organization bootstrap requires multiple API calls.
+2. Calls are not a single atomic transaction.
+3. A call can fail after the side effect already committed.
+4. Worker/request/runtime can crash or restart between any two calls.
+5. Duplicate triggers can happen (multi-tab, retries, refresh, callback replay, racey client behavior).
+6. Async systems (Queues, eventually-consistent projections, stale caches) may lag.
 
-Those constraints eliminate a lot of fake solutions.
+If any of these are true, correctness requires durable checkpointing and durable invariant checks.
 
-## What Is Not Good Enough
+## Grounding From Docs
 
-## Not a background reconciler
+- Cloudflare Queues are at-least-once and may duplicate delivery.
+  - `refs/cloudflare-docs/src/content/docs/queues/reference/delivery-guarantees.mdx`
+- Durable Objects lose in-memory state on hibernation/restart; important state must be persisted.
+  - `refs/cloudflare-docs/src/content/docs/durable-objects/concepts/durable-object-lifecycle.mdx`
+  - `refs/cloudflare-docs/src/content/docs/durable-objects/reference/in-memory-state.mdx`
+- Durable Object storage is private, transactional, and strongly consistent.
+  - `refs/cloudflare-docs/src/content/docs/durable-objects/best-practices/access-durable-objects-storage.mdx`
+- Workflows persist step state, retry steps, and resume from last successful step after interruption.
+  - `refs/cloudflare-docs/src/content/docs/workflows/get-started/guide.mdx`
+  - `refs/cloudflare-docs/src/content/docs/workflows/build/rules-of-workflows.mdx`
+- Better Auth organization behavior is configurable:
+  - active org can be client-managed and optional, not always session-persisted.
+  - creator role can be `owner` or `admin`.
+  - `refs/better-auth/docs/content/docs/plugins/organization.mdx`
 
-A periodic background scanner is not the primary solution.
+## Correctness Requirements
 
-Reason:
+### Safety
 
-- if the user is authenticated but not provisioned, the app is already unusable
-- waiting for some future repair cycle is too late
+The system must never:
 
-A repair path can exist as a safety net, but it cannot be the thing that makes bootstrap work.
+1. allow app entry unless bootstrap invariants are durably true;
+2. trust API success response without post-write verification;
+3. trust queue/DO cache/projection as authority for first app use.
 
-## Not queue-first correctness
+### Liveness
 
-Queues are useful for projection and retry.
+The system must:
 
-Queues are not good enough for immediate correctness because:
+1. eventually complete bootstrap or surface explicit terminal failure;
+2. recover automatically from process/runtime crash;
+3. converge under duplicate/concurrent bootstrap attempts.
 
-- delivery is asynchronous
-- lag is normal
-- retries are normal
-- duplicates are normal
+## Durable Invariants (Config-Aware)
 
-If the first usable request depends on a queue having already run, the design is brittle.
+Bootstrap is complete when all required durable invariants for this app policy are true:
 
-## Not free-floating API calls
+1. user exists;
+2. target organization exists (or already-existing one selected by policy);
+3. membership exists with required role policy (`owner` or `admin`, based on config);
+4. org context for authorization is resolvable at app entry:
+   - either active org is set in session,
+   - or app auth path derives org deterministically from durable truth;
+5. first protected app authorization check succeeds without waiting for async projection.
 
-The Better Auth calls cannot be scattered across random hooks, page loads, or route handlers.
+Important: do not hardcode "exactly one organization" unless product policy explicitly requires it.
 
-If login is one call, create organization is another, and set active organization is another, then one thing must own that chain.
+## Primary Architecture
 
-Without one owner, there is no place to reason about retries, partial success, or completion.
+### A) Durable source-of-truth
 
-## The Correct Owner
+Use D1 (or a DO with SQLite storage) for authoritative bootstrap state.
 
-From first principles, the correct owner is:
+If using Durable Objects:
 
-> the boundary that converts "user has authenticated" into "user may enter the app"
+- in-memory fields are cache only;
+- SQLite storage is authority;
+- in-memory loss on hibernation/restart is expected and must not break correctness.
 
-That boundary must synchronously own bootstrap.
+### B) Workflow as bootstrap runner
 
-In practice, that means the auth callback or post-login handoff path, not some later page and not some best-effort background process.
+Use a Cloudflare Workflow instance as the state-machine executor.
 
-The flow should be:
+Why Workflow is the right owner:
 
-1. authenticate user
-2. enter bootstrap owner
-3. finish or verify provisioning
-4. only then redirect to app
+1. each step is independently retryable;
+2. step outputs are persisted;
+3. crash/restart resumes from last successful step;
+4. retry behavior is explicit and configurable;
+5. aligns with "read -> write -> verify" convergent steps.
 
-If bootstrap cannot be completed, the user should stay on a dedicated "setting up your account" or error state, not proceed into the app.
+### C) Route-level bootstrap gate
 
-## Required Invariants
+Gate all protected app entry paths with a durable bootstrap check.
 
-Bootstrap is complete only when all of these are true:
+Do not rely solely on auth callback flow ordering.
 
-1. user exists
-2. account exists if the login method requires one
-3. exactly one intended organization exists for bootstrap purposes
-4. owner membership exists for that user in that organization
-5. active organization is set for the session, or equivalent app state is ready
-6. the app can authorize the user immediately after redirect
+Flow:
 
-These invariants define completion. API success responses do not.
+1. user authenticates;
+2. callback redirects to `/bootstrap` (or equivalent gate route), not main app;
+3. gate checks durable bootstrap status;
+4. if incomplete, gate ensures workflow is running and waits/polls;
+5. only when complete, redirect to app.
 
-## Core Design Rule
+Also enforce the same check in protected server loaders/middleware so deep links cannot bypass the gate.
 
-The workflow must be:
+## Bootstrap State Model
 
-> verify state, do one write, verify state again
+Maintain durable bootstrap status keyed by user:
 
-That is the only safe pattern when writes may have ambiguous outcomes.
+- `not_started`
+- `running`
+- `complete`
+- `failed_retryable`
+- `failed_terminal`
 
-## Bootstrap State Machine
+Minimal durable fields:
 
-Use a single bootstrap runner with this shape:
+- `user_id` (pk)
+- `workflow_instance_id`
+- `status`
+- `last_completed_step`
+- `last_error_code`
+- `last_error_message`
+- `updated_at`
+- `version`
 
-1. Read current durable state.
-2. Find the first unmet invariant.
-3. Perform exactly one write aimed at that invariant.
-4. Read durable state again.
-5. Repeat until all invariants are true.
-6. Only then let the user enter the app.
+This record is control-plane truth for gate behavior.
 
-This is a convergent state machine.
+## Bootstrap Algorithm (Workflow Steps)
 
-It does not assume any call is idempotent.
-It only assumes we can observe durable truth after each step.
+Each step follows the same shape:
 
-## Safe Retry Rule
+1. read durable state;
+2. if invariant already true, return success for step;
+3. perform exactly one write;
+4. read durable state again;
+5. verify invariant;
+6. if still false and error is retryable, throw to retry step;
+7. if terminal condition, throw non-retryable error and mark terminal failure.
 
-If a write call fails, times out, or returns an ambiguous result:
+Suggested step sequence:
 
-1. do not retry immediately
-2. read current durable state
-3. if the target invariant is now true, continue
-4. if the target invariant is still false, retry the next write
+1. resolve target organization (existing by policy or create);
+2. ensure membership with required role;
+3. ensure org context used by auth path (session active org or deterministic fallback path);
+4. run final authorization probe used by app entry;
+5. mark bootstrap `complete` durably.
 
-This avoids double-creating or double-mutating when an API call succeeded but the caller did not observe success.
+No side effects outside `step.do` boundaries.
 
-## The Necessary Read Side
+## Concurrency and Duplicate Triggers
 
-This architecture only works if we have a reliable way to observe durable truth.
+Use deterministic workflow instance ID per user for first bootstrap:
 
-For each write step, we need a corresponding read that can answer questions like:
+- `org-bootstrap:${userId}`
 
-- does the user already have the intended organization?
-- does owner membership already exist?
-- is the session already associated with the organization?
-- is the app-visible authorization state already usable?
+Trigger behavior:
 
-If we cannot read those truths, then safe retry is impossible.
+1. gate tries to create workflow;
+2. if duplicate/exists error occurs, treat as already-running and fetch status;
+3. never start multiple independent bootstrap runners for same user bootstrap generation.
 
-That is not a code-style preference. That is a correctness requirement.
+If re-bootstrap is needed later, use explicit generation/version in ID.
 
-## Viable Immediate Workflow
+## Crash Scenarios and Recovery
 
-From first principles, the immediate workflow should look like this:
+### Crash after auth success, before bootstrap starts
 
-## Phase 1: authentication
+- Next protected request hits gate.
+- Gate sees bootstrap status is not `complete`.
+- Gate triggers or resumes workflow.
+- User remains in setup gate; app is not entered early.
 
-- run the Better Auth login flow
-- once auth succeeds, do not redirect to the app yet
+### Crash during bootstrap step
 
-## Phase 2: synchronous bootstrap gate
+- Workflow resumes from last successful step checkpoint.
+- Re-executed step re-reads durable truth before write, so it converges.
 
-The bootstrap owner now runs the state machine.
+### Write committed but caller timed out
 
-Example structure:
+- Step retry begins with read.
+- If invariant now true, skip duplicate write.
+- If false, write again.
 
-1. Check whether the required organization already exists for this user.
-2. If not, call Better Auth organization creation.
-3. Re-read durable state.
-4. Check whether owner membership exists.
-5. If not, create or repair it through the correct Better Auth path.
-6. Re-read durable state.
-7. Check whether active organization is set.
-8. If not, set it.
-9. Re-read durable state.
-10. Check whether the app can authorize immediately.
-11. If yes, redirect to the app.
-12. If no, stay in bootstrap and continue repair or fail explicitly.
+### Duplicate tabs or repeated callbacks
 
-The important property is not the exact sequence. The important property is that every write is followed by verification before moving on.
+- Deterministic workflow ID + durable status prevents divergent multi-run behavior.
 
-## Phase 3: app entry
+## Role of Queues and Durable Objects (Secondary)
 
-Only after all invariants are true should the user be redirected into the app.
-
-This is how you avoid the state "logged in but unusable".
-
-## Immediate Correctness Requirement
-
-The app cannot depend on asynchronous projection to become usable after redirect.
-
-That means one of two things must be true before app entry:
-
-1. the projection is synchronously seeded during bootstrap
-2. the app authorization path reads durable truth directly or can repair synchronously from durable truth
-
-If neither is true, the system is still racey.
-
-## Role of Queues and Durable Objects
-
-Queues and Durable Objects are still useful, but only in the right place.
-
-## Queue
+Queues and DO caches are still useful, but not authoritative for bootstrap correctness.
 
 Use queues for:
 
-- projection
-- fan-out
-- retries of non-user-facing follow-up work
-
-Do not use queues as the thing that makes first login succeed.
-
-## Durable Objects
+- projection/fanout/non-blocking follow-up work.
 
 Use Durable Objects for:
 
-- local authorization cache
-- coordination
-- session-adjacent app state
+- low-latency coordination/cache/session-adjacent state.
 
-But if the Durable Object cache can be stale, then either:
+Rule:
 
-- bootstrap must synchronously seed it before redirect
-- or app entry must be able to repair from durable truth on first use
+- first app authorization must succeed from durable truth directly (D1/DO SQLite), or from synchronous repair from that durable truth.
+- never block first correctness on async queue catch-up.
 
-Otherwise the first request race remains.
+## Implementation Decision
 
-## Background Repair, Reframed
+From first principles and Cloudflare primitives, the proper solution is:
 
-Background repair is optional and secondary.
+1. **Workflow-run bootstrap state machine** for crash-safe orchestration.
+2. **Durable bootstrap status record** for gate control-plane truth.
+3. **Protected-route gate enforcement** so auth completion cannot bypass bootstrap completion.
+4. **Read-before-retry convergent writes** for all ambiguous failures.
 
-If it exists, its role is:
-
-- recover from crashes after the auth boundary was crossed but before bootstrap completed
-- fix rare lost projection updates
-- improve operational safety
-
-Its role is not:
-
-- making first login work
-- making the app usable after redirect
-
-That distinction matters.
-
-## Real Architectural Conclusion
-
-The real problem is not just that the APIs are discrete.
-
-The real problem is this:
-
-> there is no single synchronous owner between "auth succeeded" and "user may enter app"
-
-That is the thing that must be fixed.
-
-## Recommendation
-
-## Primary recommendation
-
-Implement a single bootstrap owner at the auth boundary.
-
-That owner should:
-
-1. run synchronously before app entry
-2. evaluate durable invariants
-3. issue one Better Auth write at a time
-4. re-read durable truth after every write or failure
-5. only redirect when the account is actually usable
-
-## Secondary recommendation
-
-Make projection state non-authoritative for first app entry.
-
-That means either:
-
-1. seed the authorization projection synchronously before redirect
-2. or allow first-use synchronous repair from durable truth
-
-## Tertiary recommendation
-
-If desired, add an on-demand or scheduled repair path as a safety net, but do not confuse that with the primary solution.
-
-## Bottom Line
-
-Given discrete Better Auth calls that may partially succeed, the viable first-principles design is:
-
-> one synchronous bootstrap state machine, owned by the auth-to-app handoff, driven by durable invariants, with read-before-retry after every ambiguous failure.
-
-Anything weaker still leaves a real window where the user is authenticated but the system is unusable.
+Anything weaker leaves a real, user-visible broken state: authenticated but unusable.
