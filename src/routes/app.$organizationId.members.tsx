@@ -50,7 +50,7 @@ export const Route = createFileRoute("/app/$organizationId/members")({
   component: RouteComponent,
 });
 
-const getLoaderData = createServerFn({ method: "GET" })
+export const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
   .handler(({ data: { organizationId }, context: { runEffect } }) =>
     runEffect(
@@ -95,7 +95,7 @@ const getLoaderData = createServerFn({ method: "GET" })
 /**
  * Authorization is enforced by better-auth removeMember.
  */
-const removeMember = createServerFn({ method: "POST" })
+export const removeMember = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(removeMemberSchema))
   .handler(({ data: { organizationId, memberId }, context: { runEffect } }) =>
     runEffect(

@@ -1,11 +1,17 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["./**/*.ts", "./**/*.d.ts", "../worker-configuration.d.ts"],
+  "include": [
+    "./**/*.ts",
+    "./**/*.d.ts",
+    "../worker-configuration.d.ts",
+    "../src/routeTree.gen.ts"
+  ],
   "exclude": [],
   "compilerOptions": {
     "types": [
       "vitest",
       "node",
+      "vite/client",
       "@cloudflare/vitest-pool-workers",
       "@cloudflare/vitest-pool-workers/types",
       "@playwright/test"

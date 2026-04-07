@@ -57,18 +57,31 @@ export const callServerFn = Effect.fn("callServerFn")(
   function*<TInputValidator, TResponse>({
     serverFn,
     data,
+    headers,
   }: {
     serverFn: ServerFn<TInputValidator, TResponse>;
     data: Parameters<ServerFn<TInputValidator, TResponse>>[0]["data"];
+    headers?: HeadersInit;
   }): Effect.fn.Return<Awaited<TResponse>, Error> {
     return yield* Effect.promise(() => {
       if (!serverFn.serverFnMeta)
         throw new Error("Missing serverFnMeta in integration test");
       const clientRpc = createClientRpc(serverFn.serverFnMeta.id);
-      const fetchServerFn = (url: string, init?: RequestInit) =>
-        exports.default.fetch(
-          new Request(new URL(url, "http://w"), init),
+      const fetchServerFn = (url: string, init?: RequestInit) => {
+        const mergedHeaders = new Headers(init?.headers);
+        if (headers) {
+          const extraHeaders = new Headers(headers);
+          for (const [key, value] of extraHeaders.entries()) {
+            mergedHeaders.set(key, value);
+          }
+        }
+        return exports.default.fetch(
+          new Request(new URL(url, "http://w"), {
+            ...init,
+            headers: mergedHeaders,
+          }),
         );
+      };
       return runWithStartContext(
         {
           contextAfterGlobalMiddlewares: {},
@@ -222,4 +235,3 @@ export function assertAgentRpcFailure(
 ): asserts response is RPCResponse & { success: false } {
   assertFalse(response.success);
 }
-

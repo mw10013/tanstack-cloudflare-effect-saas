@@ -62,7 +62,7 @@ export const Route = createFileRoute("/app/$organizationId/invitations")({
   component: RouteComponent,
 });
 
-const getLoaderData = createServerFn({ method: "GET" })
+export const getLoaderData = createServerFn({ method: "GET" })
   .inputValidator(Schema.toStandardSchemaV1(organizationIdSchema))
   .handler(({ data: { organizationId }, context: { runEffect } }) =>
     runEffect(
@@ -157,7 +157,7 @@ const invitationIdSchema = Schema.Struct({ invitationId: Domain.Invitation.field
 /**
  * Authorization is enforced by better-auth createInvitation.
  */
-const invite = createServerFn({ method: "POST" })
+export const invite = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(inviteSchema))
   .handler(
     ({ data: { organizationId, emails, role }, context: { runEffect } }) =>

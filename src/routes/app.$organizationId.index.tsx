@@ -66,7 +66,7 @@ const getLoaderData = createServerFn({ method: "GET" })
     );
   });
 
-const acceptInvitation = createServerFn({ method: "POST" })
+export const acceptInvitation = createServerFn({ method: "POST" })
   .inputValidator(Schema.toStandardSchemaV1(acceptInvitationSchema))
   .handler(
     ({ data: { invitationId, organizationId }, context: { runEffect } }) =>

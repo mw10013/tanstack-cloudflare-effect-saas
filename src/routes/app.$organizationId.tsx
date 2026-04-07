@@ -45,7 +45,7 @@ import { Auth, signOutServerFn } from "@/lib/Auth";
 import { OrganizationAgentProvider } from "@/lib/OrganizationAgentContext";
 import { Request } from "@/lib/Request";
 
-const switchOrganizationServerFn = createServerFn({ method: "POST" })
+export const switchOrganizationServerFn = createServerFn({ method: "POST" })
   .inputValidator((organizationId: string) => organizationId)
   .handler(({ data: organizationId, context: { runEffect } }) =>
     runEffect(
