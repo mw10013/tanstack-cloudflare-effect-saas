@@ -11,10 +11,10 @@ import { OrganizationRepository } from "@/lib/OrganizationRepository";
 import type { OrganizationAgent } from "@/organization-agent";
 
 const makeInvoiceId = (value: string = crypto.randomUUID()) =>
-  Schema.decodeSync(OrganizationDomain.InvoiceId)(value);
+  Schema.decodeSync(OrganizationDomain.Invoice.fields.id)(value);
 
 const makeInvoiceItemId = (value: string = crypto.randomUUID()) =>
-  Schema.decodeSync(OrganizationDomain.InvoiceItemId)(value);
+  Schema.decodeSync(OrganizationDomain.InvoiceItem.fields.id)(value);
 
 const runInOrg = <A>(
   name: string,

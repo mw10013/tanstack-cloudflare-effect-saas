@@ -211,7 +211,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
           for (let i = 0; i < invoiceItems.length; i++) {
             const item = invoiceItems[i];
             const id = yield* Schema.decodeUnknownEffect(
-              OrganizationDomain.InvoiceItemId,
+              OrganizationDomain.InvoiceItem.fields.id,
             )(crypto.randomUUID());
             const order = i + 1;
             yield* sql`
@@ -274,7 +274,7 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
             for (let i = 0; i < input.invoiceItems.length; i++) {
               const item = input.invoiceItems[i];
               const id = yield* Schema.decodeUnknownEffect(
-                OrganizationDomain.InvoiceItemId,
+                OrganizationDomain.InvoiceItem.fields.id,
               )(crypto.randomUUID());
               const order = i + 1;
               yield* sql`

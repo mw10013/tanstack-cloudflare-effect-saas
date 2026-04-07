@@ -14,7 +14,9 @@ import {
   login,
 } from "../TestUtils";
 
-const InvoiceIdResult = Schema.Struct({ invoiceId: OrganizationDomain.InvoiceId });
+const InvoiceIdResult = Schema.Struct({
+  invoiceId: OrganizationDomain.Invoice.fields.id,
+});
 
 const configLayer = Layer.succeedServices(
   ServiceMap.make(

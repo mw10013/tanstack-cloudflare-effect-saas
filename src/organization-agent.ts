@@ -27,7 +27,6 @@ import {
 } from "@/lib/OrganizationAgentSchemas";
 import {
   Invoice as InvoiceSchema,
-  InvoiceId,
   InvoiceLimitExceededError,
   OrganizationAgentError,
   activeWorkflowStatuses,
@@ -47,7 +46,7 @@ const MAX_BASE64_SIZE = Math.ceil((10_000_000 * 4) / 3) + 4;
 
 const r2ObjectCustomMetadataSchema = Schema.Struct({
   organizationId: Schema.NonEmptyString,
-  invoiceId: InvoiceId,
+  invoiceId: InvoiceSchema.fields.id,
   idempotencyKey: InvoiceSchema.fields.idempotencyKey.pipe(
     Schema.refine(Predicate.isNotNull),
   ),
@@ -300,7 +299,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
             limit: invoiceLimit,
             message: `Invoice limit of ${String(invoiceLimit)} reached`,
           });
-        const invoiceId = yield* Schema.decodeUnknownEffect(InvoiceId)(
+        const invoiceId = yield* Schema.decodeUnknownEffect(InvoiceSchema.fields.id)(
           crypto.randomUUID(),
         );
         yield* repo.createInvoice(invoiceId);
@@ -374,7 +373,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           return yield* new OrganizationAgentError({
             message: "Invalid file type",
           });
-        const invoiceId = yield* Schema.decodeUnknownEffect(InvoiceId)(
+        const invoiceId = yield* Schema.decodeUnknownEffect(InvoiceSchema.fields.id)(
           crypto.randomUUID(),
         );
         const idempotencyKey = crypto.randomUUID();
