@@ -1,28 +1,37 @@
-import { Agent, callable, getCurrentAgent } from "agents";
 import type { Connection, ConnectionContext } from "agents";
-import { Config, ConfigProvider, Effect, Layer, Option, ServiceMap } from "effect";
-import * as Schema from "effect/Schema";
-import { SqliteClient } from "@effect/sql-sqlite-do";
 
 import type { ActivityMessage } from "@/lib/Activity";
+import type * as Domain from "@/lib/Domain";
+import type { InvoiceExtractionSchema } from "@/lib/InvoiceExtraction";
+import type { Invoice } from "@/lib/OrganizationDomain";
+
+import { SqliteClient } from "@effect/sql-sqlite-do";
+import { Agent, callable, getCurrentAgent } from "agents";
+import {
+  Config,
+  ConfigProvider,
+  Effect,
+  Layer,
+  Option,
+  ServiceMap,
+} from "effect";
+import * as Schema from "effect/Schema";
+
 import { ActivityAction } from "@/lib/Activity";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
-import { makeLoggerLayer } from "@/lib/LayerEx";
-import type { InvoiceExtractionSchema } from "@/lib/InvoiceExtraction";
-import type * as Domain from "@/lib/Domain";
-import type { Invoice } from "@/lib/OrganizationDomain";
-import {
-  InvoiceId,
-  InvoiceLimitExceededError,
-  OrganizationAgentError,
-  activeWorkflowStatuses,
-} from "@/lib/OrganizationDomain";
+import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import {
   DeleteInvoiceInput,
   GetInvoiceInput,
   UpdateInvoiceInput,
   UploadInvoiceInput,
 } from "@/lib/OrganizationAgentSchemas";
+import {
+  InvoiceId,
+  InvoiceLimitExceededError,
+  OrganizationAgentError,
+  activeWorkflowStatuses,
+} from "@/lib/OrganizationDomain";
 import { OrganizationRepository } from "@/lib/OrganizationRepository";
 import { R2 } from "@/lib/R2";
 
@@ -34,7 +43,7 @@ const invoiceMimeTypes = [
   "image/gif",
 ] as const;
 
-const MAX_BASE64_SIZE = Math.ceil(10_000_000 * 4 / 3) + 4;
+const MAX_BASE64_SIZE = Math.ceil((10_000_000 * 4) / 3) + 4;
 
 const makeRunEffect = (ctx: DurableObjectState, env: Env) => {
   const sqliteLayer = SqliteClient.layer({ db: ctx.storage.sql });
@@ -42,16 +51,10 @@ const makeRunEffect = (ctx: DurableObjectState, env: Env) => {
     OrganizationRepository.layer,
     sqliteLayer,
   );
-  const envLayer = Layer.succeedServices(
-    ServiceMap.make(CloudflareEnv, env).pipe(
-      ServiceMap.add(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env)),
-    ),
-  );
-  const r2Layer = Layer.provideMerge(R2.layer, envLayer);
+  const r2Layer = Layer.provideMerge(R2.layer, makeEnvLayer(env));
   const layer = Layer.mergeAll(repoLayer, r2Layer, makeLoggerLayer(env));
-  return <A, E>(
-    effect: Effect.Effect<A, E, Layer.Success<typeof layer>>,
-  ) => Effect.runPromise(Effect.provide(effect, layer));
+  return <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>) =>
+    Effect.runPromise(Effect.provide(effect, layer));
 };
 
 export interface OrganizationAgentState {
@@ -103,7 +106,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     message: "Organization agent ready",
   };
 
-  private declare runEffect: ReturnType<typeof makeRunEffect>;
+  declare private runEffect: ReturnType<typeof makeRunEffect>;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -152,8 +155,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       userId text primary key,
       role text not null
     )`;
-    void this.sql`create index if not exists Invoice_createdAt_idx on Invoice(createdAt)`;
-    void this.sql`create index if not exists InvoiceItem_invoiceId_order_idx on InvoiceItem(invoiceId, "order")`;
+    void this
+      .sql`create index if not exists Invoice_createdAt_idx on Invoice(createdAt)`;
+    void this
+      .sql`create index if not exists InvoiceItem_invoiceId_order_idx on InvoiceItem(invoiceId, "order")`;
     this.runEffect = makeRunEffect(ctx, env);
   }
 
@@ -211,11 +216,17 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           Option.isSome(existing) &&
           existing.value.idempotencyKey !== null &&
           existing.value.idempotencyKey === upload.idempotencyKey &&
-          (existing.value.status === "ready" || existing.value.status === "error")
+          (existing.value.status === "ready" ||
+            existing.value.status === "error")
         )
           return;
         const name = upload.fileName.replace(/\.[^.]+$/, "");
-        yield* repo.upsertInvoice({ ...upload, name, r2ActionTime, status: "extracting" });
+        yield* repo.upsertInvoice({
+          ...upload,
+          name,
+          r2ActionTime,
+          status: "extracting",
+        });
         yield* Effect.tryPromise({
           try: () =>
             this.runWorkflow(
@@ -255,7 +266,10 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         const repo = yield* OrganizationRepository;
         const count = yield* repo.countInvoices();
         if (count >= invoiceLimit)
-          return yield* new InvoiceLimitExceededError({ limit: invoiceLimit, message: `Invoice limit of ${String(invoiceLimit)} reached` });
+          return yield* new InvoiceLimitExceededError({
+            limit: invoiceLimit,
+            message: `Invoice limit of ${String(invoiceLimit)} reached`,
+          });
         const invoiceId = yield* Schema.decodeUnknownEffect(InvoiceId)(
           crypto.randomUUID(),
         );
@@ -275,12 +289,16 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
         yield* authorizeConnection();
-        const data = yield* Schema.decodeUnknownEffect(UpdateInvoiceInput)(input);
+        const data =
+          yield* Schema.decodeUnknownEffect(UpdateInvoiceInput)(input);
         const repo = yield* OrganizationRepository;
-        const invoice = yield* repo.updateInvoice(data).pipe(
-          Effect.map(Option.getOrNull),
-        );
-        if (!invoice) return yield* new OrganizationAgentError({ message: "Invoice not found after update" });
+        const invoice = yield* repo
+          .updateInvoice(data)
+          .pipe(Effect.map(Option.getOrNull));
+        if (!invoice)
+          return yield* new OrganizationAgentError({
+            message: "Invoice not found after update",
+          });
         return invoice;
       }),
     );
@@ -303,23 +321,38 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   uploadInvoice(input: typeof UploadInvoiceInput.Type) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
-        const data = yield* Schema.decodeUnknownEffect(UploadInvoiceInput)(input);
+        const data =
+          yield* Schema.decodeUnknownEffect(UploadInvoiceInput)(input);
         yield* authorizeConnection();
         const invoiceLimit = yield* Config.number("INVOICE_LIMIT");
         const repo = yield* OrganizationRepository;
         const count = yield* repo.countInvoices();
         if (count >= invoiceLimit)
-          return yield* new InvoiceLimitExceededError({ limit: invoiceLimit, message: `Invoice limit of ${String(invoiceLimit)} reached` });
+          return yield* new InvoiceLimitExceededError({
+            limit: invoiceLimit,
+            message: `Invoice limit of ${String(invoiceLimit)} reached`,
+          });
         if (data.base64.length > MAX_BASE64_SIZE)
-          return yield* new OrganizationAgentError({ message: "File too large" });
-        if (!invoiceMimeTypes.includes(data.contentType as (typeof invoiceMimeTypes)[number]))
-          return yield* new OrganizationAgentError({ message: "Invalid file type" });
+          return yield* new OrganizationAgentError({
+            message: "File too large",
+          });
+        if (
+          !invoiceMimeTypes.includes(
+            data.contentType as (typeof invoiceMimeTypes)[number],
+          )
+        )
+          return yield* new OrganizationAgentError({
+            message: "Invalid file type",
+          });
         const invoiceId = yield* Schema.decodeUnknownEffect(InvoiceId)(
           crypto.randomUUID(),
         );
         const idempotencyKey = crypto.randomUUID();
         const key = `${this.name}/invoices/${invoiceId}`;
-        const bytes = Uint8Array.from(atob(data.base64), (c) => c.codePointAt(0) ?? 0);
+        const bytes = Uint8Array.from(
+          atob(data.base64),
+          (c) => c.codePointAt(0) ?? 0,
+        );
         const r2 = yield* R2;
         yield* r2.put(key, bytes, {
           httpMetadata: { contentType: data.contentType },
@@ -364,11 +397,16 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
         yield* authorizeConnection();
-        const { invoiceId } = yield* Schema.decodeUnknownEffect(DeleteInvoiceInput)(input);
+        const { invoiceId } =
+          yield* Schema.decodeUnknownEffect(DeleteInvoiceInput)(input);
         const repo = yield* OrganizationRepository;
         const invoice = yield* repo.findInvoice(invoiceId);
         if (Option.isNone(invoice)) return;
-        if (invoice.value.status !== "ready" && invoice.value.status !== "error") return;
+        if (
+          invoice.value.status !== "ready" &&
+          invoice.value.status !== "error"
+        )
+          return;
         const { Q: queue } = yield* CloudflareEnv;
         if (!queue)
           return yield* new OrganizationAgentError({
@@ -451,7 +489,11 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
       Effect.gen({ self: this }, function* () {
         if (workflowName !== "INVOICE_EXTRACTION_WORKFLOW") return;
         const result = Schema.decodeUnknownExit(
-          Schema.Struct({ action: ActivityAction, level: Schema.Literals(["info", "success", "error"]), text: Schema.String }),
+          Schema.Struct({
+            action: ActivityAction,
+            level: Schema.Literals(["info", "success", "error"]),
+            text: Schema.String,
+          }),
         )(progress);
         if (result._tag === "Failure") return;
         yield* broadcastActivity(this, result.value);
@@ -496,31 +538,32 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     return this.runEffect(
       Effect.gen(function* () {
         yield* authorizeConnection();
-        const { invoiceId } = yield* Schema.decodeUnknownEffect(GetInvoiceInput)(input);
+        const { invoiceId } =
+          yield* Schema.decodeUnknownEffect(GetInvoiceInput)(input);
         const repo = yield* OrganizationRepository;
-        return yield* repo.getInvoice(invoiceId).pipe(
-          Effect.map(Option.getOrNull),
-        );
+        return yield* repo
+          .getInvoice(invoiceId)
+          .pipe(Effect.map(Option.getOrNull));
       }),
     );
   }
 }
 
-const getConnectionIdentity = Effect.fn("OrganizationAgent.getConnectionIdentity")(
-  function* () {
-    const { agent, connection } = getCurrentAgent<OrganizationAgent>();
-    const identity = connection?.state as
-      | OrganizationAgentConnectionState
-      | null
-      | undefined;
-    if (!agent || !identity?.userId) {
-      return yield* new OrganizationAgentError({
-        message: "Unauthorized",
-      });
-    }
-    return identity;
-  },
-);
+const getConnectionIdentity = Effect.fn(
+  "OrganizationAgent.getConnectionIdentity",
+)(function* () {
+  const { agent, connection } = getCurrentAgent<OrganizationAgent>();
+  const identity = connection?.state as
+    | OrganizationAgentConnectionState
+    | null
+    | undefined;
+  if (!agent || !identity?.userId) {
+    return yield* new OrganizationAgentError({
+      message: "Unauthorized",
+    });
+  }
+  return identity;
+});
 
 const authorizeConnection = Effect.fn("OrganizationAgent.authorizeConnection")(
   function* () {
