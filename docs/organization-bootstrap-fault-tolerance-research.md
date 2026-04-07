@@ -222,6 +222,329 @@ Rule:
 - first app authorization must succeed from durable truth directly (D1/DO SQLite), or from synchronous repair from that durable truth.
 - never block first correctness on async queue catch-up.
 
+## Current Magic Link Callback Flow (As Implemented)
+
+This section describes the exact runtime flow in this repo so callback behavior is concrete.
+
+### Terminology clarification (important)
+
+There are two different routes involved and they are easy to confuse:
+
+1. **Magic-link verify endpoint**: `/api/auth/magic-link/verify`
+   - This is the Better Auth endpoint that consumes token/state and performs auth/session work.
+   - It is handled by `src/routes/api/auth/$.tsx` -> `auth.handler(request)`.
+2. **`callbackURL` target**: `/magic-link`
+   - This is the post-verify redirect destination configured in `signInMagicLink`.
+   - In this app, `/magic-link` only checks session and redirects to `/app` or `/admin`.
+
+So your point is correct: hooks/session creation happen during **verify endpoint** handling, before landing on `/magic-link`.
+
+Relevant code:
+
+- `src/routes/api/auth/$.tsx`
+- `src/lib/Auth.ts`
+- `src/lib/Login.ts`
+- `src/routes/magic-link.tsx`
+- `src/worker.ts`
+
+### Where each route runs
+
+- Both routes run server-side in the Worker `fetch` pipeline.
+- `/api/auth/magic-link/verify` runs through Better Auth handler.
+- `/magic-link` runs TanStack route loader `src/routes/magic-link.tsx`.
+
+### What happens when user clicks magic link
+
+Browser-side events:
+
+1. user clicks the URL from email (or demo link shown on `/login`);
+2. browser performs full navigation to `/api/auth/magic-link/verify?...`;
+3. browser follows redirect responses automatically;
+4. browser stores auth cookies from `Set-Cookie` headers automatically.
+
+Server-side events:
+
+1. Worker handles `GET /api/auth/magic-link/verify`;
+2. request is routed to `src/routes/api/auth/$.tsx` server handler;
+3. handler calls `auth.handler(request)`;
+4. Better Auth verifies token, resolves/creates user/session, runs related hooks, sets session cookie;
+5. Better Auth redirects to configured `callbackURL` (`/magic-link` in this app);
+6. browser requests `/magic-link`;
+7. `/magic-link` loader calls `auth.getSession(headers)` and redirects to `/app` or `/admin`.
+
+### Mermaid: verify endpoint vs callbackURL target
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant W as Worker fetch
+  participant L as POST /login server fn
+  participant BA as Better Auth handler/API
+  participant K as KV
+  participant C as GET /magic-link loader
+
+  B->>W: POST /login { email }
+  W->>L: run login server fn
+  L->>BA: auth.api.signInMagicLink(email, callbackURL=/magic-link)
+  BA->>K: sendMagicLink hook stores demo:magicLink
+  BA-->>L: status=true
+  L-->>B: success (demo may include magic link URL)
+
+  B->>W: GET /api/auth/magic-link/verify?token=...
+  W->>BA: route /api/auth/$ -> auth.handler(request)
+  BA->>BA: verify token
+  BA->>BA: run hooks/session work
+  BA->>BA: set cookie
+  BA-->>B: 302 Location: /magic-link + Set-Cookie
+
+  B->>W: GET /magic-link (cookie attached)
+  W->>C: run loader server fn
+  C->>BA: auth.getSession(headers)
+  BA-->>C: session user
+  C-->>B: redirect /app or /admin
+```
+
+### Why this matters for fault tolerance
+
+- In this repo's happy path, verify endpoint success is a strong signal that setup ran:
+  - Better Auth `databaseHooks` run in the request lifecycle and `after` hooks run after create/update operations.
+  - This code creates organization in `user.create.after` and backfills session `activeOrganizationId` for null sessions.
+- So if `/api/auth/magic-link/verify` returns success and redirects, session + org context are usually already prepared before `/magic-link`.
+- Fault-tolerance concern is not "/magic-link ran but setup did not" in normal flow. The concern is interruption before successful verify completion, plus rare partial-commit/error windows.
+- Therefore protected routes should still enforce a durable bootstrap gate as recovery and correctness boundary, especially for crash/retry/concurrent-tab edge cases.
+
+## Concrete Implementation Sketch
+
+This section is the non-handwavy version.
+
+### 1) Durable schema (D1 or DO SQLite)
+
+```sql
+create table if not exists bootstrap_control (
+  user_id text primary key,
+  generation integer not null default 1,
+  status text not null check (status in (
+    'not_started',
+    'running',
+    'complete',
+    'failed_retryable',
+    'failed_terminal'
+  )),
+  workflow_instance_id text,
+  auth_seen_at integer,
+  bootstrap_started_at integer,
+  bootstrap_completed_at integer,
+  last_completed_step text,
+  last_error_code text,
+  last_error_message text,
+  updated_at integer not null,
+  version integer not null default 0
+);
+
+create index if not exists idx_bootstrap_status on bootstrap_control(status);
+```
+
+```sql
+create table if not exists bootstrap_events (
+  id text primary key,
+  user_id text not null,
+  generation integer not null,
+  event_type text not null,
+  payload_json text,
+  created_at integer not null
+);
+```
+
+`bootstrap_control` is gate authority. `bootstrap_events` is optional observability/audit.
+
+### 2) Deterministic workflow identity
+
+- `workflow_instance_id = org-bootstrap:${userId}:v${generation}`
+- Use this ID everywhere so duplicate triggers converge to one runner.
+- If `create()` returns duplicate ID error, treat as already running and continue.
+
+### 3) Auth-side integration (best-effort starter, not sole owner)
+
+In Better Auth `after` hook on sign-in/session creation:
+
+1. upsert `bootstrap_control` row if missing;
+2. set `auth_seen_at = now`;
+3. if status is not `complete`, call `ensureBootstrapStarted(userId)`;
+4. redirect user to `/bootstrap`.
+
+Important: this hook is optimization. Correctness does not depend on it succeeding.
+
+### 4) Gate-side integration (actual correctness owner)
+
+On every protected app entry (server loader/middleware):
+
+1. require authenticated session;
+2. read `bootstrap_control` by `user_id`;
+3. if missing or status != `complete`, call `ensureBootstrapStarted(userId)` and redirect to `/bootstrap`;
+4. only allow route if status == `complete`.
+
+This closes the crash hole: auth can complete, process can die, and next protected request still repairs and gates.
+
+### 5) `/bootstrap` route behavior
+
+Server loader:
+
+1. require session;
+2. call `ensureBootstrapStarted(userId)`;
+3. return current `bootstrap_control` state.
+
+Client behavior:
+
+1. poll `/api/bootstrap/status` every 1-2s;
+2. when status becomes `complete`, redirect to app home;
+3. if `failed_terminal`, render support/retry UX.
+
+### 6) Workflow contract (step-by-step)
+
+Each step is strictly:
+
+1. read durable truth;
+2. if invariant already true, return;
+3. one write;
+4. read again;
+5. verify invariant;
+6. throw retryable/non-retryable error accordingly.
+
+Workflow steps:
+
+1. `resolve-org`
+   - find existing org by app policy, else create;
+2. `ensure-membership`
+   - verify required role policy (`owner` or `admin` config-aware), create/repair if needed;
+3. `ensure-org-context`
+   - set session active org if app requires session-persisted active org;
+   - otherwise persist deterministic fallback context used by app auth path;
+4. `authz-probe`
+   - run the same authorization read used by first protected request;
+5. `mark-complete`
+   - set `status='complete'`, set `bootstrap_completed_at`, clear error fields.
+
+### 7) `ensureBootstrapStarted(userId)` behavior
+
+Pseudo-logic:
+
+```ts
+async function ensureBootstrapStarted(userId: string) {
+  const now = Date.now()
+  let row = await db.getBootstrapControl(userId)
+
+  if (!row) {
+    await db.insertBootstrapControl({
+      userId,
+      status: "not_started",
+      updatedAt: now,
+    })
+    row = await db.getBootstrapControl(userId)
+  }
+
+  if (row.status === "complete") return row
+
+  const instanceId = `org-bootstrap:${userId}:v${row.generation}`
+
+  try {
+    await env.BOOTSTRAP_WORKFLOW.create({
+      id: instanceId,
+      params: { userId, generation: row.generation },
+    })
+  } catch (error) {
+    if (!isDuplicateWorkflowIdError(error)) throw error
+  }
+
+  await db.updateBootstrapControl(userId, {
+    status: "running",
+    workflowInstanceId: instanceId,
+    bootstrapStartedAt: row.bootstrapStartedAt ?? now,
+    updatedAt: now,
+  })
+
+  return await db.getBootstrapControl(userId)
+}
+```
+
+### 8) Mermaid: happy path
+
+```mermaid
+sequenceDiagram
+  participant U as User Browser
+  participant A as Better Auth Callback
+  participant DB as D1/DO SQLite
+  participant W as Workflow Engine
+  participant G as Bootstrap Gate Route
+
+  U->>A: OAuth callback / sign-in complete
+  A->>DB: create session (auth success)
+  A->>DB: upsert bootstrap_control(auth_seen_at)
+  A->>W: create workflow(id=org-bootstrap:user:v1)
+  A-->>U: redirect /bootstrap
+
+  U->>G: GET /bootstrap
+  G->>DB: read bootstrap_control
+  G->>W: ensure running (idempotent by deterministic ID)
+  loop poll
+    U->>G: GET /api/bootstrap/status
+    G->>DB: read bootstrap_control
+    DB-->>G: status=running|complete
+    G-->>U: status response
+  end
+  U->>U: status becomes complete
+  U->>G: navigate /app
+  G->>DB: verify status=complete
+  G-->>U: allow app entry
+```
+
+### 9) Mermaid: crash after auth, before bootstrap start
+
+```mermaid
+sequenceDiagram
+  participant U as User Browser
+  participant A as Better Auth Callback
+  participant DB as D1/DO SQLite
+  participant G as Protected Route Gate
+  participant W as Workflow Engine
+
+  U->>A: sign-in callback
+  A->>DB: create session
+  A--xA: crash before workflow create
+
+  U->>G: GET /app/deep-link
+  G->>DB: read bootstrap_control
+  DB-->>G: missing or not complete
+  G->>W: create workflow(id=org-bootstrap:user:v1)
+  G->>DB: set status=running
+  G-->>U: redirect /bootstrap
+
+  U->>G: GET /bootstrap
+  G->>DB: poll status
+  DB-->>G: complete
+  G-->>U: redirect /app/deep-link
+```
+
+### 10) Mermaid: state machine
+
+```mermaid
+stateDiagram-v2
+  [*] --> not_started
+  not_started --> running: ensure/start
+  running --> complete: all invariants true
+  running --> failed_retryable: retries exhausted
+  failed_retryable --> running: ensure/resume
+  running --> failed_terminal: non-retryable failure
+  complete --> [*]
+```
+
+### 11) Why this is fault-tolerant for both auth and bootstrap
+
+- Auth is fault-tolerant because session durability is independent and gate re-checks durable bootstrap status later.
+- Bootstrap is fault-tolerant because runner state is durable (Workflow checkpoints + durable control row), not in-memory.
+- Combined safety holds because protected routes require both conditions:
+  1. authenticated session exists;
+  2. durable bootstrap status is `complete`.
+
 ## Implementation Decision
 
 From first principles and Cloudflare primitives, the proper solution is:
