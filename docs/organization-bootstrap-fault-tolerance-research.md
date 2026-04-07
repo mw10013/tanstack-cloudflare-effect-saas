@@ -1,372 +1,264 @@
 # Organization Bootstrap Fault Tolerance Research
 
-## Problem
+## TL;DR
 
-The current first-user bootstrap path is not fault tolerant.
+- We have to use Better Auth APIs for the writes that create auth, organization, and membership state.
+- We should assume any Better Auth API call can fail after partially succeeding.
+- That means blind retries are unsafe.
+- The viable solution is not atomicity. The viable solution is convergence.
+- Convergence here means: after any failure, re-read authoritative D1 state, decide what is still missing, and continue from the first unmet invariant.
+- The DO-local `Member` table cannot be authoritative. It has to be a repairable projection of D1.
+- A background reconciler is required, because [src/lib/Auth.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Auth.ts#L121-L191) starts bootstrap from a post-commit Better Auth hook, so the trigger itself can be lost.
 
-Observed symptom: a freshly logged-in user can reach the organization agent before the DO-local `Member` cache has been updated, producing:
+## Current Failure
+
+Current bootstrap logic in [src/lib/Auth.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Auth.ts#L121-L191):
+
+1. Better Auth creates the user.
+2. `databaseHooks.user.create.after` runs.
+3. It calls `organizationApiCreate(...)`.
+4. It backfills `activeOrganizationId` for sessions.
+5. It sends `MembershipSync` to the queue.
+
+Observed failure in [src/organization-agent.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/organization-agent.ts#L510-L527):
 
 ```txt
 Forbidden: userId=... not in Member table
 ```
 
-The local reason is in [src/lib/Auth.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Auth.ts#L121-L161):
+That happens because D1 can already contain the org and owner membership while the DO-local cache has not been updated yet.
 
-1. `databaseHooks.user.create.after` runs after user creation
-2. it calls `organizationApiCreate(...)`
-3. it backfills `activeOrganizationId` on sessions
-4. only then does it send the `MembershipSync` queue message
-
-That means the queue message is last in the chain, after Better Auth has already created the org/member rows.
-
-## Current Local Flow
-
-Current bootstrap logic in [src/lib/Auth.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Auth.ts#L121-L191):
+The current queue consumer in [src/worker.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/worker.ts#L232-L285) already treats D1 as truth before updating the DO:
 
 ```ts
-databaseHooks: {
-  user: {
-    create: {
-      after: (user) =>
-        runEffect(
-          Effect.gen(function* () {
-            const org = yield* Effect.tryPromise(() =>
-              organizationApiCreate({ body: { ..., userId: user.id } }),
-            );
-            yield* repository.initializeActiveOrganizationForUserSessions({
-              organizationId,
-              userId,
-            });
-            yield* Effect.tryPromise(() =>
-              queue.send({
-                action: "MembershipSync",
-                organizationId,
-                userId,
-                change: "added",
-              }),
-            );
-          }),
-        ),
-    },
-  },
-}
-```
-
-Also note the session ordering in the same file: [src/lib/Auth.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Auth.ts#L166-L191) tries to set `activeOrganizationId` during `session.create.before`, but for the very first session the organization does not exist yet, so the hook has to be repaired later with `initializeActiveOrganizationForUserSessions(...)`.
-
-That is the first sign the flow is split across phases rather than owned atomically by one application-level orchestration.
-
-## Better Auth Findings
-
-### 1. User signup is transactional, but DB after-hooks are post-transaction
-
-Better Auth signup runs inside `runWithTransaction(...)`.
-
-From [refs/better-auth/packages/better-auth/src/api/routes/sign-up.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/packages/better-auth/src/api/routes/sign-up.ts#L181-L181):
-
-```ts
-return runWithTransaction(ctx.context.adapter, async () => {
-```
-
-And database `create.after` hooks are queued for after the transaction commits.
-
-From [refs/better-auth/packages/better-auth/src/db/with-hooks.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/packages/better-auth/src/db/with-hooks.ts#L60-L67):
-
-```ts
-const toRun = hook[model]?.create?.after;
-if (toRun) {
-  await queueAfterTransactionHook(async () => {
-    await toRun(created as any, context);
-  });
-}
-```
-
-Better Auth's own release notes are explicit.
-
-From [refs/better-auth/docs/content/blogs/1-5.mdx](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/docs/content/blogs/1-5.mdx#L774-L778):
-
-```md
-Database "after" hooks ... now execute after the transaction commits, not during it.
-If your plugin relies on after hooks running inside the transaction for additional atomic database writes, you'll need to use the adapter directly within the main operation instead.
-```
-
-So `databaseHooks.user.create.after` is inherently the wrong place for a queue-first invariant.
-
-### 2. `createOrganization` is a separate org API, not part of user creation
-
-Better Auth's public organization API is a separate endpoint.
-
-From [refs/better-auth/docs/content/docs/plugins/organization.mdx](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/docs/content/docs/plugins/organization.mdx#L71-L114):
-
-```md
-POST /organization/create
-...
-- With session headers: userId is silently ignored.
-- Without session headers (Server-side only): The organization is created for the user specified by userId.
-```
-
-That matches what we are doing now: server-side call without session headers, passing `userId`.
-
-### 3. `createOrganization` does multiple writes inline
-
-From [refs/better-auth/packages/better-auth/src/plugins/organization/routes/crud-org.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/packages/better-auth/src/plugins/organization/routes/crud-org.ts#L179-L278), the route does this in order:
-
-1. create organization
-2. create owner member
-3. maybe create default team
-4. run `afterCreateOrganization`
-5. set active organization on the session
-
-Excerpt:
-
-```ts
-const organization = await adapter.createOrganization(...);
-...
-member = await adapter.createMember(data);
-...
-if (options?.organizationHooks?.afterCreateOrganization) {
-  await options?.organizationHooks.afterCreateOrganization({
-    organization,
-    user,
-    member,
-  });
-}
-
-if (ctx.context.session && !ctx.body.keepCurrentActiveOrganization) {
-  await adapter.setActiveOrganization(..., organization.id, ...);
-}
-```
-
-Important: this route is not wrapped in `runWithTransaction(...)` the way sign-up is. At least in the route implementation, there is no single outer transaction around all those steps.
-
-### 4. Better Auth does provide org lifecycle hooks
-
-Docs: [refs/better-auth/docs/content/docs/plugins/organization.mdx](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/docs/content/docs/plugins/organization.mdx#L168-L190)
-
-```ts
-organizationHooks: {
-  beforeCreateOrganization: async ({ organization, user }) => { ... },
-  afterCreateOrganization: async ({ organization, member, user }) => { ... },
-}
-```
-
-Source types: [refs/better-auth/packages/better-auth/src/plugins/organization/types.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/packages/better-auth/src/plugins/organization/types.ts#L374-L396)
-
-These hooks are cleaner than `databaseHooks.user.create.after` because they run in the organization flow and give direct access to `organization.id` and `member`.
-
-But they still do not solve queue-first by themselves, because `afterCreateOrganization` runs after the org and member already exist.
-
-### 5. `organizationId` is not exposed by the public API before creation
-
-Public docs for `createOrganization` do not expose an `id` input. The documented request body is `name`, `slug`, `logo`, `metadata`, optional `userId`, and `keepCurrentActiveOrganization`: [organization docs](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/docs/content/docs/plugins/organization.mdx#L76-L102).
-
-Internally, though, Better Auth's organization schema has a generated `id`, and the adapter allows caller-supplied IDs:
-
-From [refs/better-auth/packages/better-auth/src/plugins/organization/schema.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/packages/better-auth/src/plugins/organization/schema.ts#L292-L301):
-
-```ts
-export const organizationSchema = z.object({
-  id: z.string().default(generateId),
-  name: z.string(),
-  slug: z.string(),
-  ...
+const d1Member = yield* repository.getMemberByUserAndOrg({
+  userId: notification.userId,
+  organizationId: notification.organizationId,
 });
 ```
 
-From [refs/better-auth/packages/better-auth/src/plugins/organization/adapter.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/packages/better-auth/src/plugins/organization/adapter.ts#L60-L71):
+That is the right instinct. The problem is that authorization still treats the DO cache as authoritative.
+
+## Constraints
+
+These are the constraints that matter:
+
+- We must use Better Auth APIs for the writes.
+- Better Auth organization and membership writes are separate API calls, not one atomic bootstrap call.
+- Any Better Auth API call can fail after side effects.
+- The first session may already exist before the org exists, so session state needs repair.
+- Queue publish can fail.
+- Queue delivery can lag.
+- DO state can be stale.
+
+Those constraints rule out a simple transactional solution.
+
+## What Has To Be True
+
+The bootstrap is done when these invariants are true in source-of-truth order:
+
+1. The user has an owner organization in D1.
+2. Sessions for that user have `activeOrganizationId` set.
+3. The organization DO can authorize the user, either because the local `Member` row is present or because it can be repaired from D1.
+4. The system can resume from crashes without guessing whether a previous Better Auth call already succeeded.
+
+If the workflow always moves toward these invariants, then it is fault tolerant enough even without atomic cross-system commit.
+
+## Recommended Solution
+
+## Use Better Auth For Writes, D1 For Reconciliation
+
+The practical pattern is:
+
+1. Use Better Auth APIs for writes.
+2. Use D1 reads to check what already exists.
+3. After any uncertain failure, re-read D1 before deciding whether to retry.
+4. Never retry a Better Auth write blindly.
+
+This is the key point.
+
+If `createOrganization()` throws, the next move should not be "call `createOrganization()` again". The next move should be "check D1 and see whether the org and owner member already exist".
+
+## Convergent Bootstrap Orchestrator
+
+The bootstrap runner should evaluate invariants step by step.
+
+Each step should follow this shape:
+
+1. Read D1.
+2. If the invariant is already true, skip the write.
+3. If the invariant is false, perform exactly one write action.
+4. Re-read D1.
+5. If the invariant is now true, continue.
+6. If the invariant is still false or the result is unclear, retry later.
+
+That gives us safe recovery from ambiguous failures.
+
+## Concrete Step Logic
+
+## Step 1: Ensure the owner organization exists
+
+Use D1 to check whether the user already owns an org. The existing helper in [src/lib/Repository.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Repository.ts#L64-L79) already does this:
 
 ```ts
-const organization = await adapter.create({
-  model: "organization",
-  data: { ...data.organization, ... },
-  forceAllowId: true,
-});
+select o.* from Organization o where o.id in (
+  select organizationId from Member where userId = ?1 and role = 'owner'
+)
 ```
 
-And `beforeCreateOrganization` can merge arbitrary fields into `orgData` before `adapter.createOrganization(...)`: [crud-org.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/refs/better-auth/packages/better-auth/src/plugins/organization/routes/crud-org.ts#L159-L184).
+Algorithm:
 
-So there is an internal path to force an ID. But it is not part of the public `createOrganization` contract.
+1. Query D1 for an owner org by `userId`.
+2. If found, use it.
+3. If not found, call Better Auth `createOrganization(...)`.
+4. If that call succeeds, re-read D1 and get the org.
+5. If that call fails or times out, re-read D1 before retrying.
+6. Only call `createOrganization(...)` again if D1 still shows no owner org.
 
-## Why The Current Hook Is Not Fault Tolerant
+This is safe even if `createOrganization(...)` is non-idempotent, because the retry decision is based on D1, not on the exception alone.
 
-The failure modes are straightforward.
+## Step 2: Ensure session active organization is set
 
-### Case 1: org creation succeeds, queue send fails
+This is already implemented as an idempotent D1 repair in [src/lib/Repository.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Repository.ts#L81-L106):
 
-Current order:
+```ts
+update Session
+set activeOrganizationId = ?1
+where userId = ?2 and activeOrganizationId is null
+```
 
-1. user transaction commits
-2. `databaseHooks.user.create.after` runs
-3. `organizationApiCreate(...)` writes org/member rows
-4. `initializeActiveOrganizationForUserSessions(...)` updates sessions
-5. `queue.send(MembershipSync)` fails
+Keep this shape.
 
-Result:
+It is good because:
 
-- D1 says the user owns the organization
-- the session points at that organization
-- the DO-local `Member` cache never hears about it
-- first callable can fail with `not in Member table`
+- it is idempotent
+- it only repairs missing session state
+- it does not overwrite later user choices
 
-This is exactly the invariant break we are seeing.
+## Step 3: Ensure membership projection reaches the DO
 
-### Case 2: first agent RPC beats queue processing
+After D1 confirms the membership exists, send `MembershipSync` as best effort.
 
-Even when queue send succeeds, it is async. So the first websocket/RPC can arrive before the queue consumer wakes the org DO and calls `onMembershipChanged(...)`.
+Current send logic is in [src/lib/MembershipSync.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/MembershipSync.ts#L6-L20).
 
-That is a race, not permanent corruption, but it still breaks the user-visible flow.
+This queue send should not be treated as required for correctness. It should be treated as a fast path.
 
-### Case 3: `afterCreateOrganization` is cleaner, but still not queue-first
+If queue send fails, the system still has enough information in D1 to repair later.
 
-Moving the queue send into Better Auth `organizationHooks.afterCreateOrganization` would give us direct access to `organization.id` and `member.userId`.
+## The Critical Change: Read-Repair In Auth
 
-But the ordering would still be:
+The current fatal flaw is that [src/organization-agent.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/organization-agent.ts#L510-L527) does this:
 
-1. org/member written
-2. hook runs
-3. queue send happens
+1. check DO-local `Member`
+2. fail if missing
 
-So it is still not fault tolerant against queue send failure.
+That should become:
 
-## Can We Send The Queue Message Before `createOrganization()`?
+1. check DO-local `Member`
+2. if found, continue
+3. if missing, query D1 membership
+4. if D1 says the user is a member, seed or repair the local DO `Member` row and continue
+5. only fail if D1 also says the user is not a member
 
-### Short answer
+This is the single most important runtime fix because it turns the DO cache into a repairable projection instead of a hard dependency.
 
-Not with Better Auth's public API alone.
+Without this, queue lag will always be user-visible even if the bootstrap orchestrator is otherwise correct.
 
-To send queue first, the producer needs:
+## Why A Background Reconciler Is Required
 
-- `organizationId`
+Even a perfect bootstrap runner is not enough if its trigger can be lost.
+
+The bootstrap currently starts from Better Auth `databaseHooks.user.create.after` in [src/lib/Auth.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Auth.ts#L121-L191). That hook runs after Better Auth commits the user creation.
+
+So this can happen:
+
+1. user row commits
+2. process crashes before org bootstrap is scheduled or finished
+
+At that point the system needs a way to rediscover unfinished bootstrap work from D1 itself.
+
+That is what the reconciler does.
+
+## Reconciler Responsibilities
+
+The reconciler should periodically scan D1 for unmet invariants such as:
+
+- user exists but has no owner org
+- user has owner org but sessions still have `activeOrganizationId is null`
+- D1 membership exists but DO cache is missing or stale
+
+The reconciler can be run by:
+
+- Cloudflare Workflow
+- Durable Object alarm
+- scheduled Worker trigger
+
+Any of those is fine. The important property is that it re-derives required work from D1, not from an in-memory assumption that the original hook completed.
+
+## Optional Job Table
+
+A bootstrap job table is useful, but it is not sufficient by itself.
+
+If we add one, it should track things like:
+
 - `userId`
-- change type (`added`)
+- current status
+- last error
+- next retry time
+- attempt count
 
-We have `userId`. We do not have `organizationId` until Better Auth creates the org.
+That helps observability and backoff.
 
-### The murky internal possibility
+But correctness should not depend only on that table, because the job row itself can be missed if the process dies at the wrong time. The real safety net is the invariant scanner over actual auth and org state.
 
-There is an implementation-detail path:
+## What To Avoid
 
-1. use `organizationHooks.beforeCreateOrganization`
-2. inject a caller-chosen `id`
-3. rely on internal merge behavior plus `forceAllowId: true`
+## Do not blind retry Better Auth writes
 
-That would make queue-first possible in theory.
+This is the main trap.
 
-But it has three problems:
+If `createOrganization()` or future member-add APIs can partially succeed, then retrying just because the call threw is unsafe.
 
-1. it is not documented public API behavior
-2. it couples us to Better Auth internals
-3. we still need some way for the caller to know the exact ID before calling `createOrganization()`
+Always re-read D1 before retrying.
 
-So this looks more like a hack than a solid foundation.
+## Do not make the queue part of the correctness boundary
 
-## Practical Options
+The queue is useful for propagating state. It is not safe to make first-request authorization depend on the queue finishing first.
 
-### Option 1: Keep Better Auth org creation, make auth tolerant of cache lag
+## Do not try to compensate by deleting partial state
 
-Meaning:
+Forward convergence is much safer than trying to roll back partial Better Auth writes.
 
-- keep using Better Auth to create org/member/session state
-- keep queue sync to update the DO-local cache
-- make agent authorization fall back to D1 when the local `Member` row is missing
+If the org already exists and the member already exists, the right move is usually to finish the remaining repair work, not to delete the org and start over.
 
-Pros:
+## Viable End State
 
-- smallest app change
-- fixes both queue lag and first-call race
-- does not depend on Better Auth internals
+The viable end state looks like this:
 
-Cons:
+1. Better Auth APIs remain the only write path for auth and org creation.
+2. Bootstrap runs as a convergent workflow, not a one-shot chain.
+3. Each uncertain failure is resolved by re-reading D1.
+4. Session repair stays idempotent.
+5. Queue sync becomes best-effort acceleration.
+6. Authorization can repair the DO cache from D1 on miss.
+7. A background reconciler scans D1 for unfinished bootstrap and repairs it.
 
-- the DO-local cache is no longer the sole source of truth
-- first miss pays a D1 read
-- does not make the queue path itself fully fault tolerant; it just stops auth from depending on perfect cache propagation
+That combination is practical and compatible with the current architecture.
 
-This is the pragmatic option.
+## Recommended Plan
 
-### Option 2: Move bootstrap out of `databaseHooks.user.create.after`
-
-Meaning:
-
-- stop creating the default organization from the user DB after-hook
-- own the orchestration in application code where we can choose ordering, retries, and idempotency explicitly
-
-Pros:
-
-- clear ownership
-- easier to reason about retries and failures
-- can be made queue-first if we also own ID generation / writes
-
-Cons:
-
-- hard with the current magic-link flow because [src/lib/Login.ts](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-invoice/src/lib/Login.ts#L16-L31) just calls `auth.api.signInMagicLink(...)`; there is no obvious application-level “user created, now provision org” hook in our own code path before the session is used
-- risks reimplementing Better Auth organization behavior
-
-This is the clean architecture option, but it is a bigger redesign.
-
-### Option 3: Use Better Auth internal hook behavior to pre-assign org IDs
-
-Meaning:
-
-- generate `organizationId` ourselves
-- force it through `beforeCreateOrganization`
-- send queue before calling `createOrganization()`
-
-Pros:
-
-- closest to the queue-first invariant you want
-
-Cons:
-
-- undocumented
-- brittle across Better Auth upgrades
-- still awkward to wire from the current post-user-create hook shape
-
-This is technically interesting, but not a safe recommendation.
-
-### Option 4: Move from DB hook to `organizationHooks.afterCreateOrganization`
-
-Meaning:
-
-- leave org creation in Better Auth
-- move sync logic nearer to org creation
-
-Pros:
-
-- cleaner than `databaseHooks.user.create.after`
-- direct access to `organization.id` and `member`
-
-Cons:
-
-- still after-the-fact
-- still not queue-first
-- if the hook throws, the route can fail after some writes already happened
-
-This improves structure, not fault tolerance.
-
-## Recommendation
-
-If the requirement is strict fault tolerance for org bootstrap, then yes: the current `databaseHooks.user.create.after -> createOrganization -> queue.send` chain is fundamentally the wrong shape.
-
-My recommendation:
-
-1. Do not try to make `databaseHooks.user.create.after` queue-first.
-2. Do not rely on undocumented Better Auth ID injection as the primary design.
-3. Treat Better Auth org creation as authoritative D1 state.
-4. Make agent auth resilient to missing/stale DO cache by falling back to D1 membership on cache miss.
-5. Keep queue sync as the fast path / live-update mechanism.
-
-If, later, we want a truly queue-first bootstrap flow, that likely means moving default-org provisioning out of Better Auth's post-user-create database hook and into application-owned orchestration where we own ID generation and write ordering.
+1. Change organization-agent authorization to read-repair from D1 on local cache miss.
+2. Extract bootstrap into an explicit runner that evaluates invariants instead of chaining writes inline.
+3. Keep using Better Auth `createOrganization(...)` for the org write.
+4. Before every retry of that call, check D1 first for an owner org.
+5. Keep the existing idempotent session backfill.
+6. Treat `MembershipSync` as best effort and retriable, not required for correctness.
+7. Add a periodic reconciler that scans D1 for users missing owner org bootstrap or session repair.
 
 ## Bottom Line
 
-Yes, I see the issue.
+Given the constraint that we must call Better Auth APIs and those calls may fail after side effects, the workable solution is:
 
-The current bootstrap path is not fault tolerant because it depends on a post-transaction user hook to call a separate org-creation API and only then emits the membership sync message. Better Auth's public org API does not give us `organizationId` before creation, so “send queue first, then call `createOrganization()`” is not cleanly supported.
+> make bootstrap converge from D1 invariants, not from API-call success responses.
 
-The safe conclusion is:
-
-- current hook chain is structurally weak
-- `afterCreateOrganization` is cleaner but still not queue-first
-- pre-assigning org IDs is possible only through internal behavior
-- the practical fix is to make auth tolerate DO cache misses, or redesign bootstrap ownership entirely
+That is the real fault-tolerant approach available here.
