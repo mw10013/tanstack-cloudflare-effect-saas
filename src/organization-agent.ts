@@ -66,20 +66,28 @@ export const organizationAgentAuthHeaders = {
   userId: "x-organization-agent-user-id",
 } as const;
 
+/**
+ * Broadcasts activity to connected clients as best-effort telemetry.
+ *
+ * Broadcast failures are ignored and never fail the caller.
+ */
 const broadcastActivity = (
   agent: OrganizationAgent,
   input: Pick<ActivityMessage, "action" | "level" | "text">,
 ) =>
-  Effect.sync(() => {
-    agent.broadcast(
-      JSON.stringify({
-        createdAt: new Date().toISOString(),
-        action: input.action,
-        level: input.level,
-        text: input.text,
-      } satisfies ActivityMessage),
-    );
-  });
+  Effect.try({
+    try: () => {
+      agent.broadcast(
+        JSON.stringify({
+          createdAt: new Date().toISOString(),
+          action: input.action,
+          level: input.level,
+          text: input.text,
+        } satisfies ActivityMessage),
+      );
+    },
+    catch: () => null,
+  }).pipe(Effect.catch(() => Effect.succeed(null)));
 
 export const extractAgentInstanceName = (request: Request) => {
   const { pathname } = new URL(request.url);
@@ -208,11 +216,6 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           return;
         const name = upload.fileName.replace(/\.[^.]+$/, "");
         yield* repo.upsertInvoice({ ...upload, name, r2ActionTime, status: "extracting" });
-        yield* broadcastActivity(this, {
-          action: "invoice.uploaded",
-          level: "info",
-          text: `Invoice uploaded: ${upload.fileName}`,
-        });
         yield* Effect.tryPromise({
           try: () =>
             this.runWorkflow(
@@ -233,6 +236,11 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
             new OrganizationAgentError({
               message: cause instanceof Error ? cause.message : String(cause),
             }),
+        });
+        yield* broadcastActivity(this, {
+          action: "invoice.uploaded",
+          level: "info",
+          text: `Invoice uploaded: ${upload.fileName}`,
         });
       }),
     );
