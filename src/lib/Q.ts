@@ -7,7 +7,6 @@ import { D1 } from "@/lib/D1";
 import * as Domain from "@/lib/Domain";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import * as OrganizationDomain from "@/lib/OrganizationDomain";
-import { R2 } from "@/lib/R2";
 import { Repository } from "@/lib/Repository";
 
 const r2PutObjectNotificationSchema = Schema.Struct({
@@ -42,16 +41,6 @@ const queueMessageSchema = Schema.Union([
   membershipSyncQueueMessageSchema,
 ]);
 
-const r2ObjectCustomMetadataSchema = Schema.Struct({
-  organizationId: Domain.Organization.fields.id,
-  invoiceId: OrganizationDomain.Invoice.fields.id,
-  idempotencyKey: OrganizationDomain.InvoiceIdempotencyKey,
-  fileName: OrganizationDomain.Invoice.fields.fileName.check(Schema.isNonEmpty()),
-  contentType: OrganizationDomain.Invoice.fields.contentType.check(
-    Schema.isNonEmpty(),
-  ),
-});
-
 // Queue handlers create stubs directly. Unlike routeAgentRequest(), that path
 // does not populate the Agents SDK instance name, so name-dependent features
 // like workflows can throw until we set it explicitly. See
@@ -71,33 +60,22 @@ const getOrganizationAgentStub = Effect.fn("getOrganizationAgentStub")(
  *
  * This function processes queue messages where `action` is `PutObject`.
  * Cloudflare's R2 notification payload includes `action`, `object.key`, and
- * `eventTime`, so this handler reads object custom metadata via `R2.head()`
- * before forwarding the upload event to the organization Durable Object.
+ * `eventTime`, so this handler routes the event to the organization Durable
+ * Object and leaves R2 metadata reads to `onInvoiceUpload`.
  */
 const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
   notification: typeof r2PutObjectNotificationSchema.Type,
 ) {
-  const r2 = yield* R2;
-  const head = yield* r2.head(notification.object.key);
-  if (Option.isNone(head)) {
-    yield* Effect.logWarning(
-      "R2 object deleted before notification processed",
-      { key: notification.object.key },
-    );
-    return;
-  }
-  const metadata = yield* Schema.decodeUnknownEffect(
-    r2ObjectCustomMetadataSchema,
-  )(head.value.customMetadata ?? {});
-  const stub = yield* getOrganizationAgentStub(metadata.organizationId);
+  const [organizationId] = notification.object.key.split("/", 1);
+  const stub = yield* getOrganizationAgentStub(
+    yield* Schema.decodeUnknownEffect(Domain.Organization.fields.id)(
+      organizationId,
+    ),
+  );
   yield* Effect.tryPromise(() =>
     stub.onInvoiceUpload({
-      invoiceId: metadata.invoiceId,
       r2ActionTime: notification.eventTime,
-      idempotencyKey: metadata.idempotencyKey,
       r2ObjectKey: notification.object.key,
-      fileName: metadata.fileName,
-      contentType: metadata.contentType,
     }),
   );
 });
@@ -194,8 +172,7 @@ const makeRuntimeLayer = (env: Env) => {
   const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
   const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
-  const r2Layer = Layer.provideMerge(R2.layer, envLayer);
-  return Layer.mergeAll(r2Layer, repositoryLayer, makeLoggerLayer(env));
+  return Layer.mergeAll(envLayer, repositoryLayer, makeLoggerLayer(env));
 };
 
 export const queue: ExportedHandler<Env>["queue"] = async (batch, env) => {

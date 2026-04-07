@@ -3,7 +3,7 @@ import type { Connection, ConnectionContext } from "agents";
 import type { ActivityMessage } from "@/lib/Activity";
 import type * as Domain from "@/lib/Domain";
 import type { InvoiceExtractionSchema } from "@/lib/InvoiceExtraction";
-import type { Invoice } from "@/lib/OrganizationDomain";
+import type { Invoice as InvoiceRecord } from "@/lib/OrganizationDomain";
 
 import { SqliteClient } from "@effect/sql-sqlite-do";
 import { Agent, callable, getCurrentAgent } from "agents";
@@ -25,7 +25,9 @@ import {
   UploadInvoiceInput,
 } from "@/lib/OrganizationAgentSchemas";
 import {
+  Invoice as InvoiceSchema,
   InvoiceId,
+  InvoiceIdempotencyKey,
   InvoiceLimitExceededError,
   OrganizationAgentError,
   activeWorkflowStatuses,
@@ -42,6 +44,14 @@ const invoiceMimeTypes = [
 ] as const;
 
 const MAX_BASE64_SIZE = Math.ceil((10_000_000 * 4) / 3) + 4;
+
+const r2ObjectCustomMetadataSchema = Schema.Struct({
+  organizationId: Schema.NonEmptyString,
+  invoiceId: InvoiceId,
+  idempotencyKey: InvoiceIdempotencyKey,
+  fileName: InvoiceSchema.fields.fileName.check(Schema.isNonEmpty()),
+  contentType: InvoiceSchema.fields.contentType.check(Schema.isNonEmpty()),
+});
 
 const makeRunEffect = (ctx: DurableObjectState, env: Env) => {
   const sqliteLayer = SqliteClient.layer({ db: ctx.storage.sql });
@@ -181,15 +191,31 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
    * row without an active workflow is retried to recover from partial failures.
    */
   onInvoiceUpload(upload: {
-    invoiceId: Invoice["id"];
+    r2ObjectKey: InvoiceRecord["r2ObjectKey"];
     r2ActionTime: string;
-    idempotencyKey: NonNullable<Invoice["idempotencyKey"]>;
-    r2ObjectKey: Invoice["r2ObjectKey"];
-    fileName: Invoice["fileName"];
-    contentType: Invoice["contentType"];
   }) {
     return this.runEffect(
       Effect.gen({ self: this }, function* () {
+        const r2 = yield* R2;
+        const head = yield* r2.head(upload.r2ObjectKey);
+        if (Option.isNone(head)) {
+          yield* Effect.logWarning(
+            "R2 object deleted before notification processed",
+            { key: upload.r2ObjectKey },
+          );
+          return;
+        }
+        const metadata = yield* Schema.decodeUnknownEffect(
+          r2ObjectCustomMetadataSchema,
+        )(head.value.customMetadata ?? {});
+        if (metadata.organizationId !== this.name) {
+          yield* Effect.logWarning("onInvoiceUpload.organizationMismatch", {
+            r2ObjectKey: upload.r2ObjectKey,
+            organizationId: metadata.organizationId,
+            agentName: this.name,
+          });
+          return;
+        }
         const r2ActionTime = Date.parse(upload.r2ActionTime);
         if (!Number.isFinite(r2ActionTime)) {
           return yield* new OrganizationAgentError({
@@ -197,14 +223,14 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           });
         }
         const repo = yield* OrganizationRepository;
-        const existing = yield* repo.findInvoice(upload.invoiceId);
+        const existing = yield* repo.findInvoice(metadata.invoiceId);
         if (
           Option.isSome(existing) &&
           existing.value.r2ActionTime !== null &&
           r2ActionTime < existing.value.r2ActionTime
         )
           return;
-        const trackedWorkflow = this.getWorkflow(upload.idempotencyKey);
+        const trackedWorkflow = this.getWorkflow(metadata.idempotencyKey);
         if (
           trackedWorkflow &&
           activeWorkflowStatuses.has(trackedWorkflow.status)
@@ -213,14 +239,18 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         if (
           Option.isSome(existing) &&
           existing.value.idempotencyKey !== null &&
-          existing.value.idempotencyKey === upload.idempotencyKey &&
+          existing.value.idempotencyKey === metadata.idempotencyKey &&
           (existing.value.status === "ready" ||
             existing.value.status === "error")
         )
           return;
-        const name = upload.fileName.replace(/\.[^.]+$/, "");
+        const name = metadata.fileName.replace(/\.[^.]+$/, "");
         yield* repo.upsertInvoice({
-          ...upload,
+          invoiceId: metadata.invoiceId,
+          idempotencyKey: metadata.idempotencyKey,
+          r2ObjectKey: upload.r2ObjectKey,
+          fileName: metadata.fileName,
+          contentType: metadata.contentType,
           name,
           r2ActionTime,
           status: "extracting",
@@ -230,15 +260,15 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
             this.runWorkflow(
               "INVOICE_EXTRACTION_WORKFLOW",
               {
-                invoiceId: upload.invoiceId,
-                idempotencyKey: upload.idempotencyKey,
+                invoiceId: metadata.invoiceId,
+                idempotencyKey: metadata.idempotencyKey,
                 r2ObjectKey: upload.r2ObjectKey,
-                fileName: upload.fileName,
-                contentType: upload.contentType,
+                fileName: metadata.fileName,
+                contentType: metadata.contentType,
               },
               {
-                id: upload.idempotencyKey,
-                metadata: { invoiceId: upload.invoiceId },
+                id: metadata.idempotencyKey,
+                metadata: { invoiceId: metadata.invoiceId },
               },
             ),
           catch: (cause) =>
@@ -249,7 +279,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         yield* broadcastActivity(this, {
           action: "invoice.uploaded",
           level: "info",
-          text: `Invoice uploaded: ${upload.fileName}`,
+          text: `Invoice uploaded: ${metadata.fileName}`,
         });
       }),
     );
@@ -445,8 +475,8 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
    * R2 object for eventual consistency of storage cleanup.
    */
   onDeleteInvoice(input: {
-    invoiceId: Invoice["id"];
-    r2ObjectKey: Invoice["r2ObjectKey"];
+    invoiceId: InvoiceRecord["id"];
+    r2ObjectKey: InvoiceRecord["r2ObjectKey"];
   }) {
     return this.runEffect(
       Effect.gen(function* () {
@@ -481,7 +511,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   }
 
   saveInvoiceExtraction(input: {
-    invoiceId: Invoice["id"];
+    invoiceId: InvoiceRecord["id"];
     idempotencyKey: string;
     extractedInvoice: typeof InvoiceExtractionSchema.Type;
     extractedJson: string;
