@@ -35,6 +35,9 @@ export const membershipSyncQueueMessageSchema = Schema.Struct({
   change: Schema.Literals(membershipSyncChangeValues),
 });
 
+export type MembershipSyncQueueMessage =
+  typeof membershipSyncQueueMessageSchema.Type;
+
 const queueMessageSchema = Schema.Union([
   r2PutObjectNotificationSchema,
   finalizeInvoiceDeletionQueueMessageSchema,
@@ -93,36 +96,36 @@ const processFinalizeInvoiceDeletion = Effect.fn("processFinalizeInvoiceDeletion
 });
 
 const processMembershipSync = Effect.fn("processMembershipSync")(function* (
-  notification: typeof membershipSyncQueueMessageSchema.Type,
+  message: typeof membershipSyncQueueMessageSchema.Type,
 ) {
   yield* Effect.logInfo("processMembershipSync", {
-    organizationId: notification.organizationId,
-    userId: notification.userId,
-    change: notification.change,
+    organizationId: message.organizationId,
+    userId: message.userId,
+    change: message.change,
   });
   const repository = yield* Repository;
   const d1Member = yield* repository.getMemberByUserAndOrg({
-    userId: notification.userId,
-    organizationId: notification.organizationId,
+    userId: message.userId,
+    organizationId: message.organizationId,
   });
   yield* Effect.logInfo("processMembershipSync.d1Check", {
     d1MemberFound: Option.isSome(d1Member),
-    change: notification.change,
+    change: message.change,
   });
-  switch (notification.change) {
+  switch (message.change) {
     case "added":
     case "role_changed": {
       if (Option.isNone(d1Member)) {
         return yield* new MembershipSyncNotAlignedError({
-          message: `D1 has no member for userId=${notification.userId} organizationId=${notification.organizationId} (change=${notification.change})`,
+          message: `D1 has no member for userId=${message.userId} organizationId=${message.organizationId} (change=${message.change})`,
         });
       }
-      const stub = yield* getOrganizationAgentStub(notification.organizationId);
+      const stub = yield* getOrganizationAgentStub(message.organizationId);
       yield* Effect.tryPromise(() =>
         stub.onMembershipChanged({
-          userId: notification.userId,
+          userId: message.userId,
           role: d1Member.value.role,
-          change: notification.change,
+          change: message.change,
         }),
       );
       break;
@@ -130,13 +133,13 @@ const processMembershipSync = Effect.fn("processMembershipSync")(function* (
     case "removed": {
       if (Option.isSome(d1Member)) {
         return yield* new MembershipSyncNotAlignedError({
-          message: `D1 still has member for userId=${notification.userId} organizationId=${notification.organizationId} (change=removed)`,
+          message: `D1 still has member for userId=${message.userId} organizationId=${message.organizationId} (change=removed)`,
         });
       }
-      const stub = yield* getOrganizationAgentStub(notification.organizationId);
+      const stub = yield* getOrganizationAgentStub(message.organizationId);
       yield* Effect.tryPromise(() =>
         stub.onMembershipChanged({
-          userId: notification.userId,
+          userId: message.userId,
           role: "member",
           change: "removed",
         }),
