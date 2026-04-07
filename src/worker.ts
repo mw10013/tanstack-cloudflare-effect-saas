@@ -1,12 +1,7 @@
 import { isNotFound, isRedirect } from "@tanstack/react-router";
 import serverEntry from "@tanstack/react-start/server-entry";
 import { routeAgentRequest } from "agents";
-import {
-  Cause,
-  Effect,
-  Layer,
-  ServiceMap,
-} from "effect";
+import { Cause, Effect, Layer, ServiceMap } from "effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
@@ -19,6 +14,7 @@ import { R2 } from "@/lib/R2";
 import { Repository } from "@/lib/Repository";
 import { Request as AppRequest } from "@/lib/Request";
 import { Stripe } from "@/lib/Stripe";
+
 import {
   extractAgentInstanceName,
   organizationAgentAuthHeaders,
@@ -26,7 +22,7 @@ import {
 
 export { InvoiceExtractionWorkflow } from "./invoice-extraction-workflow";
 export { OrganizationAgent } from "./organization-agent";
-export { membershipSyncQueueMessageSchema } from "@/lib/Q";
+export { MembershipSyncQueueMessageSchema as membershipSyncQueueMessageSchema } from "@/lib/Q";
 
 /**
  * Runs an Effect within the full app layer for HTTP request handlers (fetch,
@@ -192,10 +188,9 @@ export default {
           break;
         }
         default: {
-          yield* Effect.logWarning(
-            "session.cleanup.unexpectedCronSchedule",
-            { cron: scheduledEvent.cron },
-          );
+          yield* Effect.logWarning("session.cleanup.unexpectedCronSchedule", {
+            cron: scheduledEvent.cron,
+          });
           break;
         }
       }

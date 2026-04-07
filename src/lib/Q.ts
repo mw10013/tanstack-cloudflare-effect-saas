@@ -9,13 +9,13 @@ import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import * as OrganizationDomain from "@/lib/OrganizationDomain";
 import { Repository } from "@/lib/Repository";
 
-const r2PutObjectNotificationSchema = Schema.Struct({
+const R2PutObjectNotificationSchema = Schema.Struct({
   action: Schema.Literals(["PutObject"]),
   object: Schema.Struct({ key: Schema.NonEmptyString }),
   eventTime: Schema.NonEmptyString,
 });
 
-const finalizeInvoiceDeletionQueueMessageSchema = Schema.Struct({
+const FinalizeInvoiceDeletionQueueMessageSchema = Schema.Struct({
   action: Schema.Literals(["FinalizeInvoiceDeletion"]),
   organizationId: Domain.Organization.fields.id,
   invoiceId: OrganizationDomain.Invoice.fields.id,
@@ -28,20 +28,30 @@ const membershipSyncChangeValues = [
   "role_changed",
 ] as const;
 
-export const membershipSyncQueueMessageSchema = Schema.Struct({
+export const MembershipSyncQueueMessageSchema = Schema.Struct({
   action: Schema.Literals(["MembershipSync"]),
   organizationId: Domain.Organization.fields.id,
   userId: Domain.User.fields.id,
   change: Schema.Literals(membershipSyncChangeValues),
 });
 
-export type MembershipSyncQueueMessage =
-  typeof membershipSyncQueueMessageSchema.Type;
+export const sendMembershipSync = Effect.fn("sendMembershipSync")(function* (
+  input: Omit<typeof MembershipSyncQueueMessageSchema.Type, "action">,
+) {
+  const env = yield* CloudflareEnv;
+  const message: typeof MembershipSyncQueueMessageSchema.Type = {
+    action: "MembershipSync",
+    organizationId: input.organizationId,
+    userId: input.userId,
+    change: input.change,
+  };
+  yield* Effect.tryPromise(() => env.Q.send(message));
+});
 
-const queueMessageSchema = Schema.Union([
-  r2PutObjectNotificationSchema,
-  finalizeInvoiceDeletionQueueMessageSchema,
-  membershipSyncQueueMessageSchema,
+const QueueMessageSchema = Schema.Union([
+  R2PutObjectNotificationSchema,
+  FinalizeInvoiceDeletionQueueMessageSchema,
+  MembershipSyncQueueMessageSchema,
 ]);
 
 // Queue handlers create stubs directly. Unlike routeAgentRequest(), that path
@@ -67,7 +77,7 @@ const getOrganizationAgentStub = Effect.fn("getOrganizationAgentStub")(
  * Object and leaves R2 metadata reads to `onInvoiceUpload`.
  */
 const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
-  notification: typeof r2PutObjectNotificationSchema.Type,
+  notification: typeof R2PutObjectNotificationSchema.Type,
 ) {
   const [organizationId] = notification.object.key.split("/", 1);
   const stub = yield* getOrganizationAgentStub(
@@ -83,9 +93,9 @@ const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
   );
 });
 
-const processFinalizeInvoiceDeletion = Effect.fn("processFinalizeInvoiceDeletion")(function* (
-  message: typeof finalizeInvoiceDeletionQueueMessageSchema.Type,
-) {
+const processFinalizeInvoiceDeletion = Effect.fn(
+  "processFinalizeInvoiceDeletion",
+)(function* (message: typeof FinalizeInvoiceDeletionQueueMessageSchema.Type) {
   const stub = yield* getOrganizationAgentStub(message.organizationId);
   yield* Effect.tryPromise(() =>
     stub.onDeleteInvoice({
@@ -96,7 +106,7 @@ const processFinalizeInvoiceDeletion = Effect.fn("processFinalizeInvoiceDeletion
 });
 
 const processMembershipSync = Effect.fn("processMembershipSync")(function* (
-  message: typeof membershipSyncQueueMessageSchema.Type,
+  message: typeof MembershipSyncQueueMessageSchema.Type,
 ) {
   yield* Effect.logInfo("processMembershipSync", {
     organizationId: message.organizationId,
@@ -157,7 +167,7 @@ const processQueueMessage = Effect.fn("processQueueMessage")(function* (
   messageBody: unknown,
 ) {
   const notification =
-    yield* Schema.decodeUnknownEffect(queueMessageSchema)(messageBody);
+    yield* Schema.decodeUnknownEffect(QueueMessageSchema)(messageBody);
   switch (notification.action) {
     case "FinalizeInvoiceDeletion": {
       return yield* processFinalizeInvoiceDeletion(notification);
