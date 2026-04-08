@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { ConfigProvider, Effect, Layer, Schedule, ServiceMap } from "effect";
+import { ConfigProvider, Effect, Layer, ServiceMap } from "effect";
 import * as Schema from "effect/Schema";
 import { layer } from "@effect/vitest";
 import { assertInclude } from "@effect/vitest/utils";
@@ -149,41 +149,6 @@ const removeMemberInApp = Effect.fn("removeMemberInApp")(function* ({
   });
 });
 
-const waitForCreateInvoiceSuccess = Effect.fn("waitForCreateInvoiceSuccess")(
-  function* (ws: WebSocket) {
-    return yield* callAgentRpc(ws, "createInvoice", []).pipe(
-      Effect.flatMap((result) =>
-        result.success
-          ? Effect.succeed(result)
-          : Effect.fail(new Error(result.error)),
-      ),
-      Effect.retry(
-        Schedule.spaced("1 second").pipe(
-          Schedule.while(({ elapsed }) => elapsed < 60_000),
-        ),
-      ),
-    );
-  },
-);
-
-const waitForCreateInvoiceForbidden = Effect.fn(
-  "waitForCreateInvoiceForbidden",
-)(function* (ws: WebSocket) {
-  return yield* callAgentRpc(ws, "createInvoice", []).pipe(
-    Effect.flatMap((result) => {
-      if (!result.success && result.error.includes("Forbidden")) {
-        return Effect.succeed(result);
-      }
-      return Effect.fail(new Error("createInvoice is not forbidden yet"));
-    }),
-    Effect.retry(
-      Schedule.spaced("1 second").pipe(
-        Schedule.while(({ elapsed }) => elapsed < 60_000),
-      ),
-    ),
-  );
-});
-
 layer(configLayer, { excludeTestServices: true })(
   "organization-agent-authorization",
   (it) => {
@@ -216,7 +181,7 @@ layer(configLayer, { excludeTestServices: true })(
         });
 
         const ws = yield* agentWebSocket(owner.organizationId, member.sessionCookie);
-        const createResult = yield* waitForCreateInvoiceSuccess(ws);
+        const createResult = yield* callAgentRpc(ws, "createInvoice", []);
         assertAgentRpcSuccess(createResult);
         const { invoiceId } = Schema.decodeUnknownSync(invoiceIdResult)(
           createResult.result,
@@ -292,7 +257,7 @@ layer(configLayer, { excludeTestServices: true })(
         expect(text).toContain("Forbidden");
       }));
 
-    it.effect("removed member is eventually forbidden", () =>
+    it.effect("removed member is forbidden", () =>
       Effect.gen(function* () {
         const ownerEmail = `int-auth-removed-owner-${crypto.randomUUID()}@test.com`;
         const memberEmail = `int-auth-removed-member-${crypto.randomUUID()}@test.com`;
@@ -321,7 +286,7 @@ layer(configLayer, { excludeTestServices: true })(
         });
 
         const ws = yield* agentWebSocket(owner.organizationId, member.sessionCookie);
-        const firstCreateResult = yield* waitForCreateInvoiceSuccess(ws);
+        const firstCreateResult = yield* callAgentRpc(ws, "createInvoice", []);
         assertAgentRpcSuccess(firstCreateResult);
 
         const memberId = yield* getMemberIdByEmail({
@@ -335,9 +300,9 @@ layer(configLayer, { excludeTestServices: true })(
           memberId,
         });
 
-        const forbiddenResult = yield* waitForCreateInvoiceForbidden(ws);
+        const forbiddenResult = yield* callAgentRpc(ws, "createInvoice", []);
         assertAgentRpcFailure(forbiddenResult);
         assertInclude(forbiddenResult.error, "Forbidden");
-      }), { timeout: 90_000 });
+      }));
   },
 );
