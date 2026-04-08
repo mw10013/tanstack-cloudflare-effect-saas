@@ -21,6 +21,7 @@ import * as Domain from "@/lib/Domain";
 import { D1 } from "@/lib/D1";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import type { MembershipSyncChange } from "@/lib/Q";
+import { enqueue } from "@/lib/Q";
 import {
   DeleteInvoiceInput,
   GetInvoiceInput,
@@ -194,109 +195,6 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     connection.setState({ userId });
   }
 
-  /**
-   * Handles Cloudflare R2 `PutObject` event notifications forwarded from the queue consumer.
-   *
-   * Queue delivery is at-least-once, so dedupe uses three guards:
-   * stale `r2ActionTime` is ignored, active workflow instances are ignored, and
-   * same-key terminal rows (`ready`/`error`) are ignored. A same-key `extracting`
-   * row without an active workflow is retried to recover from partial failures.
-   */
-  onInvoiceUpload(upload: {
-    r2ObjectKey: Invoice["r2ObjectKey"];
-    r2ActionTime: string;
-  }) {
-    return this.runEffect(
-      Effect.gen({ self: this }, function* () {
-        const r2 = yield* R2;
-        const head = yield* r2.head(upload.r2ObjectKey);
-        if (Option.isNone(head)) {
-          yield* Effect.logWarning(
-            "R2 object deleted before notification processed",
-            { key: upload.r2ObjectKey },
-          );
-          return;
-        }
-        const metadata = yield* Schema.decodeUnknownEffect(
-          r2ObjectCustomMetadataSchema,
-        )(head.value.customMetadata ?? {});
-        if (metadata.organizationId !== this.name) {
-          yield* Effect.logWarning("onInvoiceUpload.organizationMismatch", {
-            r2ObjectKey: upload.r2ObjectKey,
-            organizationId: metadata.organizationId,
-            agentName: this.name,
-          });
-          return;
-        }
-        const r2ActionTime = Date.parse(upload.r2ActionTime);
-        if (!Number.isFinite(r2ActionTime)) {
-          return yield* new OrganizationAgentError({
-            message: `Invalid r2ActionTime: ${upload.r2ActionTime}`,
-          });
-        }
-        const repo = yield* OrganizationRepository;
-        const existing = yield* repo.findInvoice(metadata.invoiceId);
-        if (
-          Option.isSome(existing) &&
-          existing.value.r2ActionTime !== null &&
-          r2ActionTime < existing.value.r2ActionTime
-        )
-          return;
-        const trackedWorkflow = this.getWorkflow(metadata.idempotencyKey);
-        if (
-          trackedWorkflow &&
-          activeWorkflowStatuses.has(trackedWorkflow.status)
-        )
-          return;
-        if (
-          Option.isSome(existing) &&
-          existing.value.idempotencyKey !== null &&
-          existing.value.idempotencyKey === metadata.idempotencyKey &&
-          (existing.value.status === "ready" ||
-            existing.value.status === "error")
-        )
-          return;
-        const name = metadata.fileName.replace(/\.[^.]+$/, "");
-        yield* repo.upsertInvoice({
-          invoiceId: metadata.invoiceId,
-          idempotencyKey: metadata.idempotencyKey,
-          r2ObjectKey: upload.r2ObjectKey,
-          fileName: metadata.fileName,
-          contentType: metadata.contentType,
-          name,
-          r2ActionTime,
-          status: "extracting",
-        });
-        yield* Effect.tryPromise({
-          try: () =>
-            this.runWorkflow(
-              "INVOICE_EXTRACTION_WORKFLOW",
-              {
-                invoiceId: metadata.invoiceId,
-                idempotencyKey: metadata.idempotencyKey,
-                r2ObjectKey: upload.r2ObjectKey,
-                fileName: metadata.fileName,
-                contentType: metadata.contentType,
-              },
-              {
-                id: metadata.idempotencyKey,
-                metadata: { invoiceId: metadata.invoiceId },
-              },
-            ),
-          catch: (cause) =>
-            new OrganizationAgentError({
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
-        yield* broadcastActivity(this, {
-          action: "invoice.uploaded",
-          level: "info",
-          text: `Invoice uploaded: ${metadata.fileName}`,
-        });
-      }),
-    );
-  }
-
   @callable()
   createInvoice() {
     return this.runEffect(
@@ -406,18 +304,11 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
         });
         const environment = yield* Config.nonEmptyString("ENVIRONMENT");
         if (environment === "local") {
-          const env = yield* CloudflareEnv;
-          const queue = yield* Effect.fromNullishOr(env.Q);
-          yield* Effect.tryPromise(() =>
-            queue.send({
-              // Local dev uses placeholder account/bucket names because the consumer only reads action/object/eventTime.
-              account: "local",
-              action: "PutObject",
-              bucket: "tcei-r2-local",
-              object: { key, size: bytes.byteLength, eTag: "local" },
-              eventTime: new Date().toISOString(),
-            }),
-          );
+          yield* enqueue({
+            action: "PutObject",
+            object: { key },
+            eventTime: new Date().toISOString(),
+          });
         }
         yield* repo.insertUploadingInvoice({
           invoiceId,
@@ -428,6 +319,109 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
           r2ObjectKey: key,
         });
         return { invoiceId };
+      }),
+    );
+  }
+
+    /**
+   * Handles Cloudflare R2 `PutObject` event notifications forwarded from the queue consumer.
+   *
+   * Queue delivery is at-least-once, so dedupe uses three guards:
+   * stale `r2ActionTime` is ignored, active workflow instances are ignored, and
+   * same-key terminal rows (`ready`/`error`) are ignored. A same-key `extracting`
+   * row without an active workflow is retried to recover from partial failures.
+   */
+  onInvoiceUpload(upload: {
+    r2ObjectKey: Invoice["r2ObjectKey"];
+    r2ActionTime: string;
+  }) {
+    return this.runEffect(
+      Effect.gen({ self: this }, function* () {
+        const r2 = yield* R2;
+        const head = yield* r2.head(upload.r2ObjectKey);
+        if (Option.isNone(head)) {
+          yield* Effect.logWarning(
+            "R2 object deleted before notification processed",
+            { key: upload.r2ObjectKey },
+          );
+          return;
+        }
+        const metadata = yield* Schema.decodeUnknownEffect(
+          r2ObjectCustomMetadataSchema,
+        )(head.value.customMetadata ?? {});
+        if (metadata.organizationId !== this.name) {
+          yield* Effect.logWarning("onInvoiceUpload.organizationMismatch", {
+            r2ObjectKey: upload.r2ObjectKey,
+            organizationId: metadata.organizationId,
+            agentName: this.name,
+          });
+          return;
+        }
+        const r2ActionTime = Date.parse(upload.r2ActionTime);
+        if (!Number.isFinite(r2ActionTime)) {
+          return yield* new OrganizationAgentError({
+            message: `Invalid r2ActionTime: ${upload.r2ActionTime}`,
+          });
+        }
+        const repo = yield* OrganizationRepository;
+        const existing = yield* repo.findInvoice(metadata.invoiceId);
+        if (
+          Option.isSome(existing) &&
+          existing.value.r2ActionTime !== null &&
+          r2ActionTime < existing.value.r2ActionTime
+        )
+          return;
+        const trackedWorkflow = this.getWorkflow(metadata.idempotencyKey);
+        if (
+          trackedWorkflow &&
+          activeWorkflowStatuses.has(trackedWorkflow.status)
+        )
+          return;
+        if (
+          Option.isSome(existing) &&
+          existing.value.idempotencyKey !== null &&
+          existing.value.idempotencyKey === metadata.idempotencyKey &&
+          (existing.value.status === "ready" ||
+            existing.value.status === "error")
+        )
+          return;
+        const name = metadata.fileName.replace(/\.[^.]+$/, "");
+        yield* repo.upsertInvoice({
+          invoiceId: metadata.invoiceId,
+          idempotencyKey: metadata.idempotencyKey,
+          r2ObjectKey: upload.r2ObjectKey,
+          fileName: metadata.fileName,
+          contentType: metadata.contentType,
+          name,
+          r2ActionTime,
+          status: "extracting",
+        });
+        yield* Effect.tryPromise({
+          try: () =>
+            this.runWorkflow(
+              "INVOICE_EXTRACTION_WORKFLOW",
+              {
+                invoiceId: metadata.invoiceId,
+                idempotencyKey: metadata.idempotencyKey,
+                r2ObjectKey: upload.r2ObjectKey,
+                fileName: metadata.fileName,
+                contentType: metadata.contentType,
+              },
+              {
+                id: metadata.idempotencyKey,
+                metadata: { invoiceId: metadata.invoiceId },
+              },
+            ),
+          catch: (cause) =>
+            new OrganizationAgentError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        yield* broadcastActivity(this, {
+          action: "invoice.uploaded",
+          level: "info",
+          text: `Invoice uploaded: ${metadata.fileName}`,
+        });
       }),
     );
   }
