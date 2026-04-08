@@ -9,20 +9,20 @@ export const ActivityAction = Schema.Literals([
   "invoice.extraction.progress",
 ]);
 
-export const ActivityMessageSchema = Schema.Struct({
+export const ActivityMessage = Schema.Struct({
   createdAt: Schema.String,
   level: Schema.Literals(["info", "success", "error"]),
   text: Schema.String,
   action: ActivityAction,
 });
 
-export type ActivityMessage = typeof ActivityMessageSchema.Type;
+export type ActivityMessage = typeof ActivityMessage.Type;
 
 export const decodeActivityMessage = (
   event: MessageEvent,
 ): ActivityMessage | null => {
   const result = Schema.decodeUnknownExit(
-    Schema.fromJsonString(ActivityMessageSchema),
+    Schema.fromJsonString(ActivityMessage),
   )(String(event.data));
   return Exit.isSuccess(result) ? result.value : null;
 };

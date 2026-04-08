@@ -6,7 +6,7 @@ import type { AgentWorkflowEvent, AgentWorkflowStep } from "agents/workflows";
 import { ConfigProvider, Effect, Layer, ServiceMap } from "effect";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
-import { InvoiceExtraction } from "@/lib/InvoiceExtraction";
+import { InvoiceExtractor } from "@/lib/InvoiceExtractor";
 import { InvoiceExtractionWorkflow as Base } from "./invoice-extraction-workflow";
 import { R2 } from "@/lib/R2";
 
@@ -35,7 +35,7 @@ export class InvoiceExtractionWorkflow extends Base {
     return Layer.merge(
       Layer.provideMerge(R2.layer, envLayer),
       Layer.provideMerge(
-        Layer.mock(InvoiceExtraction, {
+        Layer.mock(InvoiceExtractor, {
           extract: () =>
             Effect.succeed({
               invoiceConfidence: 0.95,

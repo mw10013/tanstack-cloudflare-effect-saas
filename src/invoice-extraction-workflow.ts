@@ -12,7 +12,7 @@ import { FetchHttpClient } from "effect/unstable/http";
 import type { ActivityMessage } from "@/lib/Activity";
 import type { Invoice } from "@/lib/OrganizationDomain";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
-import { InvoiceExtraction } from "@/lib/InvoiceExtraction";
+import { InvoiceExtractor } from "@/lib/InvoiceExtractor";
 import { R2 } from "@/lib/R2";
 
 interface InvoiceExtractionWorkflowParams {
@@ -37,7 +37,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
   InvoiceExtractionWorkflowParams,
   Pick<ActivityMessage, "action" | "level" | "text">
 > {
-  protected makeRuntimeLayer(): Layer.Layer<R2 | InvoiceExtraction, Config.ConfigError> {
+  protected makeRuntimeLayer(): Layer.Layer<R2 | InvoiceExtractor, Config.ConfigError> {
     const envLayer = Layer.succeedServices(
       ServiceMap.make(CloudflareEnv, this.env).pipe(
         ServiceMap.add(
@@ -47,11 +47,11 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
       ),
     );
     const r2Layer = Layer.provideMerge(R2.layer, envLayer);
-    const invoiceExtractionLayer = Layer.provideMerge(
-      InvoiceExtraction.layer,
+    const invoiceExtractorLayer = Layer.provideMerge(
+      InvoiceExtractor.layer,
       Layer.merge(envLayer, FetchHttpClient.layer),
     );
-    return Layer.merge(r2Layer, invoiceExtractionLayer);
+    return Layer.merge(r2Layer, invoiceExtractorLayer);
   }
 
   async run(
@@ -129,8 +129,8 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
             step.do("extract-invoice", () =>
               runEffect(
                 Effect.gen(function* () {
-                  const invoiceExtraction = yield* InvoiceExtraction;
-                  return yield* invoiceExtraction.extract({
+                  const invoiceExtractor = yield* InvoiceExtractor;
+                  return yield* invoiceExtractor.extract({
                     fileBytes,
                     contentType: event.payload.contentType,
                   });
@@ -151,7 +151,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
                   agent.saveInvoiceExtraction({
                     invoiceId: event.payload.invoiceId,
                     idempotencyKey: event.payload.idempotencyKey,
-                    extractedInvoice: extractionResult,
+                    invoiceExtraction: extractionResult,
                     extractedJson: JSON.stringify(extractionResult),
                   }),
                 ),

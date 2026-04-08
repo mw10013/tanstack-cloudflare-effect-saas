@@ -1,7 +1,7 @@
 import type { Connection, ConnectionContext } from "agents";
 
 import type { ActivityMessage } from "@/lib/Activity";
-import type { InvoiceExtractionSchema } from "@/lib/InvoiceExtraction";
+import type { InvoiceExtraction } from "@/lib/InvoiceExtractor";
 import type { Invoice } from "@/lib/OrganizationDomain";
 
 import { SqliteClient } from "@effect/sql-sqlite-do";
@@ -563,7 +563,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
   saveInvoiceExtraction(input: {
     invoiceId: Invoice["id"];
     idempotencyKey: string;
-    extractedInvoice: typeof InvoiceExtractionSchema.Type;
+    invoiceExtraction: InvoiceExtraction;
     extractedJson: string;
   }) {
     return this.runEffect(

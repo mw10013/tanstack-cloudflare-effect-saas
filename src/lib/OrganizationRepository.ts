@@ -2,7 +2,7 @@ import { Effect, Layer, Option, Schema, ServiceMap } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import type * as Domain from "./Domain";
-import type { InvoiceExtractionSchema } from "./InvoiceExtraction";
+import type { InvoiceExtraction } from "./InvoiceExtractor";
 import type { UpdateInvoiceInput } from "./OrganizationAgentSchemas";
 import * as OrganizationDomain from "./OrganizationDomain";
 import { JsonDataFieldHead } from "./SchemaEx";
@@ -179,10 +179,10 @@ export class OrganizationRepository extends ServiceMap.Service<OrganizationRepos
         function* (input: {
           invoiceId: OrganizationDomain.Invoice["id"];
           idempotencyKey: NonNullable<OrganizationDomain.Invoice["idempotencyKey"]>;
-          extractedInvoice: typeof InvoiceExtractionSchema.Type;
+          invoiceExtraction: InvoiceExtraction;
           extractedJson: NonNullable<OrganizationDomain.Invoice["extractedJson"]>;
         }) {
-          const { invoiceItems, ...extracted } = input.extractedInvoice;
+          const { invoiceItems, ...extracted } = input.invoiceExtraction;
           const updated = yield* sql`
             update Invoice
             set status = 'ready',

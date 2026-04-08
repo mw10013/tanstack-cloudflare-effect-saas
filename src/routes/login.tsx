@@ -22,7 +22,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { login, loginSchema } from "@/lib/Login";
+import { LoginInput, login } from "@/lib/Login";
 
 export const Route = createFileRoute("/login")({
   loader: () => getLoaderData(),
@@ -47,7 +47,7 @@ function RouteComponent() {
   const loginServerFn = useServerFn(login);
   const defaultValues = {
     email: "",
-  } satisfies typeof loginSchema.Type;
+  } satisfies LoginInput;
 
   const loginMutation = useMutation({
     mutationFn: (data: typeof defaultValues) => loginServerFn({ data }),
@@ -55,7 +55,7 @@ function RouteComponent() {
   const form = useForm({
     defaultValues,
     validators: {
-      onSubmit: Schema.toStandardSchemaV1(loginSchema),
+      onSubmit: Schema.toStandardSchemaV1(LoginInput),
     },
     onSubmit: ({ value }) => {
       console.log(`onSubmit: value: ${JSON.stringify(value)}`);

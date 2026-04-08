@@ -6,14 +6,16 @@ import { Auth } from "@/lib/Auth";
 import { KV } from "@/lib/KV";
 import { Request } from "@/lib/Request";
 
-export const loginSchema = Schema.Struct({
+export const LoginInput = Schema.Struct({
   email: Schema.String.check(Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)),
 });
+
+export type LoginInput = typeof LoginInput.Type;
 
 export const login = createServerFn({
   method: "POST",
 })
-  .inputValidator(Schema.toStandardSchemaV1(loginSchema))
+  .inputValidator(Schema.toStandardSchemaV1(LoginInput))
   .handler(({ data, context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {

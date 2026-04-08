@@ -340,7 +340,7 @@ describe("OrganizationRepository", () => {
       const repo = yield* OrganizationRepository;
       const idempotencyKey = crypto.randomUUID();
       const inv = yield* seedInvoice({ status: "extracting", idempotencyKey });
-      const extractedInvoice = {
+      const invoiceExtraction = {
         invoiceConfidence: 0.92,
         invoiceNumber: "INV-001",
         invoiceDate: "2024-01-15",
@@ -361,11 +361,11 @@ describe("OrganizationRepository", () => {
           { description: "Widget B", quantity: "1", unitPrice: "100.00", amount: "100.00", period: "" },
         ],
       };
-      const extractedJson = JSON.stringify(extractedInvoice);
+      const extractedJson = JSON.stringify(invoiceExtraction);
       const updated = yield* repo.saveInvoiceExtraction({
         invoiceId: inv.id,
         idempotencyKey,
-        extractedInvoice,
+        invoiceExtraction,
         extractedJson,
       });
       expect(updated).toHaveLength(1);
@@ -390,7 +390,7 @@ describe("OrganizationRepository", () => {
       const updated = yield* repo.saveInvoiceExtraction({
         invoiceId: inv.id,
         idempotencyKey: "wrong-key",
-        extractedInvoice: {
+        invoiceExtraction: {
           invoiceConfidence: 0.5,
           invoiceNumber: "",
           invoiceDate: "",
@@ -422,7 +422,7 @@ describe("OrganizationRepository", () => {
       const idempotencyKey = crypto.randomUUID();
       const inv = yield* seedInvoice({ status: "extracting", idempotencyKey });
       yield* seedInvoiceItem({ invoiceId: inv.id, order: 1, description: "Old item" });
-      const extractedInvoice = {
+      const invoiceExtraction = {
         invoiceConfidence: 0.8,
         invoiceNumber: "INV-002",
         invoiceDate: "",
@@ -443,8 +443,8 @@ describe("OrganizationRepository", () => {
       yield* repo.saveInvoiceExtraction({
         invoiceId: inv.id,
         idempotencyKey,
-        extractedInvoice,
-        extractedJson: JSON.stringify(extractedInvoice),
+        invoiceExtraction,
+        extractedJson: JSON.stringify(invoiceExtraction),
       });
       const result = yield* repo.getInvoice(inv.id);
       const invoice = Option.getOrThrow(result);

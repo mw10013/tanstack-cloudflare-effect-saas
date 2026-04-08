@@ -6,13 +6,13 @@ import * as Domain from "@/lib/Domain";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import * as OrganizationDomain from "@/lib/OrganizationDomain";
 
-const R2PutObjectNotificationSchema = Schema.Struct({
+const R2PutObjectNotification = Schema.Struct({
   action: Schema.Literals(["PutObject"]),
   object: Schema.Struct({ key: Schema.NonEmptyString }),
   eventTime: Schema.NonEmptyString,
 });
 
-const FinalizeInvoiceDeletionQueueMessageSchema = Schema.Struct({
+const FinalizeInvoiceDeletionQueueMessage = Schema.Struct({
   action: Schema.Literals(["FinalizeInvoiceDeletion"]),
   organizationId: Domain.Organization.fields.id,
   invoiceId: OrganizationDomain.Invoice.fields.id,
@@ -29,20 +29,20 @@ export const MembershipSyncChange = Schema.Literals(membershipSyncChangeValues);
 
 export type MembershipSyncChange = typeof MembershipSyncChange.Type;
 
-export const MembershipSyncQueueMessageSchema = Schema.Struct({
+export const MembershipSyncQueueMessage = Schema.Struct({
   action: Schema.Literals(["MembershipSync"]),
   organizationId: Domain.Organization.fields.id,
   userId: Domain.User.fields.id,
   change: MembershipSyncChange,
 });
 
-export const QueueMessageSchema = Schema.Union([
-  R2PutObjectNotificationSchema,
-  FinalizeInvoiceDeletionQueueMessageSchema,
-  MembershipSyncQueueMessageSchema,
+export const QueueMessage = Schema.Union([
+  R2PutObjectNotification,
+  FinalizeInvoiceDeletionQueueMessage,
+  MembershipSyncQueueMessage,
 ]);
 
-export type QueueMessage = typeof QueueMessageSchema.Type;
+export type QueueMessage = typeof QueueMessage.Type;
 
 export const enqueue = Effect.fn("enqueue")(function* (message: QueueMessage) {
   const env = yield* CloudflareEnv;
@@ -72,7 +72,7 @@ const getOrganizationAgentStub = Effect.fn("getOrganizationAgentStub")(
  * Object and leaves R2 metadata reads to `onInvoiceUpload`.
  */
 const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
-  notification: typeof R2PutObjectNotificationSchema.Type,
+  notification: typeof R2PutObjectNotification.Type,
 ) {
   const [organizationId] = notification.object.key.split("/", 1);
   const stub = yield* getOrganizationAgentStub(
@@ -90,7 +90,7 @@ const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
 
 const processFinalizeInvoiceDeletion = Effect.fn(
   "processFinalizeInvoiceDeletion",
-)(function* (message: typeof FinalizeInvoiceDeletionQueueMessageSchema.Type) {
+)(function* (message: typeof FinalizeInvoiceDeletionQueueMessage.Type) {
   const stub = yield* getOrganizationAgentStub(message.organizationId);
   yield* Effect.tryPromise(() =>
     stub.onDeleteInvoice({
@@ -101,7 +101,7 @@ const processFinalizeInvoiceDeletion = Effect.fn(
 });
 
 const processMembershipSync = Effect.fn("processMembershipSync")(function* (
-  message: typeof MembershipSyncQueueMessageSchema.Type,
+  message: typeof MembershipSyncQueueMessage.Type,
 ) {
   const stub = yield* getOrganizationAgentStub(message.organizationId);
   yield* Effect.tryPromise(() =>
@@ -115,8 +115,7 @@ const processMembershipSync = Effect.fn("processMembershipSync")(function* (
 const processMessage = Effect.fn("processMessage")(function* (
   rawMessage: unknown,
 ) {
-  const message =
-    yield* Schema.decodeUnknownEffect(QueueMessageSchema)(rawMessage);
+  const message = yield* Schema.decodeUnknownEffect(QueueMessage)(rawMessage);
   switch (message.action) {
     case "FinalizeInvoiceDeletion": {
       return yield* processFinalizeInvoiceDeletion(message);
