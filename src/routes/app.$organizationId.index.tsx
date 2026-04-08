@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/item";
 import { Auth } from "@/lib/Auth";
 import * as Domain from "@/lib/Domain";
-import { sendMembershipSync } from "@/lib/MembershipSync";
+import { enqueue } from "@/lib/Q";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
 
@@ -82,7 +82,8 @@ export const acceptInvitation = createServerFn({ method: "POST" })
               auth.api.getSession({ headers: request.headers }),
             ),
           );
-          yield* sendMembershipSync({
+          yield* enqueue({
+            action: "MembershipSync",
             organizationId: invitation.value.organizationId,
             userId: Schema.decodeUnknownSync(Domain.User.fields.id)(session.user.id),
             change: "added",

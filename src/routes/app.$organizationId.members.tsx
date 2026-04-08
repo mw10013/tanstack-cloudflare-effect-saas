@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Auth } from "@/lib/Auth";
 import * as Domain from "@/lib/Domain";
-import { sendMembershipSync } from "@/lib/MembershipSync";
+import { enqueue } from "@/lib/Q";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
 
@@ -105,7 +105,8 @@ export const removeMember = createServerFn({ method: "POST" })
         const repository = yield* Repository;
         const member = yield* repository.getMemberById(memberId);
         if (Option.isSome(member)) {
-          yield* sendMembershipSync({
+          yield* enqueue({
+            action: "MembershipSync",
             organizationId,
             userId: member.value.userId,
             change: "removed",
@@ -136,7 +137,8 @@ const leaveOrganization = createServerFn({ method: "POST" })
             auth.api.getSession({ headers: request.headers }),
           ),
         );
-        yield* sendMembershipSync({
+        yield* enqueue({
+          action: "MembershipSync",
           organizationId,
           userId: Schema.decodeUnknownSync(Domain.User.fields.id)(session.user.id),
           change: "removed",
@@ -165,7 +167,8 @@ const updateMemberRole = createServerFn({ method: "POST" })
           const repository = yield* Repository;
           const member = yield* repository.getMemberById(memberId);
           if (Option.isSome(member)) {
-            yield* sendMembershipSync({
+            yield* enqueue({
+              action: "MembershipSync",
               organizationId,
               userId: member.value.userId,
               change: "role_changed",

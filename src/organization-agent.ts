@@ -20,7 +20,7 @@ import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import * as Domain from "@/lib/Domain";
 import { D1 } from "@/lib/D1";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
-import type { MembershipSyncChange } from "@/lib/MembershipSync";
+import type { MembershipSyncChange } from "@/lib/Q";
 import {
   DeleteInvoiceInput,
   GetInvoiceInput,

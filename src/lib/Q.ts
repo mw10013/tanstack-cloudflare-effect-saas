@@ -4,7 +4,6 @@ import * as Schema from "effect/Schema";
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import * as Domain from "@/lib/Domain";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
-import { MembershipSyncQueueMessageSchema } from "@/lib/MembershipSync";
 import * as OrganizationDomain from "@/lib/OrganizationDomain";
 
 const R2PutObjectNotificationSchema = Schema.Struct({
@@ -20,11 +19,35 @@ const FinalizeInvoiceDeletionQueueMessageSchema = Schema.Struct({
   r2ObjectKey: OrganizationDomain.Invoice.fields.r2ObjectKey,
 });
 
-const QueueMessageSchema = Schema.Union([
+export const membershipSyncChangeValues = [
+  "added",
+  "removed",
+  "role_changed",
+] as const;
+
+export const MembershipSyncChange = Schema.Literals(membershipSyncChangeValues);
+
+export type MembershipSyncChange = typeof MembershipSyncChange.Type;
+
+export const MembershipSyncQueueMessageSchema = Schema.Struct({
+  action: Schema.Literals(["MembershipSync"]),
+  organizationId: Domain.Organization.fields.id,
+  userId: Domain.User.fields.id,
+  change: MembershipSyncChange,
+});
+
+export const QueueMessageSchema = Schema.Union([
   R2PutObjectNotificationSchema,
   FinalizeInvoiceDeletionQueueMessageSchema,
   MembershipSyncQueueMessageSchema,
 ]);
+
+export type QueueMessage = typeof QueueMessageSchema.Type;
+
+export const enqueue = Effect.fn("enqueue")(function* (message: QueueMessage) {
+  const env = yield* CloudflareEnv;
+  yield* Effect.tryPromise(() => env.Q.send(message));
+});
 
 // Queue handlers create stubs directly. Unlike routeAgentRequest(), that path
 // does not populate the Agents SDK instance name, so name-dependent features
@@ -89,11 +112,11 @@ const processMembershipSync = Effect.fn("processMembershipSync")(function* (
   );
 });
 
-const processQueueMessage = Effect.fn("processQueueMessage")(function* (
-  messageBody: unknown,
+const processMessage = Effect.fn("processMessage")(function* (
+  rawMessage: unknown,
 ) {
   const message =
-    yield* Schema.decodeUnknownEffect(QueueMessageSchema)(messageBody);
+    yield* Schema.decodeUnknownEffect(QueueMessageSchema)(rawMessage);
   switch (message.action) {
     case "FinalizeInvoiceDeletion": {
       return yield* processFinalizeInvoiceDeletion(message);
@@ -116,21 +139,21 @@ export const queue: ExportedHandler<Env>["queue"] = async (batch, env) => {
   await Effect.forEach(
     // oxlint-disable-next-line unicorn/no-array-method-this-argument -- Effect.forEach is not Array.prototype.forEach
     batch.messages,
-    (message) =>
-      processQueueMessage(message.body).pipe(
+    (queueMessage) =>
+      processMessage(queueMessage.body).pipe(
         Effect.andThen(() =>
           Effect.sync(() => {
-            message.ack();
+            queueMessage.ack();
           }),
         ),
         Effect.catchTag("SchemaError", () =>
           Effect.sync(() => {
-            message.ack();
+            queueMessage.ack();
           }),
         ),
         Effect.catch(() =>
           Effect.sync(() => {
-            message.retry();
+            queueMessage.retry();
           }),
         ),
       ),
