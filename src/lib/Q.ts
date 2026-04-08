@@ -93,7 +93,7 @@ const processFinalizeInvoiceDeletion = Effect.fn(
 )(function* (message: typeof FinalizeInvoiceDeletionQueueMessage.Type) {
   const stub = yield* getOrganizationAgentStub(message.organizationId);
   yield* Effect.tryPromise(() =>
-    stub.onDeleteInvoice({
+    stub.onFinalizeInvoiceDeletion({
       invoiceId: message.invoiceId,
       r2ObjectKey: message.r2ObjectKey,
     }),

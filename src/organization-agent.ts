@@ -440,7 +440,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
    * invoice row immediately so reads stop returning the invoice.
    *
    * Enqueue-first means if execution fails after enqueue but before local delete,
-   * queue processing still calls `onDeleteInvoice` and completes deletion.
+   * queue processing still calls `onFinalizeInvoiceDeletion` and completes deletion.
    */
   @callable()
   deleteInvoice(input: typeof DeleteInvoiceInput.Type) {
@@ -486,7 +486,7 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
    * idempotently to ensure the invoice row is actually removed, then deletes the
    * R2 object for eventual consistency of storage cleanup.
    */
-  onDeleteInvoice(input: {
+  onFinalizeInvoiceDeletion(input: {
     invoiceId: Invoice["id"];
     r2ObjectKey: Invoice["r2ObjectKey"];
   }) {

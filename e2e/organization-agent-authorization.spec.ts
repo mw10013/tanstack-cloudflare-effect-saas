@@ -135,6 +135,29 @@ const goToInvoices = async (page: Page) => {
   await page.waitForURL(/\/invoices/);
 };
 
+const openInvoicesPage = async ({
+  page,
+  organizationId,
+}: {
+  page: Page;
+  organizationId: string;
+}) => {
+  await page.goto(`/app/${organizationId}/invoices`);
+  await page.waitForURL(new RegExp(`/app/${organizationId}/invoices(?:\\?.*)?$`));
+};
+
+const openInvoiceEditorIfNeeded = async ({
+  page,
+  organizationId,
+}: {
+  page: Page;
+  organizationId: string;
+}) => {
+  if (new RegExp(`/app/${organizationId}/invoices/[^/?]+$`).test(page.url())) return;
+  await page.getByRole("link", { name: "Edit invoice" }).click();
+  await page.waitForURL(/\/app\/[^/]+\/invoices\/[^/?]+$/);
+};
+
 const createInvoiceEventually = async ({
   page,
   organizationId,
@@ -142,18 +165,17 @@ const createInvoiceEventually = async ({
   page: Page;
   organizationId: string;
 }) => {
-  for (let attempt = 0; attempt < 60; attempt++) {
-    await page.getByRole("button", { name: "New Invoice" }).click({ timeout: 2000 });
-    if (/\/app\/[^/]+\/invoices\/[^/?]+$/.test(page.url())) {
-      const invoiceId = page.url().split("/").at(-1) ?? "";
-      expect(invoiceId).not.toBe("");
-      return invoiceId;
-    }
-    await page.goto(`/app/${organizationId}/invoices`);
-    await page.waitForURL(new RegExp(`/app/${organizationId}/invoices`));
-    await page.waitForTimeout(1000);
-  }
-  throw new Error("Timed out waiting for invited member createInvoice authorization");
+  let invoiceId = "";
+  await expect(async () => {
+    await openInvoicesPage({ page, organizationId });
+    await page.getByRole("button", { name: "New Invoice" }).click();
+    await page.waitForURL(/\/app\/[^/]+\/invoices\/[^/?]+$/, {
+      timeout: 1000,
+    });
+    invoiceId = page.url().split("/").at(-1) ?? "";
+    expect(invoiceId).not.toBe("");
+  }).toPass({ timeout: 60_000 });
+  return invoiceId;
 };
 
 const uploadInvoice = async (page: Page) => {
@@ -192,24 +214,26 @@ const removeMember = async ({
   await expect(memberRow).toBeHidden();
 };
 
-const expectCreateForbiddenEventually = async ({
+const expectSaveForbiddenEventually = async ({
   page,
   organizationId,
 }: {
   page: Page;
   organizationId: string;
 }) => {
-  for (let attempt = 0; attempt < 20; attempt++) {
-    await page.getByRole("button", { name: "New Invoice" }).click();
-    const forbiddenText = page.getByText(/Forbidden/i).first();
-    if (await forbiddenText.isVisible().catch(() => false)) return;
-    if (/\/app\/[^/]+\/invoices\/[^/?]+$/.test(page.url())) {
-      await page.goto(`/app/${organizationId}/invoices`);
-      await page.waitForURL(new RegExp(`/app/${organizationId}/invoices`));
-    }
-    await page.waitForTimeout(500);
-  }
-  await expect(page.getByText(/Forbidden/i).first()).toBeVisible();
+  let attempt = 0;
+  await expect(async () => {
+    attempt += 1;
+    await openInvoiceEditorIfNeeded({ page, organizationId });
+    await getFieldInput(page, "Invoice Name").fill(
+      `Revoked Member Probe ${String(attempt)}`,
+    );
+    await page.getByRole("button", { name: "Save invoice" }).click();
+    await expect(page.getByText("Save failed")).toBeVisible({ timeout: 1000 });
+    await expect(page.getByText(/Forbidden/i).first()).toBeVisible({
+      timeout: 1000,
+    });
+  }).toPass({ timeout: 90_000 });
 };
 
 const withTwoPages = async (
@@ -313,9 +337,10 @@ test.describe("organization-agent authorization", () => {
 
       await goToInvoices(memberPage);
       const organizationId = getOrganizationIdFromUrl(memberPage.url());
+      await createInvoiceEventually({ page: memberPage, organizationId });
 
       await removeMember({ ownerPage, memberEmail: revokedScenario.memberEmail });
-      await expectCreateForbiddenEventually({
+      await expectSaveForbiddenEventually({
         page: memberPage,
         organizationId,
       });
