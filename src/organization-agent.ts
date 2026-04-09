@@ -178,16 +178,50 @@ export class OrganizationAgent extends Agent<Env, OrganizationAgentState> {
     this.runEffect = makeRunEffect(ctx, env);
   }
 
-  onConnect(
+  /**
+   * Authenticates and authorizes incoming WebSocket connections.
+   *
+   * - **4001 Unauthorized** — no userId header; identity unknown (client should
+   *   re-authenticate).
+   * - **4003 Forbidden** — userId present but not in the Member table; identity
+   *   known, lacks access (client should request an invitation).
+   *
+   * The userId comes from a trusted server-set header, so distinguishing
+   * 4001 vs 4003 does not leak membership info to untrusted callers.
+   */
+  async onConnect(
     connection: Connection<OrganizationAgentConnectionState>,
     ctx: ConnectionContext,
   ) {
-    const userId = ctx.request.headers.get(organizationAgentAuthHeaders.userId);
-    if (!userId) {
-      connection.close(4001, "Unauthorized");
-      return;
-    }
-    connection.setState({ userId });
+    await this.runEffect(
+      Effect.gen(function* () {
+        const userId = yield* Schema.decodeUnknownEffect(
+          Domain.User.fields.id,
+        )(ctx.request.headers.get(organizationAgentAuthHeaders.userId)).pipe(
+          Effect.mapError(() => "Unauthorized" as const),
+        );
+        const repo = yield* OrganizationRepository;
+        const authorized = yield* repo.isMember(userId);
+        if (!authorized) return yield* Effect.fail("Forbidden" as const);
+        connection.setState({ userId });
+      }).pipe(
+        // connection.close() is full cleanup — no manual bookkeeping needed.
+        // PartyServer's InMemoryConnectionManager auto-deletes from its internal
+        // Map<id, Connection> via close/error event listeners, and in hibernation
+        // mode the platform handles tracking entirely. getConnections() also
+        // filters to readyState === OPEN, so closed connections are immediately
+        // invisible. Agent-level state lives in a WeakMap and is GC'd with the
+        // connection object.
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            connection.close(
+              error === "Unauthorized" ? 4001 : 4003,
+              error === "Unauthorized" ? "Unauthorized" : "Forbidden",
+            );
+          }),
+        ),
+      ),
+    );
   }
 
   @callable()
@@ -688,14 +722,25 @@ const syncMembershipImpl = Effect.fn("OrganizationAgent.syncMembership")(
             message: `D1 still has member for userId=${input.userId} organizationId=${organizationId} (change=removed)`,
           });
         yield* repo.deleteMember(input.userId);
+        // connection.close() is full cleanup — no manual bookkeeping needed.
+        // PartyServer's InMemoryConnectionManager auto-deletes from its internal
+        // Map<id, Connection> via close/error event listeners, and in hibernation
+        // mode the platform handles tracking entirely. getConnections() also
+        // filters to readyState === OPEN, so closed connections are immediately
+        // invisible. Agent-level state lives in a WeakMap and is GC'd with the
+        // connection object.
         yield* Effect.forEach(
           agent.getConnections<OrganizationAgentConnectionState>(),
           (conn) =>
             conn.state?.userId === input.userId
               ? Effect.try({
                   try: () => { conn.close(4003, "Membership revoked"); },
-                  catch: (error) => new OrganizationAgentError({ message: error instanceof Error ? error.message : String(error) }),
-                }).pipe(Effect.catch((error) => Effect.logWarning("conn.close failed", error)))
+                  catch: (error) => error,
+                }).pipe(
+                  Effect.catch((error) =>
+                    Effect.logWarning("conn.close failed during membership removal", { userId: input.userId, organizationId, error }),
+                  ),
+                )
               : Effect.void,
           { discard: true },
         );
