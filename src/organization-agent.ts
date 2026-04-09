@@ -726,29 +726,30 @@ const syncMembershipImpl = Effect.fn("OrganizationAgent.syncMembership")(
 );
 
 /**
- * Per-RPC membership guard for `@callable()` methods.
+ * Membership guard for the current agent invocation.
  *
  * Re-checks the DO-local Member table on every call because membership can
  * be revoked after the WebSocket connection was established in
- * {@link OrganizationAgent.onConnect}.
+ * {@link OrganizationAgent.onConnect}. Resolves the current userId from
+ * connection state when present, otherwise from the trusted request header
+ * used by direct stub calls, then verifies membership in the local Member
+ * table. Missing or invalid user identity is treated as an invariant failure
+ * and surfaces through schema decoding.
  */
 const assertMember = Effect.fn("OrganizationAgent.assertMember")(
   function* () {
-    const { agent, connection } = getCurrentAgent<OrganizationAgent>();
-    if (!agent || !connection) {
-      return yield* new OrganizationAgentError({
-        message: "Unauthorized",
-      });
-    }
-    const { userId } = yield* Schema.decodeUnknownEffect(ConnectionState)(
-      connection.state,
-    );
+    const { connection, request } = getCurrentAgent<OrganizationAgent>();
+    const userId = connection?.state
+      ? (yield* Schema.decodeUnknownEffect(ConnectionState)(connection.state))
+          .userId
+      : yield* Schema.decodeUnknownEffect(Domain.User.fields.id)(
+          request?.headers.get(organizationAgentAuthHeaders.userId),
+        );
     const repo = yield* OrganizationRepository;
-    const authorized = yield* repo.isMember(userId);
-    if (!authorized) {
-      return yield* new OrganizationAgentError({
-        message: `Forbidden: userId=${userId} not in Member table`,
-      });
-    }
+    if (yield* repo.isMember(userId)) return;
+    yield* Effect.logWarning(`assertMember.forbidden userId=${userId}`);
+    return yield* new OrganizationAgentError({
+      message: `Forbidden: userId=${userId} not in Member table`,
+    });
   },
 );
