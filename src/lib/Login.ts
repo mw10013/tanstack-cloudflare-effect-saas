@@ -28,7 +28,7 @@ export const login = createServerFn({
         const result = yield* Effect.tryPromise(() =>
           auth.api.signInMagicLink({
             headers: request.headers,
-            body: { email: data.email, callbackURL: "/magic-link" },
+            body: { email: data.email, callbackURL: "/login-callback" },
           }),
         );
         if (!result.status) {

@@ -331,7 +331,7 @@ Inline `Effect.gen` inside `createServerFn` handlers and worker `fetch`/`schedul
 | `src/routes/admin.sessions.tsx:48`                             | sessions loader                                                   |
 | `src/routes/admin.subscriptions.tsx:48`                        | subscriptions loader                                              |
 | `src/routes/_mkt.pricing.tsx:30,50`                            | pricing loader/server fn                                          |
-| `src/routes/magic-link.tsx:8`                                  | magic-link loader                                                 |
+| `src/routes/login-callback.tsx:8`                              | login-callback loader                                             |
 | `src/routes/api/auth/$.tsx:24,31`                              | auth API handler                                                  |
 | `src/routes/api/google/callback.tsx:13`                        | google callback handler                                           |
 | `src/routes/api/org.$organizationId.upload-image.$name.tsx:11` | upload API handler                                                |

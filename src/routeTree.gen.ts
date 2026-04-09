@@ -9,7 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as MagicLinkRouteImport } from './routes/magic-link'
+import { Route as LoginCallbackRouteImport } from './routes/login-callback'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -34,9 +34,9 @@ import { Route as AppOrganizationIdInvoicesInvoiceIdRouteImport } from './routes
 import { Route as ApiOrgOrganizationIdInvoiceInvoiceIdRouteImport } from './routes/api/org.$organizationId.invoice.$invoiceId'
 import { Route as ApiE2eDeleteUserEmailRouteImport } from './routes/api/e2e/delete/user/$email'
 
-const MagicLinkRoute = MagicLinkRouteImport.update({
-  id: '/magic-link',
-  path: '/magic-link',
+const LoginCallbackRoute = LoginCallbackRouteImport.update({
+  id: '/login-callback',
+  path: '/login-callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -166,7 +166,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
-  '/magic-link': typeof MagicLinkRoute
+  '/login-callback': typeof LoginCallbackRoute
   '/pricing': typeof MktPricingRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/sessions': typeof AdminSessionsRoute
@@ -188,7 +188,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
-  '/magic-link': typeof MagicLinkRoute
+  '/login-callback': typeof LoginCallbackRoute
   '/pricing': typeof MktPricingRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/sessions': typeof AdminSessionsRoute
@@ -213,7 +213,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
-  '/magic-link': typeof MagicLinkRoute
+  '/login-callback': typeof LoginCallbackRoute
   '/_mkt/pricing': typeof MktPricingRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/sessions': typeof AdminSessionsRoute
@@ -241,7 +241,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/app'
     | '/login'
-    | '/magic-link'
+    | '/login-callback'
     | '/pricing'
     | '/admin/customers'
     | '/admin/sessions'
@@ -263,7 +263,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
-    | '/magic-link'
+    | '/login-callback'
     | '/pricing'
     | '/admin/customers'
     | '/admin/sessions'
@@ -287,7 +287,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/app'
     | '/login'
-    | '/magic-link'
+    | '/login-callback'
     | '/_mkt/pricing'
     | '/admin/customers'
     | '/admin/sessions'
@@ -314,7 +314,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
-  MagicLinkRoute: typeof MagicLinkRoute
+  LoginCallbackRoute: typeof LoginCallbackRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiE2eDeleteUserEmailRoute: typeof ApiE2eDeleteUserEmailRoute
   ApiOrgOrganizationIdInvoiceInvoiceIdRoute: typeof ApiOrgOrganizationIdInvoiceInvoiceIdRoute
@@ -322,11 +322,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/magic-link': {
-      id: '/magic-link'
-      path: '/magic-link'
-      fullPath: '/magic-link'
-      preLoaderRoute: typeof MagicLinkRouteImport
+    '/login-callback': {
+      id: '/login-callback'
+      path: '/login-callback'
+      fullPath: '/login-callback'
+      preLoaderRoute: typeof LoginCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -576,7 +576,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
-  MagicLinkRoute: MagicLinkRoute,
+  LoginCallbackRoute: LoginCallbackRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiE2eDeleteUserEmailRoute: ApiE2eDeleteUserEmailRoute,
   ApiOrgOrganizationIdInvoiceInvoiceIdRoute:

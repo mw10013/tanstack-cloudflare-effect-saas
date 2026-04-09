@@ -228,7 +228,7 @@ describe("integration smoke", () => {
 
       const verifyResponse = yield* workerFetch(result.magicLink ?? "", { redirect: "manual" })
       expect(verifyResponse.status).toBe(302)
-      expect(new URL(verifyResponse.headers.get("location") ?? "").pathname).toBe("/magic-link")
+      expect(new URL(verifyResponse.headers.get("location") ?? "").pathname).toBe("/login-callback")
 
       const sessionCookie = yield* extractSessionCookie(verifyResponse)
       expect(sessionCookie).toContain("better-auth.session_token=")

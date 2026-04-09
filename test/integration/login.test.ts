@@ -25,14 +25,14 @@ describe("integration smoke", () => {
       expect(result.magicLink).toContain("/api/auth/magic-link/verify");
 
       // Use `redirect: "manual"` because `exports.default.fetch` would otherwise
-      // follow the first redirect to `/magic-link` without persisting the session
+      // follow the first redirect to `/login-callback` without persisting the session
       // cookie from the 302 response like a browser cookie jar would.
       const verifyResponse = yield* workerFetch(result.magicLink ?? "", {
         redirect: "manual",
       });
       expect(verifyResponse.status).toBe(302);
       expect(new URL(verifyResponse.headers.get("location") ?? "").pathname).toBe(
-        "/magic-link",
+        "/login-callback",
       );
 
       const sessionCookie = yield* extractSessionCookie(verifyResponse);
@@ -63,7 +63,7 @@ describe("integration smoke", () => {
       });
       expect(verifyResponse.status).toBe(302);
       expect(new URL(verifyResponse.headers.get("location") ?? "").pathname).toBe(
-        "/magic-link",
+        "/login-callback",
       );
 
       const sessionCookie = yield* extractSessionCookie(verifyResponse);

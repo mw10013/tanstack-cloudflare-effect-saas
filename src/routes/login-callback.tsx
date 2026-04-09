@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import { Auth } from "@/lib/Auth";
 import { Request } from "@/lib/Request";
 
-export const resolveMagicLinkRedirectFn = createServerFn({
+export const resolveLoginCallbackRedirectFn = createServerFn({
   method: "GET",
 }).handler(({ context: { runEffect } }) =>
   runEffect(
@@ -29,14 +29,14 @@ export const resolveMagicLinkRedirectFn = createServerFn({
   ),
 );
 
-export const Route = createFileRoute("/magic-link")({
+export const Route = createFileRoute("/login-callback")({
   loader: async ({ location }) => {
     const params = new URLSearchParams(location.searchStr);
     const error = params.get("error");
     if (error) {
       return { error };
     }
-    return resolveMagicLinkRedirectFn();
+    return resolveLoginCallbackRedirectFn();
   },
   component: RouteComponent,
 });
