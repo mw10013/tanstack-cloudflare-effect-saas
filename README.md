@@ -18,19 +18,40 @@
 ## Stack
 
 - TanStack: Start, Router, Query, Form
-- Cloudflare: D1 with read replication, KV, Cron, Rate Limiting, Web Analytics
+- Cloudflare: D1, DO, Agent, Workflow, Queue, KV, Cron, Rate Limiting, Web Analytics
 - Effect: v4
-- Better Auth: Magic Link, Admin, Organization, Stripe, D1 Database Adapter
+- Better Auth: Magic Link, Admin, Organization, Stripe
 - UI: Shadcn on Base UI
-- Testing: Vitest, Playwright
+- Testing: Vitest, Cloudflare Vitest-Integration, Playwright
 
 ## Template Functionality
 
+Invoices are a vehicle to exercise Cloudflare primitives, Effect v4, and fault-tolerant eventual consistency patterns under at-least-once delivery, partial failures, and crashes.
+
+- **Cloudflare Services:**
+  - D1 (SQLite) for Better Auth + app data with idempotent-write retry
+  - Durable Object Agents (`OrganizationAgent`) per organization with DO-local SQLite, `@callable` RPC, and WebSocket broadcast
+  - Workflows: `UserProvisioningWorkflow` (Better Auth org/member reconciliation) and `InvoiceExtractionWorkflow` (AgentWorkflow: R2 load → LLM extract → DO save)
+  - Queues for R2 event notifications and durable finalization safety nets
+  - R2 object storage with event notifications and retry on retryable codes (10001/10043/10054/10058)
+  - KV with exponential backoff + jitter
+  - Cron Trigger for expired-session cleanup
+  - Rate Limiting binding (IP-based) on magic-link endpoints
+  - Web Analytics
+
+- **Fault-Tolerant Eventual Consistency:**
+  - Idempotency-key dedupe in `onInvoiceUpload` — three guards (stale `r2ActionTime`, active workflow instance, terminal status) tolerate at-least-once R2 events
+  - Schedule-first invoice delete — `this.schedule(0, ...)` persists the R2 cleanup intent before the local row delete, so a crash converges on the next alarm tick (1s→30s, 3 retries)
+  - Dual-path membership sync — `enqueue(FinalizeMembershipSync)` before the Better Auth mutation (durable safety net) + `stub.syncMembership()` after (best-effort eager); both re-read D1 as authoritative
+  - `UserProvisioningWorkflow` reconciles all three states of Better Auth's non-transactional org creation (org + owner member are separate writes)
+  - Workflow instance dedupe by idempotency key prevents double-extraction
+
 - **Authentication & Organizations:**
   - Magic link authentication using Better Auth
-  - Multi-tenant organization management with automatic organization creation
+  - Multi-tenant organization management with automatic organization creation via workflow
   - Role-based access control (user/admin/organization member roles)
   - Organization invitations and membership management
+  - Agent WebSocket auth gated pre-upgrade (`onBeforeConnect`) with per-RPC membership re-check
 
 - **Payments & Subscriptions:**
   - Stripe integration with subscription processing
@@ -39,20 +60,13 @@
   - Webhook handling for subscription lifecycle events
   - Subscription management (cancel, reactivate, billing portal access)
 
-- **Database & Data Management:**
-  - Cloudflare D1 (SQLite) database with schema migrations
-  - Type-safe database operations with Zod schema validation
-  - Session management with automatic cleanup of expired sessions
-  - Database seeding utilities for development and testing
-
 - **Effect v4 Architecture:**
   - Services via `ServiceMap.Service` with explicit `Layer.effect` definitions
   - Traced functions with `Effect.fn` for observability
   - Type-safe error handling using `Schema.TaggedErrorClass`
-  - Automatic retry with exponential backoff and jitter for KV operations
-  - Idempotent write support for D1 with application-level retry
   - Layer composition via `Layer.merge` for dependency injection
   - Service dependencies resolved via `yield*` for compile-time safety
+  - `Cause.pretty` normalized into thrown `Error.message` to survive TanStack's `ShallowErrorPlugin` SSR dehydration
 
 - **Admin Panel:**
   - Admin interface for user management
@@ -68,11 +82,11 @@
   - End-to-end testing with Playwright
 
 - **Email Integration:**
-  - AWS SES for transactional email delivery
+  - Cloudflare transactional emails (coming)
   - Demo mode support for development without external email services
 
 - **Security & Performance:**
-  - IP-based rate limiting for authentication endpoints using Cloudflare Rate Limiting
+  - IP-based rate limiting for authentication endpoints
   - Server-side route protection and authorization
   - Secure session handling with database storage
 
