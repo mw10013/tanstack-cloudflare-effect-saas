@@ -1,9 +1,13 @@
 import { Effect, Layer } from "effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
+import { D1 } from "@/lib/D1";
 import * as Domain from "@/lib/Domain";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
+import { Repository } from "@/lib/Repository";
+import { ensureUserProvisionedWorkflow } from "@/lib/UserProvisioning";
 
 const R2PutObjectNotification = Schema.Struct({
   action: Schema.Literals(["PutObject"]),
@@ -28,9 +32,15 @@ export const FinalizeMembershipSyncQueueMessage = Schema.Struct({
   change: MembershipSyncChange,
 });
 
+export const EnsureUserProvisionedQueueMessage = Schema.Struct({
+  action: Schema.Literals(["EnsureUserProvisioned"]),
+  email: Domain.User.fields.email,
+});
+
 export const QueueMessage = Schema.Union([
   R2PutObjectNotification,
   FinalizeMembershipSyncQueueMessage,
+  EnsureUserProvisionedQueueMessage,
 ]);
 
 export type QueueMessage = typeof QueueMessage.Type;
@@ -91,6 +101,18 @@ const processFinalizeMembershipSync = Effect.fn(
   );
 });
 
+const processEnsureUserProvisioned = Effect.fn(
+  "processEnsureUserProvisioned",
+)(function* (message: typeof EnsureUserProvisionedQueueMessage.Type) {
+  const repository = yield* Repository;
+  const user = yield* repository.getUser(message.email);
+  if (Option.isNone(user)) return;
+  yield* ensureUserProvisionedWorkflow({
+    userId: user.value.id,
+    email: user.value.email,
+  });
+});
+
 const processMessage = Effect.fn("processMessage")(function* (
   rawMessage: unknown,
 ) {
@@ -102,12 +124,17 @@ const processMessage = Effect.fn("processMessage")(function* (
     case "FinalizeMembershipSync": {
       return yield* processFinalizeMembershipSync(message);
     }
+    case "EnsureUserProvisioned": {
+      return yield* processEnsureUserProvisioned(message);
+    }
   }
 });
 
 const makeRuntimeLayer = (env: Env) => {
   const envLayer = makeEnvLayer(env);
-  return Layer.mergeAll(envLayer, makeLoggerLayer(env));
+  const d1Layer = Layer.provideMerge(D1.layer, envLayer);
+  const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
+  return Layer.mergeAll(envLayer, repositoryLayer, makeLoggerLayer(env));
 };
 
 export const queue: ExportedHandler<Env>["queue"] = async (batch, env) => {
@@ -116,21 +143,16 @@ export const queue: ExportedHandler<Env>["queue"] = async (batch, env) => {
     batch.messages,
     (queueMessage) =>
       processMessage(queueMessage.body).pipe(
-        Effect.andThen(() =>
-          Effect.sync(() => {
+        Effect.catchTag("SchemaError", () => Effect.void),
+        Effect.match({
+          onSuccess: () => {
             queueMessage.ack();
-          }),
-        ),
-        Effect.catchTag("SchemaError", () =>
-          Effect.sync(() => {
-            queueMessage.ack();
-          }),
-        ),
-        Effect.catch(() =>
-          Effect.sync(() => {
+          },
+          onFailure: () => {
             queueMessage.retry();
-          }),
-        ),
+          },
+        }),
       ),
+    { discard: true },
   ).pipe(Effect.provide(makeRuntimeLayer(env)), Effect.runPromise);
 };

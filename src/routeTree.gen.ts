@@ -17,6 +17,7 @@ import { Route as MktRouteImport } from './routes/_mkt'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as MktIndexRouteImport } from './routes/_mkt.index'
+import { Route as AppProvisioningRouteImport } from './routes/app.provisioning'
 import { Route as AppOrganizationIdRouteImport } from './routes/app.$organizationId'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminSubscriptionsRouteImport } from './routes/admin.subscriptions'
@@ -72,6 +73,11 @@ const MktIndexRoute = MktIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => MktRoute,
+} as any)
+const AppProvisioningRoute = AppProvisioningRouteImport.update({
+  id: '/provisioning',
+  path: '/provisioning',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppOrganizationIdRoute = AppOrganizationIdRouteImport.update({
   id: '/$organizationId',
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/app/$organizationId': typeof AppOrganizationIdRouteWithChildren
+  '/app/provisioning': typeof AppProvisioningRoute
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/app/provisioning': typeof AppProvisioningRoute
   '/': typeof MktIndexRoute
   '/admin': typeof AdminIndexRoute
   '/app': typeof AppIndexRoute
@@ -220,6 +228,7 @@ export interface FileRoutesById {
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/app/$organizationId': typeof AppOrganizationIdRouteWithChildren
+  '/app/provisioning': typeof AppProvisioningRoute
   '/_mkt/': typeof MktIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/app/': typeof AppIndexRoute
@@ -248,6 +257,7 @@ export interface FileRouteTypes {
     | '/admin/subscriptions'
     | '/admin/users'
     | '/app/$organizationId'
+    | '/app/provisioning'
     | '/admin/'
     | '/app/'
     | '/api/auth/$'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/admin/sessions'
     | '/admin/subscriptions'
     | '/admin/users'
+    | '/app/provisioning'
     | '/'
     | '/admin'
     | '/app'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/admin/subscriptions'
     | '/admin/users'
     | '/app/$organizationId'
+    | '/app/provisioning'
     | '/_mkt/'
     | '/admin/'
     | '/app/'
@@ -377,6 +389,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof MktIndexRouteImport
       parentRoute: typeof MktRoute
+    }
+    '/app/provisioning': {
+      id: '/app/provisioning'
+      path: '/provisioning'
+      fullPath: '/app/provisioning'
+      preLoaderRoute: typeof AppProvisioningRouteImport
+      parentRoute: typeof AppRoute
     }
     '/app/$organizationId': {
       id: '/app/$organizationId'
@@ -561,11 +580,13 @@ const AppOrganizationIdRouteWithChildren =
 
 interface AppRouteChildren {
   AppOrganizationIdRoute: typeof AppOrganizationIdRouteWithChildren
+  AppProvisioningRoute: typeof AppProvisioningRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppOrganizationIdRoute: AppOrganizationIdRouteWithChildren,
+  AppProvisioningRoute: AppProvisioningRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

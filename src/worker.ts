@@ -24,6 +24,7 @@ import {
 
 export { InvoiceExtractionWorkflow } from "./invoice-extraction-workflow";
 export { OrganizationAgent } from "./organization-agent";
+export { UserProvisioningWorkflow } from "./user-provisioning-workflow";
 
 /**
  * Runs an Effect within the full app layer for HTTP request handlers (fetch,

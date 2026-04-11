@@ -1,9 +1,5 @@
 import type { Subscription as StripeSubscription } from "@better-auth/stripe";
-import type { Auth as BetterAuth, BetterAuthOptions } from "better-auth";
-import type {
-  DefaultOrganizationPlugin,
-  OrganizationOptions,
-} from "better-auth/plugins";
+import type { BetterAuthOptions } from "better-auth";
 import type { Stripe as StripeTypes } from "stripe";
 
 import { stripe as stripePlugin } from "@better-auth/stripe";
@@ -21,15 +17,17 @@ import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import * as Domain from "@/lib/Domain";
 
 import { KV } from "./KV";
+import { enqueue } from "./Q";
 import { Repository } from "./Repository";
 import { Request } from "./Request";
 import { Stripe } from "./Stripe";
+import { ensureUserProvisionedWorkflow } from "./UserProvisioning";
 
 export type AuthInstance = ReturnType<typeof makeAuth>;
 
 export class Auth extends ServiceMap.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {
-    const services = yield* Effect.services<KV | Stripe | Repository>();
+    const services = yield* Effect.services<KV | Stripe | Repository | Env>();
     const runEffect = Effect.runPromiseWith(services);
     const stripe = yield* Stripe;
     const authConfig = yield* Config.all({
@@ -38,13 +36,10 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
       transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
       stripeWebhookSecret: Config.redacted("STRIPE_WEBHOOK_SECRET"),
     });
-    const { D1: database, ORGANIZATION_AGENT: organizationAgent, Q: queue } =
-      yield* CloudflareEnv;
+    const { D1: database } = yield* CloudflareEnv;
 
     const auth = makeAuth({
       database,
-      organizationAgent,
-      queue,
       stripeClient: stripe.stripe,
       runEffect,
       ...authConfig,
@@ -73,8 +68,6 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
 
 const makeAuth = ({
   database,
-  organizationAgent,
-  queue,
   stripeClient,
   runEffect,
   betterAuthUrl,
@@ -83,27 +76,15 @@ const makeAuth = ({
   stripeWebhookSecret,
 }: {
   database: D1Database;
-  organizationAgent: Env["ORGANIZATION_AGENT"];
-  queue: Env["Q"];
   stripeClient: StripeTypes;
   runEffect: <A, E>(
-    effect: Effect.Effect<A, E, KV | Stripe | Repository>,
+    effect: Effect.Effect<A, E, KV | Stripe | Repository | Env>,
   ) => Promise<A>;
   betterAuthUrl: string;
   betterAuthSecret: Redacted.Redacted;
   transactionalEmail: string;
   stripeWebhookSecret: Redacted.Redacted;
 }) => {
-  // This is a late-bound Better Auth API reference used only inside the auth
-  // options object. `auth` is created from `options`, so closing over `auth`
-  // directly here creates a type cycle and causes Better Auth plugin inference
-  // to collapse. Typing only the organization plugin's `createOrganization`
-  // API keeps the reference narrow and breaks that cycle.
-  let organizationApiCreate = null as unknown as BetterAuth<
-    BetterAuthOptions & {
-      plugins: [DefaultOrganizationPlugin<OrganizationOptions>];
-    }
-  >["api"]["createOrganization"];
   const options = {
     baseURL: betterAuthUrl,
     secret: Redacted.value(betterAuthSecret),
@@ -125,50 +106,24 @@ const makeAuth = ({
     databaseHooks: {
       user: {
         create: {
+          before: (user) =>
+            runEffect(
+              Effect.gen(function* () {
+                if (user.role !== "user") return;
+                yield* enqueue({
+                  action: "EnsureUserProvisioned",
+                  email: user.email,
+                });
+              }),
+            ),
           after: (user) =>
             runEffect(
               Effect.gen(function* () {
                 if (user.role !== "user") return;
-                yield* Effect.logInfo("databaseHooks.user.create.after", {
+                yield* ensureUserProvisionedWorkflow({
                   userId: user.id,
-                  role: user.role,
+                  email: user.email,
                 });
-                const repository = yield* Repository;
-                const org = yield* Effect.tryPromise(() =>
-                  organizationApiCreate({
-                    body: {
-                      name: `${user.email.charAt(0).toUpperCase() + user.email.slice(1)}'s Organization`,
-                      slug: user.email
-                        .replaceAll(/[^a-z0-9]/g, "-")
-                        .toLowerCase(),
-                      userId: user.id,
-                    },
-                  }),
-                );
-                yield* Effect.logInfo("auth.organization.created", {
-                  userId: user.id,
-                  organizationId: org.id,
-                });
-                const organizationId = Schema.decodeUnknownSync(Domain.Organization.fields.id)(org.id);
-                const userId = Schema.decodeUnknownSync(Domain.User.fields.id)(user.id);
-                yield* repository.initializeActiveOrganizationForUserSessions({
-                  organizationId,
-                  userId,
-                });
-                const id = organizationAgent.idFromName(organizationId);
-                const stub = organizationAgent.get(id);
-                yield* Effect.tryPromise(() => stub.setName(organizationId));
-                yield* Effect.tryPromise(() =>
-                  queue.send({
-                    action: "FinalizeMembershipSync" as const,
-                    organizationId,
-                    userId,
-                    change: "added" as const,
-                  }),
-                );
-                yield* Effect.tryPromise(() =>
-                  stub.syncMembership({ userId, change: "added" }),
-                );
               }),
             ),
         },
@@ -387,7 +342,6 @@ const makeAuth = ({
     ],
   } satisfies BetterAuthOptions;
   const auth = betterAuth(options);
-  organizationApiCreate = auth.api.createOrganization;
   return auth;
 };
 

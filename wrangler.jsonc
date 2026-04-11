@@ -47,6 +47,11 @@
       "name": "invoice-extraction-workflow",
       "binding": "INVOICE_EXTRACTION_WORKFLOW",
       "class_name": "InvoiceExtractionWorkflow"
+    },
+    {
+      "name": "user-provisioning-workflow",
+      "binding": "USER_PROVISIONING_WORKFLOW",
+      "class_name": "UserProvisioningWorkflow"
     }
   ],
   "d1_databases": [
@@ -181,6 +186,11 @@
           "name": "invoice-extraction-workflow",
           "binding": "INVOICE_EXTRACTION_WORKFLOW",
           "class_name": "InvoiceExtractionWorkflow"
+        },
+        {
+          "name": "user-provisioning-workflow",
+          "binding": "USER_PROVISIONING_WORKFLOW",
+          "class_name": "UserProvisioningWorkflow"
         }
       ],
       "triggers": {

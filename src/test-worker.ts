@@ -1,4 +1,5 @@
 export { OrganizationAgent } from "./organization-agent";
+export { UserProvisioningWorkflow } from "./user-provisioning-workflow";
 export { default } from "./worker";
 
 import type { AgentWorkflowEvent, AgentWorkflowStep } from "agents/workflows";

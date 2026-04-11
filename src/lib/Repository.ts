@@ -76,6 +76,17 @@ export class Repository extends ServiceMap.Service<Repository>()("Repository", {
         Effect.catchNoSuchElement,
       );
     });
+    const getOrganizationBySlug = Effect.fn("Repository.getOrganizationBySlug")(
+      function* (slug: string) {
+        const result = yield* d1.first(
+          d1.prepare("select * from Organization where slug = ?1").bind(slug),
+        );
+        return yield* Effect.fromOption(result).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(Domain.Organization)),
+          Effect.catchNoSuchElement,
+        );
+      },
+    );
 
     /**
      * Updates only sessions whose `activeOrganizationId` is still `null`.
@@ -617,6 +628,7 @@ select json_object(
       getInvitation,
       getMemberByUserAndOrg,
       getOwnerOrganizationByUserId,
+      getOrganizationBySlug,
       /**
        * Backfills active organization only for sessions that do not have one yet.
        */
