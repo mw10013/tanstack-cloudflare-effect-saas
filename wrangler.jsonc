@@ -76,17 +76,17 @@
   "queues": {
     "producers": [
       {
-        "queue": "q",
+        "queue": "tces-q-local",
         "binding": "Q"
       }
     ],
     "consumers": [
       {
-        "queue": "q",
+        "queue": "tces-q-local",
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_retries": 3,
-        "dead_letter_queue": "dlq"
+        "dead_letter_queue": "tces-dlq-local"
       }
     ]
   },
@@ -150,17 +150,17 @@
       "queues": {
         "producers": [
           {
-            "queue": "q",
+            "queue": "tces-q-production",
             "binding": "Q"
           }
         ],
         "consumers": [
           {
-            "queue": "q",
+            "queue": "tces-q-production",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
             "max_retries": 3,
-            "dead_letter_queue": "dlq"
+            "dead_letter_queue": "tces-dlq-production"
           }
         ]
       },

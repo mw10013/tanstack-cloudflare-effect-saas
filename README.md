@@ -1,5 +1,5 @@
 <h1 align="center">
-<code>TanStack Cloudflare Effect Invoice</code>
+<code>TanStack Cloudflare Effect SaaS</code>
 </h1>
 
 <div align="center">
@@ -153,6 +153,7 @@ pnpm test:e2e
 - Update wrangler.jsonc production kv_namespaces
 - pnpm d1:reset:PRODUCTION
 - pnpm deploy:PRODUCTION
+- pnpm exec wrangler r2 bucket notification create tces-r2-production --event-type object-create --queue tces-q-production
 - pnpm exec wrangler secret put SECRET --env production
   - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN, CF_ACCOUNT_ID, R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY
 - Workers & Pages Settings: tces
