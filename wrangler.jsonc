@@ -116,7 +116,7 @@
         "R2_BUCKET_NAME": "tcei-r2-production",
         "R2_S3_ACCESS_KEY_ID": "",
         "R2_S3_SECRET_ACCESS_KEY": "",
-        "INVOICE_LIMIT": "10"
+        "INVOICE_LIMIT": "5"
       },
       "d1_databases": [
         {
