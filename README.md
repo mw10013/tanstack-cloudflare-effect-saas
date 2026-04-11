@@ -66,7 +66,9 @@ Invoices are a vehicle to exercise Cloudflare primitives, Effect v4, and fault-t
   - Type-safe error handling using `Schema.TaggedErrorClass`
   - Layer composition via `Layer.merge` for dependency injection
   - Service dependencies resolved via `yield*` for compile-time safety
-  - `Cause.pretty` normalized into thrown `Error.message` to survive TanStack's `ShallowErrorPlugin` SSR dehydration
+  - Per-request `runEffect` built in `worker.fetch` and injected into TanStack Start's `ServerContext`; server functions pull it from `context: { runEffect }` and execute Effect pipelines without importing `@tanstack/react-start/server` (which would drag Node builtins into the client build graph)
+  - Separate runtime layer per execution surface — Worker `fetch`, `scheduled` (Cron), `queue`, `OrganizationAgent` DO (DO-local SQLite via `@effect/sql-sqlite-do`), and each Workflow — so each entrypoint only materializes the services it needs
+  - `runEffect` uses `runPromiseExit` + `Cause.pretty` to normalize failures into `Error` instances with non-empty `.message`, preserving server context across TanStack's `ShallowErrorPlugin` SSR dehydration, and re-throws TanStack `redirect`/`notFound` defects so router control flow works from inside Effect pipelines
 
 - **Admin Panel:**
   - Admin interface for user management
