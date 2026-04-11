@@ -1,5 +1,5 @@
 {
-  "name": "tanstack-cloudflare-effect-invoice",
+  "name": "tanstack-cloudflare-effect-saas",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,14 +26,14 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "port": "source .env && echo $PORT",
-    "tail:PRODUCTION": "wrangler tail tcei",
+    "tail:PRODUCTION": "wrangler tail tces",
     "d1:migrate:list": "wrangler d1 migrations list d1-local --local",
     "d1:migrate:apply": "wrangler d1 migrations apply d1-local --local",
-    "d1:migrate:list:PRODUCTION": "wrangler d1 migrations list tcei-d1-production --env production --remote",
-    "d1:migrate:apply:PRODUCTION": "wrangler d1 migrations apply tcei-d1-production --env production --remote",
+    "d1:migrate:list:PRODUCTION": "wrangler d1 migrations list tces-d1-production --env production --remote",
+    "d1:migrate:apply:PRODUCTION": "wrangler d1 migrations apply tces-d1-production --env production --remote",
     "d1:reset": "node scripts/d1-reset.ts",
     "d1:reset:PRODUCTION": "node scripts/d1-reset.ts --env production",
-    "stripe:listen": "source .env && stripe listen --project-name=tcei-int --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted --forward-to http://localhost:${PORT}/api/auth/stripe/webhook",
+    "stripe:listen": "source .env && stripe listen --project-name=tces-int --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted --forward-to http://localhost:${PORT}/api/auth/stripe/webhook",
     "stripe:listen:tcs": "source .env && stripe listen --project-name=tcs-int --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted --forward-to http://localhost:${PORT}/api/auth/stripe/webhook",
     "refs:shadcn": "rm -rf refs/shadcn && mkdir -p refs/shadcn && curl -L https://github.com/shadcn-ui/ui/archive/refs/tags/shadcn@3.8.5.tar.gz | tar -xz -C refs/shadcn --strip-components=1",
     "refs:base-ui": "rm -rf refs/base-ui && mkdir -p refs/base-ui && curl -L https://github.com/mui/base-ui/archive/refs/tags/v1.2.0.tar.gz | tar -xz -C refs/base-ui --strip-components=1",
@@ -50,7 +50,7 @@
     "refs:effect4": "rm -rf refs/effect4 && mkdir -p refs/effect4 && curl -L https://github.com/Effect-TS/effect-smol/archive/refs/tags/effect@4.0.0-beta.42.tar.gz | tar -xz -C refs/effect4 --strip-components=1",
     "refs:vitest": "rm -rf refs/vitest && mkdir -p refs/vitest && curl -L https://github.com/vitest-dev/vitest/archive/refs/tags/v4.1.0.tar.gz | tar -xz -C refs/vitest --strip-components=1",
     "refs:workers-sdk": "rm -rf refs/workers-sdk && mkdir -p refs/workers-sdk && curl -L https://github.com/cloudflare/workers-sdk/archive/refs/tags/wrangler@4.81.1.tar.gz | tar -xz -C refs/workers-sdk --strip-components=1",
-    "clone:links": "[ ! -e refs ] && ln -s ../tanstack-cloudflare-effect-invoice/refs refs; [ ! -e todo.md ] && ln -s ../tanstack-cloudflare-effect-invoice/todo.md todo.md"
+    "clone:links": "[ ! -e refs ] && ln -s ../tanstack-cloudflare-effect-saas/refs refs; [ ! -e todo.md ] && ln -s ../tanstack-cloudflare-effect-saas/todo.md todo.md"
   },
   "dependencies": {
     "@base-ui/react": "1.2.0",

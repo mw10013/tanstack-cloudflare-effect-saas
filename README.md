@@ -10,7 +10,7 @@
   TanStack • Cloudflare • Effect • Better Auth • Stripe • Shadcn on Base UI
   </p>
   <p>
-    <a href="https://tcei.devxo.workers.dev/">Demo</a>
+    <a href="https://tces.devxo.workers.dev/">Demo</a>
   </p>
 
 </div>
@@ -97,7 +97,7 @@ Invoices are a vehicle to exercise Cloudflare primitives, Effect v4, and fault-t
 ### Stripe
 
 - Install the [Stripe CLI](https://stripe.com/docs/stripe-cli).
-- Go to stripe and create a sandbox for testing named `tcei-int`
+- Go to stripe and create a sandbox for testing named `tces-int`
   - Remember secret key for `STRIPE_SECRET_KEY` environment variable.
 
 ### Local Env
@@ -109,7 +109,7 @@ Invoices are a vehicle to exercise Cloudflare primitives, Effect v4, and fault-t
 ```
 pnpm i
 pnpm d1:reset
-stripe login --project-name=tcei-int
+stripe login --project-name=tces-int
 pnpm stripe:listen
 # copy webhook signing secret to STRIPE_WEBHOOK_SECRET in .env
 pnpm dev
@@ -149,18 +149,18 @@ pnpm test:e2e
 - Cloudflare Web Analytics | Add a site
   - Remember token from script for ANALYTICS_TOKEN secret below.
 
-- pnpm exec wrangler kv namespace create tcei-kv-production
+- pnpm exec wrangler kv namespace create tces-kv-production
 - Update wrangler.jsonc production kv_namespaces
 - pnpm d1:reset:PRODUCTION
 - pnpm deploy:PRODUCTION
 - pnpm exec wrangler secret put SECRET --env production
   - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN, CF_ACCOUNT_ID, R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY
-- Workers & Pages Settings: tcei
+- Workers & Pages Settings: tces
   - Git repository: connect to git repo
   - Build configuration
     - Build command: CLOUDFLARE_ENV=production pnpm build
     - Deploy command: pnpm exec wrangler deploy --env production
-- Storage & databases: tcei-d1-production: Settings
+- Storage & databases: tces-d1-production: Settings
   - Enable read replication
 
 ## Shadcn with Base UI
@@ -184,4 +184,4 @@ Homepage / Pricing design by [dev-xo](https://github.com/dev-xo). See his [remix
 
 ## License
 
-Licensed under the [MIT License](https://github.com/mw10013/tanstack-cloudflare-effect-invoice/blob/main/LICENSE).
+Licensed under the [MIT License](https://github.com/mw10013/tanstack-cloudflare-effect-saas/blob/main/LICENSE).

@@ -4,7 +4,7 @@
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tcei-local",
+  "name": "tces-local",
   "compatibility_date": "2025-09-17",
   "compatibility_flags": ["nodejs_compat"],
   "account_id": "1422451be59cc2401532ad67d92ae773",
@@ -16,8 +16,8 @@
     "BETTER_AUTH_URL": "http://localhost:3000",
     "ANALYTICS_TOKEN": "",
     "CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
-    "AI_GATEWAY_ID": "tcei-ai-gateway",
-    "R2_BUCKET_NAME": "tcei-r2-local",
+    "AI_GATEWAY_ID": "tces-ai-gateway",
+    "R2_BUCKET_NAME": "tces-r2-local",
     "R2_S3_ACCESS_KEY_ID": "",
     "R2_S3_SECRET_ACCESS_KEY": "",
     "INVOICE_LIMIT": "3"
@@ -70,7 +70,7 @@
   "r2_buckets": [
     {
       "binding": "R2",
-      "bucket_name": "tcei-r2-local"
+      "bucket_name": "tces-r2-local"
     }
   ],
   "queues": {
@@ -105,15 +105,15 @@
   },
   "env": {
     "production": {
-      "name": "tcei",
+      "name": "tces",
       "vars": {
         "ENVIRONMENT": "production",
         "DEMO_MODE": "true",
         "TRANSACTIONAL_EMAIL": "noreply@example.com",
-        "BETTER_AUTH_URL": "https://tcei.devxo.workers.dev",
+        "BETTER_AUTH_URL": "https://tces.devxo.workers.dev",
         "CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
-        "AI_GATEWAY_ID": "tcei-ai-gateway",
-        "R2_BUCKET_NAME": "tcei-r2-production",
+        "AI_GATEWAY_ID": "tces-ai-gateway",
+        "R2_BUCKET_NAME": "tces-r2-production",
         "R2_S3_ACCESS_KEY_ID": "",
         "R2_S3_SECRET_ACCESS_KEY": "",
         "INVOICE_LIMIT": "5"
@@ -121,7 +121,7 @@
       "d1_databases": [
         {
           "binding": "D1",
-          "database_name": "tcei-d1-production",
+          "database_name": "tces-d1-production",
           "database_id": ""
         }
       ],
@@ -144,7 +144,7 @@
       "r2_buckets": [
         {
           "binding": "R2",
-          "bucket_name": "tcei-r2-production"
+          "bucket_name": "tces-r2-production"
         }
       ],
       "queues": {

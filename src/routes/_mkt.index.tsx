@@ -53,7 +53,7 @@ function RouteComponent() {
             </Link>
           )}
           <a
-            href="https://github.com/mw10013/tanstack-cloudflare-effect-invoice"
+            href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
             target="_blank"
             rel="noopener noreferrer"
             className={buttonVariants({
@@ -434,7 +434,7 @@ function RouteComponent() {
         <div className="mt-6 flex flex-col items-center gap-6">
           <div className="flex w-fit gap-4">
             <a
-              href="https://github.com/mw10013/tanstack-cloudflare-effect-invoice"
+              href="https://github.com/mw10013/tanstack-cloudflare-effect-saas"
               target="_blank"
               rel="noopener noreferrer"
               className={buttonVariants({
