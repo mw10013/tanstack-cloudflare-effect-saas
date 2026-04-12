@@ -33,23 +33,13 @@ const makeRuntimeLayer = (env: Env) => {
 };
 
 /**
- * Idempotently provisions the user's owner organization and returns its id.
+ * Provisions a user's owner organization idempotently.
  *
- * Better Auth's `auth.api.createOrganization` is not transactional: the org
- * row and the owner `Member` row are two separate adapter writes
- * (`refs/better-auth/.../routes/crud-org.ts` steps 6 and 8). A crash between
- * them leaves an org with no member for the creator. This function reconciles
- * all three observable states:
- *
- * 1. Org + owner member exist → short-circuit via `getOwnerOrganizationByUserId`.
- * 2. Neither exists → `createOrganization` succeeds normally.
- * 3. Org exists, owner member missing → `createOrganization` throws
- *    `ORGANIZATION_ALREADY_EXISTS` (slug collision on the unique slug), we
- *    look the org up by slug and call `addMember` to finish provisioning.
- *
- * The slug is derived from `userId` (see `getUserProvisioningOrganization`),
- * so the `ORGANIZATION_ALREADY_EXISTS` path can only ever match this user's
- * own org — it cannot capture a different user's org.
+ * Flow:
+ * 1) create organization by deterministic slug
+ * 2) on ORGANIZATION_ALREADY_EXISTS, resolve organization by slug
+ * 3) add owner membership
+ * 4) on USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION, treat as success
  */
 const createOrganization = Effect.fn("userProvisioning.createOrganization")(
   function* ({
@@ -64,13 +54,11 @@ const createOrganization = Effect.fn("userProvisioning.createOrganization")(
     const decodeOrganizationId = Schema.decodeUnknownEffect(
       Domain.Organization.fields.id,
     );
-    const ownerOrganization =
-      yield* repository.getOwnerOrganizationByUserId(userId);
-    if (Option.isSome(ownerOrganization)) return ownerOrganization.value.id;
     const { name, slug } = getUserProvisioningOrganization({ userId, email });
-    return yield* Effect.tryPromise(() =>
-      auth.api.createOrganization({ body: { name, slug, userId } }),
-    ).pipe(
+    const organizationId = yield* Effect.tryPromise({
+      try: () => auth.api.createOrganization({ body: { name, slug, userId } }),
+      catch: (cause) => cause,
+    }).pipe(
       Effect.flatMap((created) => decodeOrganizationId(created.id)),
       Effect.catch((error) =>
         isAPIError(error) &&
@@ -81,31 +69,28 @@ const createOrganization = Effect.fn("userProvisioning.createOrganization")(
               if (Option.isNone(organizationBySlug)) {
                 return yield* Effect.fail(error);
               }
-              const organizationId = organizationBySlug.value.id;
-              const existingMember = yield* repository.getMemberByUserAndOrg({
-                userId,
-                organizationId,
-              });
-              if (Option.isNone(existingMember)) {
-                yield* Effect.tryPromise(() =>
-                  auth.api.addMember({
-                    body: { userId, organizationId, role: "owner" },
-                  }),
-                ).pipe(
-                  Effect.catch((addMemberError) =>
-                    isAPIError(addMemberError) &&
-                    addMemberError.body?.code ===
-                      "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION"
-                      ? Effect.void
-                      : Effect.fail(addMemberError),
-                  ),
-                );
-              }
-              return organizationId;
+              return organizationBySlug.value.id;
             })
           : Effect.fail(error),
       ),
     );
+    yield* Effect.tryPromise(() =>
+      auth.api.addMember({
+        body: {
+          userId,
+          organizationId,
+          role: "owner",
+        },
+      }),
+    ).pipe(
+      Effect.catch((error) =>
+        isAPIError(error) &&
+        error.body?.code === "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION"
+          ? Effect.void
+          : Effect.fail(error),
+      ),
+    );
+    return organizationId;
   },
 );
 
