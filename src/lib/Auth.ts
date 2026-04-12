@@ -120,10 +120,19 @@ const makeAuth = ({
             runEffect(
               Effect.gen(function* () {
                 if (user.role !== "user") return;
+                // Inline provisioning is a best-effort optimization; the
+                // `before` hook already enqueued a durable job, so swallow
+                // failures here to avoid failing signup for an already-created user.
                 yield* ensureUserProvisionedWorkflow({
                   userId: user.id,
                   email: user.email,
-                });
+                }).pipe(
+                  Effect.ignoreCause({
+                    log: "Warn",
+                    message:
+                      "Inline user provisioning failed; queued job will retry",
+                  }),
+                );
               }),
             ),
         },
