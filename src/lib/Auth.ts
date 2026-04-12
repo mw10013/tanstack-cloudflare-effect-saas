@@ -32,9 +32,13 @@ export class Auth extends ServiceMap.Service<Auth>()("Auth", {
     const stripe = yield* Stripe;
     const authConfig = yield* Config.all({
       betterAuthUrl: Config.nonEmptyString("BETTER_AUTH_URL"),
-      betterAuthSecret: Config.redacted("BETTER_AUTH_SECRET"),
+      betterAuthSecret: Config.nonEmptyString("BETTER_AUTH_SECRET").pipe(
+        Config.map(Redacted.make),
+      ),
       transactionalEmail: Config.nonEmptyString("TRANSACTIONAL_EMAIL"),
-      stripeWebhookSecret: Config.redacted("STRIPE_WEBHOOK_SECRET"),
+      stripeWebhookSecret: Config.nonEmptyString("STRIPE_WEBHOOK_SECRET").pipe(
+        Config.map(Redacted.make),
+      ),
     });
     const { D1: database } = yield* CloudflareEnv;
 

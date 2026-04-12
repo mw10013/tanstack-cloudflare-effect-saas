@@ -39,8 +39,12 @@ export const getInvoicesWithViewUrl = Effect.fn("getInvoicesWithViewUrl")(functi
     }));
   }
   const r2BucketName = yield* Config.nonEmptyString("R2_BUCKET_NAME");
-  const r2S3AccessKeyId = yield* Config.redacted("R2_S3_ACCESS_KEY_ID");
-  const r2S3SecretAccessKey = yield* Config.redacted("R2_S3_SECRET_ACCESS_KEY");
+  const r2S3AccessKeyId = yield* Config.nonEmptyString(
+    "R2_S3_ACCESS_KEY_ID",
+  ).pipe(Config.map(Redacted.make));
+  const r2S3SecretAccessKey = yield* Config.nonEmptyString(
+    "R2_S3_SECRET_ACCESS_KEY",
+  ).pipe(Config.map(Redacted.make));
   const cfAccountId = yield* Config.nonEmptyString("CF_ACCOUNT_ID");
   const { AwsClient } = yield* Effect.tryPromise(() => import("aws4fetch"));
   const client = new AwsClient({
@@ -90,10 +94,12 @@ export const getInvoiceViewUrl = Effect.fn("getInvoiceViewUrl")(function* (
     if (environment === "local")
       return `/api/org/${organizationId}/invoice/${encodeURIComponent(invoice.id)}`;
     const r2BucketName = yield* Config.nonEmptyString("R2_BUCKET_NAME");
-    const r2S3AccessKeyId = yield* Config.redacted("R2_S3_ACCESS_KEY_ID");
-    const r2S3SecretAccessKey = yield* Config.redacted(
+    const r2S3AccessKeyId = yield* Config.nonEmptyString(
+      "R2_S3_ACCESS_KEY_ID",
+    ).pipe(Config.map(Redacted.make));
+    const r2S3SecretAccessKey = yield* Config.nonEmptyString(
       "R2_S3_SECRET_ACCESS_KEY",
-    );
+    ).pipe(Config.map(Redacted.make));
     const cfAccountId = yield* Config.nonEmptyString("CF_ACCOUNT_ID");
     const { AwsClient } = yield* Effect.tryPromise(() => import("aws4fetch"));
     const client = new AwsClient({

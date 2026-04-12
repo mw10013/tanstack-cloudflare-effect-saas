@@ -23,7 +23,9 @@ const requirePriceWithLookupKey = (price: Price) =>
 
 export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
   make: Effect.gen(function* () {
-    const stripeSecretKey = yield* Config.redacted("STRIPE_SECRET_KEY");
+    const stripeSecretKey = yield* Config.nonEmptyString(
+      "STRIPE_SECRET_KEY",
+    ).pipe(Config.map(Redacted.make));
     const kv = yield* KV;
     const stripe = new StripeClient.Stripe(Redacted.value(stripeSecretKey), {
       apiVersion: "2025-10-29.clover",

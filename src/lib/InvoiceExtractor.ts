@@ -100,8 +100,12 @@ export class InvoiceExtractor extends ServiceMap.Service<InvoiceExtractor>()(
       const config = yield* Config.all({
         accountId: Config.nonEmptyString("CF_ACCOUNT_ID"),
         gatewayId: Config.nonEmptyString("AI_GATEWAY_ID"),
-        googleAiStudioApiKey: Config.redacted("GOOGLE_AI_STUDIO_API_KEY"),
-        aiGatewayToken: Config.redacted("AI_GATEWAY_TOKEN"),
+        googleAiStudioApiKey: Config.nonEmptyString(
+          "GOOGLE_AI_STUDIO_API_KEY",
+        ).pipe(Config.map(Redacted.make)),
+        aiGatewayToken: Config.nonEmptyString("AI_GATEWAY_TOKEN").pipe(
+          Config.map(Redacted.make),
+        ),
       });
       const client = yield* HttpClient.HttpClient;
 
