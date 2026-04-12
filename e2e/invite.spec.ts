@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 
-import { invariant } from "@epic-web/invariant";
 import { expect, test } from "@playwright/test";
+import assert from "node:assert/strict";
 
 import { scopeEmail } from "./utils";
 
@@ -55,7 +55,7 @@ test.describe("invite", () => {
 
   users.forEach((user) => {
     test(`invite from ${user.email}`, async ({ page, baseURL }) => {
-      invariant(baseURL, "Missing baseURL");
+      assert.ok(baseURL, "Missing baseURL");
       const pom = createInvitePom({ page, baseURL });
 
       await pom.login({ email: user.email });
@@ -79,7 +79,7 @@ test.describe("invite", () => {
         u.invitees.find((i) => i.email === user.email)?.action === "reject",
     );
     test(`handle invites for ${user.email}`, async ({ page, baseURL }) => {
-      invariant(baseURL, "Missing baseURL");
+      assert.ok(baseURL, "Missing baseURL");
       const pom = createInvitePom({ page, baseURL });
 
       await pom.login({ email: user.email });
@@ -102,7 +102,7 @@ test.describe("invite", () => {
     ).length;
     const expectedCount = 1 + acceptedCount;
     test(`verify member count for ${user.email}`, async ({ page, baseURL }) => {
-      invariant(baseURL, "Missing baseURL");
+      assert.ok(baseURL, "Missing baseURL");
       const pom = createInvitePom({ page, baseURL });
 
       await pom.login({ email: user.email });
@@ -127,7 +127,7 @@ test.describe("admin invite", () => {
   });
 
   test("admin can invite members", async ({ page, baseURL }) => {
-    invariant(baseURL, "Missing baseURL");
+    assert.ok(baseURL, "Missing baseURL");
     const pom = createInvitePom({ page, baseURL });
     const ownerOrganizationName = getOrganizationName(
       adminInviteScenario.ownerEmail,
@@ -183,7 +183,7 @@ const createInvitePom = ({
   readonly page: Page;
   readonly baseURL: string;
 }) => {
-  invariant(baseURL.endsWith("/"), "baseURL must have a trailing slash");
+  assert.ok(baseURL.endsWith("/"), "baseURL must have a trailing slash");
 
   const login = async ({ email }: { email: string }) => {
     await page.goto("/login");

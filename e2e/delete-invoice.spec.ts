@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
-import { invariant } from "@epic-web/invariant";
 import { expect, test } from "@playwright/test";
+import assert from "node:assert/strict";
 
 import { scopeEmail } from "./utils";
 
@@ -58,7 +58,7 @@ test.describe("delete invoice", () => {
   });
 
   test("creates an invoice then deletes it", async ({ page, baseURL }) => {
-    invariant(baseURL, "Missing baseURL");
+    assert.ok(baseURL, "Missing baseURL");
 
     await login(page, email);
     await goToInvoices(page);

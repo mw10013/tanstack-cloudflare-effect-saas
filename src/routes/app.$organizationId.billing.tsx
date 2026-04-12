@@ -1,4 +1,3 @@
-import { invariant } from "@epic-web/invariant";
 import { useMutation } from "@tanstack/react-query";
 import {
   createFileRoute,
@@ -128,10 +127,9 @@ function SubscriptionCard({
 
   const cancelSubscriptionMutation = useMutation({
     mutationFn: () => {
-      invariant(
-        subscription.stripeSubscriptionId,
-        "Missing stripeSubscriptionId",
-      );
+      if (!subscription.stripeSubscriptionId) {
+        throw new Error("Missing stripeSubscriptionId");
+      }
       return cancelSubscriptionServerFn({
         data: {
           organizationId,
@@ -146,10 +144,9 @@ function SubscriptionCard({
 
   const restoreSubscriptionMutation = useMutation({
     mutationFn: () => {
-      invariant(
-        subscription.stripeSubscriptionId,
-        "Missing stripeSubscriptionId",
-      );
+      if (!subscription.stripeSubscriptionId) {
+        throw new Error("Missing stripeSubscriptionId");
+      }
       return restoreSubscriptionServerFn({
         data: {
           organizationId,

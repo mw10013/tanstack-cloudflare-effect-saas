@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
-import { invariant } from "@epic-web/invariant";
 import { expect, test } from "@playwright/test";
+import assert from "node:assert/strict";
 
 import { scopeEmail } from "./utils";
 
@@ -58,7 +58,7 @@ test.describe("new invoice", () => {
   });
 
   test("creates and verifies a manual invoice", async ({ page, baseURL }) => {
-    invariant(baseURL, "Missing baseURL");
+    assert.ok(baseURL, "Missing baseURL");
     const pom = createNewInvoicePom({ page, baseURL });
 
     await pom.login({ email });
@@ -77,7 +77,7 @@ const createNewInvoicePom = ({
   readonly page: Page;
   readonly baseURL: string;
 }) => {
-  invariant(baseURL.endsWith("/"), "baseURL must have a trailing slash");
+  assert.ok(baseURL.endsWith("/"), "baseURL must have a trailing slash");
 
   let createdInvoiceId = "";
 

@@ -1,7 +1,7 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 
-import { invariant } from "@epic-web/invariant";
 import { expect, test } from "@playwright/test";
+import assert from "node:assert/strict";
 
 import { planData } from "@/lib/Domain";
 
@@ -30,7 +30,7 @@ test.describe("subscribe", () => {
     ])
     .forEach(({ email, intent, planName }) => {
       test(`${intent} for ${email}`, async ({ page, request, baseURL }) => {
-        invariant(baseURL, "Missing baseURL");
+        assert.ok(baseURL, "Missing baseURL");
         const pom = createStripePom({ page, baseURL });
 
         await pom.deleteUser({ request, email });
@@ -62,7 +62,7 @@ test.describe("subscribe/cancel", () => {
     ])
     .forEach(({ email, intent, planName }) => {
       test(`${intent} for ${email}`, async ({ page, request, baseURL }) => {
-        invariant(baseURL, "Missing baseURL");
+        assert.ok(baseURL, "Missing baseURL");
         const pom = createStripePom({ page, baseURL });
 
         await pom.deleteUser({ request, email });
@@ -113,7 +113,7 @@ test.describe("subscribe/upgrade", () => {
         request,
         baseURL,
       }) => {
-        invariant(baseURL, "Missing baseURL");
+        assert.ok(baseURL, "Missing baseURL");
         const pom = createStripePom({ page, baseURL });
 
         await pom.deleteUser({ request, email });
@@ -136,7 +136,7 @@ const createStripePom = ({
   readonly page: Page;
   readonly baseURL: string;
 }) => {
-  invariant(baseURL.endsWith("/"), "baseURL must have a trailing slash");
+  assert.ok(baseURL.endsWith("/"), "baseURL must have a trailing slash");
 
   const deleteUser = async ({
     request,

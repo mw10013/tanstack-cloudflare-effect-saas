@@ -1,7 +1,7 @@
 import type { Browser, Page } from "@playwright/test";
 
-import { invariant } from "@epic-web/invariant";
 import { expect, test } from "@playwright/test";
+import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import { scopeEmail } from "./utils";
@@ -41,7 +41,7 @@ const getOrganizationName = (email: string) =>
 
 const getOrganizationIdFromUrl = (url: string) => {
   const organizationId = new URL(url).pathname.split("/")[2];
-  invariant(organizationId, `Could not parse organizationId from URL: ${url}`);
+  assert.ok(organizationId, `Could not parse organizationId from URL: ${url}`);
   return organizationId;
 };
 
@@ -159,7 +159,7 @@ const createInvoice = async ({
   await page.waitForURL(/\/app\/[^/]+\/invoices\/[^/?]+$/, { timeout: 15_000 });
   await page.screenshot({ path: `test-results/debug-create-invoice-after-nav.png` });
   const invoiceId = page.url().split("/").at(-1) ?? "";
-  invariant(invoiceId, "Could not parse invoiceId from URL");
+  assert.ok(invoiceId, "Could not parse invoiceId from URL");
   return invoiceId;
 };
 
@@ -233,7 +233,7 @@ test.describe("organization-agent authorization", () => {
     baseURL,
   }) => {
     test.setTimeout(60_000);
-    invariant(baseURL, "Missing baseURL");
+    assert.ok(baseURL, "Missing baseURL");
     await withTwoPages(browser, async ({ ownerPage, memberPage }) => {
       await setupInvitedMember({
         ownerPage,
@@ -275,7 +275,7 @@ test.describe("organization-agent authorization", () => {
     browser,
     baseURL,
   }) => {
-    invariant(baseURL, "Missing baseURL");
+    assert.ok(baseURL, "Missing baseURL");
     await withTwoPages(browser, async ({ ownerPage, memberPage }) => {
       await login(ownerPage, neverMemberScenario.ownerEmail);
       const ownerOrganizationId = getOrganizationIdFromUrl(ownerPage.url());
@@ -295,7 +295,7 @@ test.describe("organization-agent authorization", () => {
     baseURL,
   }) => {
     test.setTimeout(60_000);
-    invariant(baseURL, "Missing baseURL");
+    assert.ok(baseURL, "Missing baseURL");
     await withTwoPages(browser, async ({ ownerPage, memberPage }) => {
       await setupInvitedMember({
         ownerPage,

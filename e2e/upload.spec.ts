@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 
-import { invariant } from "@epic-web/invariant";
 import { expect, test } from "@playwright/test";
+import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import { scopeEmail } from "./utils";
@@ -21,7 +21,7 @@ test.describe("invoice upload", () => {
 
   test("uploads an invoice to ready state", async ({ page, baseURL }) => {
     test.setTimeout(120_000);
-    invariant(baseURL, "Missing baseURL");
+    assert.ok(baseURL, "Missing baseURL");
     const pom = createUploadPom({ page, baseURL });
 
     await pom.login({ email });
@@ -38,7 +38,7 @@ const createUploadPom = ({
   readonly page: Page;
   readonly baseURL: string;
 }) => {
-  invariant(baseURL.endsWith("/"), "baseURL must have a trailing slash");
+  assert.ok(baseURL.endsWith("/"), "baseURL must have a trailing slash");
 
   const invoiceRow = page.locator("tbody tr").filter({ hasText: invoiceListName });
 
