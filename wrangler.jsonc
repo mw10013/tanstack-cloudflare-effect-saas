@@ -122,13 +122,13 @@
         {
           "binding": "D1",
           "database_name": "tces-d1-production",
-          "database_id": ""
+          "database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
         }
       ],
       "kv_namespaces": [
         {
           "binding": "KV",
-          "id": ""
+          "id": "353a94f63ff54720a0023ec48a38cb8f"
         }
       ],
       "ratelimits": [
