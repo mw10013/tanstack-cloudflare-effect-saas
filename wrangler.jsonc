@@ -61,8 +61,8 @@
 	"d1_databases": [
 		{
 			"binding": "D1",
-			"database_name": "tces-d1-production",
-			"database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
+			"database_name": "d1-local",
+			"database_id": "d1-local"
 		}
 	],
 	"kv_namespaces": [

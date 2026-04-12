@@ -85,12 +85,15 @@ const makeRunEffect = (env: Env, request: Request) => {
     const squashed = Cause.squash(exit.cause);
     // oxlint-disable-next-line @typescript-eslint/only-throw-error -- redirect is a Response, notFound is a plain object; TanStack expects these thrown as-is
     if (isRedirect(squashed) || isNotFound(squashed)) throw squashed;
-    const pretty = Cause.pretty(exit.cause);
     if (squashed instanceof Error) {
-      if (!squashed.message) squashed.message = pretty;
+      if (Cause.isUnknownError(squashed) && squashed.cause instanceof Error) {
+        squashed.message = squashed.cause.message;
+      } else if (!squashed.message) {
+        squashed.message = Cause.pretty(exit.cause);
+      }
       throw squashed;
     }
-    throw new Error(pretty);
+    throw new Error(Cause.pretty(exit.cause));
   };
 };
 

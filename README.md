@@ -104,6 +104,7 @@ Invoices are a vehicle to exercise Cloudflare primitives, Effect v4, and fault-t
 
 - Copy `.env.example` to `.env`.
 - Edit the `BETTER_AUTH_SECRET` and `STRIPE_SECRET_KEY` keys.
+- Edit account_id and CF_ACCOUNT_ID (local and production)
 - Set `STRIPE_WEBHOOK_SECRET` later after you run `pnpm stripe:listen` below.
 
 ```
@@ -156,7 +157,7 @@ pnpm test:e2e
 - pnpm deploy:PRODUCTION
 - pnpm exec wrangler r2 bucket notification create tces-r2-production --event-type object-create --queue tces-q-production
 - pnpm exec wrangler secret put SECRET --env production
-  - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN, CF_ACCOUNT_ID, R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY, WORKERS_AI_API_TOKEN AI_GATEWAY_TOKEN, GOOGLE_AI_STUDIO_API_KEY
+  - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN, R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY, WORKERS_AI_API_TOKEN AI_GATEWAY_TOKEN, GOOGLE_AI_STUDIO_API_KEY
 - Workers & Pages Settings: tces
   - Git repository: connect to git repo
   - Build configuration
