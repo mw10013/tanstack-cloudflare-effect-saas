@@ -9,7 +9,7 @@ import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { admin, magicLink, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
-import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
+import { Config, Effect, Layer, Redacted, Context } from "effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -25,9 +25,9 @@ import { ensureUserProvisionedWorkflow } from "./UserProvisioning";
 
 export type AuthInstance = ReturnType<typeof makeAuth>;
 
-export class Auth extends ServiceMap.Service<Auth>()("Auth", {
+export class Auth extends Context.Service<Auth>()("Auth", {
   make: Effect.gen(function* () {
-    const services = yield* Effect.services<KV | Stripe | Repository | Env>();
+    const services = yield* Effect.context<KV | Stripe | Repository | Env>();
     const runEffect = Effect.runPromiseWith(services);
     const stripe = yield* Stripe;
     const authConfig = yield* Config.all({

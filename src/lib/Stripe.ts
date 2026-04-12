@@ -2,7 +2,7 @@ import type { Stripe as StripeTypes } from "stripe";
 
 import type { Plan } from "@/lib/Domain";
 
-import { Config, Effect, Layer, Redacted, ServiceMap } from "effect";
+import { Config, Effect, Layer, Redacted, Context } from "effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as StripeClient from "stripe";
@@ -21,7 +21,7 @@ const requirePriceWithLookupKey = (price: Price) =>
     ? failStripe("Missing lookup_key")
     : Effect.succeed(price);
 
-export class Stripe extends ServiceMap.Service<Stripe>()("Stripe", {
+export class Stripe extends Context.Service<Stripe>()("Stripe", {
   make: Effect.gen(function* () {
     const stripeSecretKey = yield* Config.nonEmptyString(
       "STRIPE_SECRET_KEY",

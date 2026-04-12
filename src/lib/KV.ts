@@ -1,4 +1,4 @@
-import { Effect, Layer, Schedule, Schema, ServiceMap } from "effect";
+import { Effect, Layer, Schedule, Schema, Context } from "effect";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
@@ -15,7 +15,7 @@ import { CloudflareEnv } from "@/lib/CloudflareEnv";
  * The 1s base delay is intentional: KV enforces 1 write/sec/key, so retrying
  * sooner would just hit the rate limit again.
  */
-export class KV extends ServiceMap.Service<KV>()("KV", {
+export class KV extends Context.Service<KV>()("KV", {
   make: Effect.gen(function* () {
     const { KV: kv } = yield* CloudflareEnv;
     const get = Effect.fn("KV.get")(function* (key: string) {

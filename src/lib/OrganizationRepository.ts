@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Schema, ServiceMap } from "effect";
+import { Effect, Layer, Option, Schema, Context } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import type * as Domain from "./Domain";
@@ -11,7 +11,7 @@ const decodeInvoice = Schema.decodeUnknownEffect(OrganizationDomain.Invoice);
 const decodeInvoices = Schema.decodeUnknownEffect(
   Schema.mutable(Schema.Array(OrganizationDomain.Invoice)),
 );
-export class OrganizationRepository extends ServiceMap.Service<OrganizationRepository>()(
+export class OrganizationRepository extends Context.Service<OrganizationRepository>()(
   "OrganizationRepository",
   {
     make: Effect.gen(function* () {

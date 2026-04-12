@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { Effect, Layer, Option, ServiceMap } from "effect";
+import { Effect, Layer, Option, Context } from "effect";
 import * as Schema from "effect/Schema";
 import { layer } from "@effect/vitest";
 import { expect } from "vitest";
@@ -9,7 +9,7 @@ import { D1 } from "@/lib/D1";
 import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
 
-const envLayer = Layer.succeedServices(ServiceMap.make(CloudflareEnv, env));
+const envLayer = Layer.succeedContext(Context.make(CloudflareEnv, env));
 const d1Layer = Layer.provideMerge(D1.layer, envLayer);
 const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
 

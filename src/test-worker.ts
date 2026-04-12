@@ -4,7 +4,7 @@ export { default } from "./worker";
 
 import type { AgentWorkflowEvent, AgentWorkflowStep } from "agents/workflows";
 
-import { ConfigProvider, Effect, Layer, ServiceMap } from "effect";
+import { ConfigProvider, Effect, Layer, Context } from "effect";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { InvoiceExtractor } from "@/lib/InvoiceExtractor";
@@ -25,9 +25,9 @@ export class InvoiceExtractionWorkflow extends Base {
   }
 
   protected override makeRuntimeLayer() {
-    const envLayer = Layer.succeedServices(
-      ServiceMap.make(CloudflareEnv, this.env).pipe(
-        ServiceMap.add(
+    const envLayer = Layer.succeedContext(
+      Context.make(CloudflareEnv, this.env).pipe(
+        Context.add(
           ConfigProvider.ConfigProvider,
           ConfigProvider.fromUnknown(this.env),
         ),

@@ -1,3 +1,3 @@
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 
-export const Request = ServiceMap.Service<globalThis.Request>("app/Request");
+export const Request = Context.Service<globalThis.Request>("app/Request");

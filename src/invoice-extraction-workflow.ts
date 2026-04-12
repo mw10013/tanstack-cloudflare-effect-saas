@@ -4,7 +4,7 @@ import type { OrganizationAgent } from "./organization-agent";
 
 import { AgentWorkflow } from "agents/workflows";
 import type { Config } from "effect";
-import { ConfigProvider, Effect, Layer, Option, Schema, ServiceMap } from "effect";
+import { ConfigProvider, Effect, Layer, Option, Schema, Context } from "effect";
 import * as Encoding from "effect/Encoding";
 import * as Result from "effect/Result";
 import { FetchHttpClient } from "effect/unstable/http";
@@ -38,9 +38,9 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
   Pick<ActivityMessage, "action" | "level" | "text">
 > {
   protected makeRuntimeLayer(): Layer.Layer<R2 | InvoiceExtractor, Config.ConfigError> {
-    const envLayer = Layer.succeedServices(
-      ServiceMap.make(CloudflareEnv, this.env).pipe(
-        ServiceMap.add(
+    const envLayer = Layer.succeedContext(
+      Context.make(CloudflareEnv, this.env).pipe(
+        Context.add(
           ConfigProvider.ConfigProvider,
           ConfigProvider.fromUnknown(this.env),
         ),
@@ -70,7 +70,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
           level: "info",
           text: `Invoice extraction started: ${event.payload.fileName}`,
         });
-        const services = yield* Effect.services<Layer.Success<typeof runtimeLayer>>();
+        const services = yield* Effect.context<Layer.Success<typeof runtimeLayer>>();
         const runEffect = Effect.runPromiseWith(services);
         yield* Effect.logInfo("invoiceExtractionWorkflow.started", {
           invoiceId: event.payload.invoiceId,

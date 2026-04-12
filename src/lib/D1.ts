@@ -1,8 +1,8 @@
-import { Effect, Layer, Option, Schedule, Schema, ServiceMap } from "effect";
+import { Effect, Layer, Option, Schedule, Schema, Context } from "effect";
 
 import { CloudflareEnv } from "@/lib/CloudflareEnv";
 
-export class D1 extends ServiceMap.Service<D1>()("D1", {
+export class D1 extends Context.Service<D1>()("D1", {
   make: Effect.gen(function* () {
     const { D1: d1 } = yield* CloudflareEnv;
     const prepare = (query: string) => d1.prepare(query);

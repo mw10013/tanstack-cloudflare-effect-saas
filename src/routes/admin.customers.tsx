@@ -37,7 +37,7 @@ const customerSearchSchema = Schema.Struct({
     Schema.NumberFromString.check(Schema.isInt()),
   ])
     .check(Schema.isGreaterThanOrEqualTo(1))
-    .pipe(Schema.withDecodingDefaultKey(() => 1)),
+    .pipe(Schema.withDecodingDefaultKey(Effect.succeed(1))),
   filter: Schema.optional(Schema.Trim),
 });
 

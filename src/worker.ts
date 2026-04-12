@@ -1,7 +1,7 @@
 import { isNotFound, isRedirect } from "@tanstack/react-router";
 import serverEntry from "@tanstack/react-start/server-entry";
 import { routeAgentRequest } from "agents";
-import { Cause, Effect, Layer, ServiceMap } from "effect";
+import { Cause, Effect, Layer, Context } from "effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -69,8 +69,8 @@ const makeRunEffect = (env: Env, request: Request) => {
   );
   const r2Layer = Layer.provideMerge(R2.layer, envLayer);
   const authLayer = Layer.provideMerge(Auth.layer, stripeLayer);
-  const requestLayer = Layer.succeedServices(
-    ServiceMap.make(AppRequest, request),
+  const requestLayer = Layer.succeedContext(
+    Context.make(AppRequest, request),
   );
   const authRequestLayer = Layer.merge(authLayer, requestLayer);
   const authRequestR2Layer = Layer.merge(authRequestLayer, r2Layer);

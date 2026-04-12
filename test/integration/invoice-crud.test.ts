@@ -1,4 +1,4 @@
-import { Config, ConfigProvider, Effect, Layer, Schedule, ServiceMap } from "effect";
+import { Config, ConfigProvider, Effect, Layer, Schedule, Context } from "effect";
 import * as Schema from "effect/Schema";
 import { layer } from "@effect/vitest";
 import { assertInclude } from "@effect/vitest/utils";
@@ -21,8 +21,8 @@ const InvoiceIdResult = Schema.Struct({
   invoiceId: OrganizationDomain.Invoice.fields.id,
 });
 
-const configLayer = Layer.succeedServices(
-  ServiceMap.make(
+const configLayer = Layer.succeedContext(
+  Context.make(
     ConfigProvider.ConfigProvider,
     ConfigProvider.fromUnknown(env),
   ),

@@ -1,4 +1,4 @@
-import { Config, Effect, Layer, Redacted, Schema, ServiceMap } from "effect";
+import { Config, Effect, Layer, Redacted, Schema, Context } from "effect";
 import * as Encoding from "effect/Encoding";
 import * as Struct from "effect/Struct";
 import * as Headers from "effect/unstable/http/Headers";
@@ -93,7 +93,7 @@ export class InvoiceExtractorError extends Schema.TaggedErrorClass<InvoiceExtrac
   },
 ) {}
 
-export class InvoiceExtractor extends ServiceMap.Service<InvoiceExtractor>()(
+export class InvoiceExtractor extends Context.Service<InvoiceExtractor>()(
   "InvoiceExtractor",
   {
     make: Effect.gen(function* () {

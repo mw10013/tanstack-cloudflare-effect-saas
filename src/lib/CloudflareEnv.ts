@@ -1,3 +1,3 @@
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 
-export const CloudflareEnv = ServiceMap.Service<Env>("CloudflareEnv");
+export const CloudflareEnv = Context.Service<Env>("CloudflareEnv");

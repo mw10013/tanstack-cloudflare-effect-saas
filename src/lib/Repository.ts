@@ -1,10 +1,10 @@
-import { Effect, Layer, Schema, ServiceMap } from "effect";
+import { Effect, Layer, Schema, Context } from "effect";
 
 import { D1 } from "./D1";
 import * as Domain from "./Domain";
 import { JsonDataField } from "./SchemaEx";
 
-export class Repository extends ServiceMap.Service<Repository>()("Repository", {
+export class Repository extends Context.Service<Repository>()("Repository", {
   make: Effect.gen(function* () {
     const d1 = yield* D1;
     const getUser = Effect.fn("Repository.getUser")(function* (

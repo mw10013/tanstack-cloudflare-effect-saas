@@ -140,7 +140,7 @@ export class UserProvisioningWorkflow extends WorkflowEntrypoint<
         const email = yield* Schema.decodeUnknownEffect(
           Domain.User.fields.email,
         )(event.payload.email);
-        const services = yield* Effect.services<Layer.Success<typeof runtimeLayer>>();
+        const services = yield* Effect.context<Layer.Success<typeof runtimeLayer>>();
         const runEffect = Effect.runPromiseWith(services);
         const organizationId = yield* Effect.tryPromise(() =>
           step.do("create-organization", () =>

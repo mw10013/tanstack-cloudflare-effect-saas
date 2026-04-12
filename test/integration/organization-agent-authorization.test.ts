@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { ConfigProvider, Effect, Layer, ServiceMap } from "effect";
+import { ConfigProvider, Effect, Layer, Context } from "effect";
 import * as Schema from "effect/Schema";
 import { layer } from "@effect/vitest";
 import { expect } from "vitest";
@@ -25,8 +25,8 @@ import {
   workerFetch,
 } from "../TestUtils";
 
-const configLayer = Layer.succeedServices(
-  ServiceMap.make(
+const configLayer = Layer.succeedContext(
+  Context.make(
     ConfigProvider.ConfigProvider,
     ConfigProvider.fromUnknown(env),
   ),

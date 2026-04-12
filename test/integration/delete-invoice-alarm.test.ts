@@ -2,7 +2,7 @@ import { layer } from "@effect/vitest";
 import { SqliteClient } from "@effect/sql-sqlite-do";
 import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { ConfigProvider, Effect, Layer, Schedule, ServiceMap } from "effect";
+import { ConfigProvider, Effect, Layer, Schedule, Context } from "effect";
 import * as Schema from "effect/Schema";
 import { expect } from "vitest";
 
@@ -24,8 +24,8 @@ const InvoiceIdResult = Schema.Struct({
   invoiceId: OrganizationDomain.Invoice.fields.id,
 });
 
-const configLayer = Layer.succeedServices(
-  ServiceMap.make(
+const configLayer = Layer.succeedContext(
+  Context.make(
     ConfigProvider.ConfigProvider,
     ConfigProvider.fromUnknown(env),
   ),
