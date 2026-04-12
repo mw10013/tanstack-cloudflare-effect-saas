@@ -125,6 +125,18 @@ const countMembers = Effect.fn("countMembers")(function* ({
   return Option.getOrThrow(row).cnt;
 });
 
+const countOwnedOrganizations = Effect.fn("countOwnedOrganizations")(function* (
+  userId: Domain.User["id"],
+) {
+  const d1 = yield* D1;
+  const row = yield* d1.first<{ cnt: number }>(
+    d1
+      .prepare("select count(distinct organizationId) as cnt from Member where userId = ?1 and role = 'owner'")
+      .bind(userId),
+  );
+  return Option.getOrThrow(row).cnt;
+});
+
 const getSessionActiveOrg = Effect.fn("getSessionActiveOrg")(function* (
   sessionId: Domain.Session["id"],
 ) {
@@ -213,6 +225,8 @@ layer(repositoryLayer)("createOrganization idempotency", (it) => {
       });
       expect(Option.isSome(member)).toBe(true);
       expect(Option.getOrThrow(member).role).toBe("owner");
+      const ownerOrgCount = yield* countOwnedOrganizations(user.id);
+      expect(ownerOrgCount).toBe(1);
     }));
 
   it.effect("short-circuit — org + owner member already exist", () =>
@@ -283,6 +297,8 @@ layer(repositoryLayer)("createOrganization idempotency", (it) => {
         organizationId: decodeOrganizationId(orgId1),
       });
       expect(memberCount).toBe(1);
+      const ownerOrgCount = yield* countOwnedOrganizations(user.id);
+      expect(ownerOrgCount).toBe(1);
     }));
 });
 
@@ -343,7 +359,8 @@ layer(repositoryLayer)("workflow steps", (it) => {
     Effect.gen(function* () {
       yield* resetDb();
       const user = yield* seedUser();
-      const existingOrg = yield* seedOrganization();
+      const { slug } = getUserProvisioningOrganization({ userId: user.id, email: user.email });
+      const existingOrg = yield* seedOrganization({ slug });
       yield* seedMember({ userId: user.id, organizationId: existingOrg.id, role: "owner" });
       const session = yield* seedSession({
         userId: user.id,

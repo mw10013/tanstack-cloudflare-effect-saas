@@ -36,10 +36,14 @@ const makeRuntimeLayer = (env: Env) => {
  * Provisions a user's owner organization idempotently.
  *
  * Flow:
- * 1) create organization by deterministic slug
- * 2) on ORGANIZATION_ALREADY_EXISTS, resolve organization by slug
+ * 1) create organization by deterministic slug (`slug = userId`)
+ * 2) on ORGANIZATION_ALREADY_EXISTS or YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS,
+ *    resolve organization by that same slug
  * 3) add owner membership
  * 4) on USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION, treat as success
+ *
+ * If slug lookup fails during recovery, the error is propagated so we do not
+ * silently attach the user to an unrelated organization.
  */
 const createOrganization = Effect.fn("userProvisioning.createOrganization")(
   function* ({
@@ -62,27 +66,31 @@ const createOrganization = Effect.fn("userProvisioning.createOrganization")(
       Effect.flatMap((created) => decodeOrganizationId(created.id)),
       Effect.catch((error) =>
         isAPIError(error) &&
-        error.body?.code === "ORGANIZATION_ALREADY_EXISTS"
+        (error.body?.code === "ORGANIZATION_ALREADY_EXISTS" ||
+          error.body?.code ===
+            "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS")
           ? Effect.gen(function* () {
               const organizationBySlug =
                 yield* repository.getOrganizationBySlug(slug);
-              if (Option.isNone(organizationBySlug)) {
-                return yield* Effect.fail(error);
+              if (Option.isSome(organizationBySlug)) {
+                return organizationBySlug.value.id;
               }
-              return organizationBySlug.value.id;
+              return yield* Effect.fail(error);
             })
           : Effect.fail(error),
       ),
     );
-    yield* Effect.tryPromise(() =>
-      auth.api.addMember({
-        body: {
-          userId,
-          organizationId,
-          role: "owner",
-        },
-      }),
-    ).pipe(
+    yield* Effect.tryPromise({
+      try: () =>
+        auth.api.addMember({
+          body: {
+            userId,
+            organizationId,
+            role: "owner",
+          },
+        }),
+      catch: (cause) => cause,
+    }).pipe(
       Effect.catch((error) =>
         isAPIError(error) &&
         error.body?.code === "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION"
