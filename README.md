@@ -149,6 +149,7 @@ pnpm test:e2e
 - Cloudflare Web Analytics | Add a site
   - Remember token from script for ANALYTICS_TOKEN secret below.
 
+- pnpm exec wrangler queues create tces-q-production
 - pnpm exec wrangler kv namespace create tces-kv-production
 - Update wrangler.jsonc production kv_namespaces
 - pnpm d1:reset:PRODUCTION

@@ -3,199 +3,209 @@
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tces-local",
-  "compatibility_date": "2025-09-17",
-  "compatibility_flags": ["nodejs_compat"],
-  "account_id": "1422451be59cc2401532ad67d92ae773",
-  "main": "./src/worker.ts",
-  "vars": {
-    "ENVIRONMENT": "local",
-    "DEMO_MODE": "true",
-    "TRANSACTIONAL_EMAIL": "noreply@example.com",
-    "BETTER_AUTH_URL": "http://localhost:3000",
-    "ANALYTICS_TOKEN": "",
-    "CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
-    "AI_GATEWAY_ID": "tces-ai-gateway",
-    "R2_BUCKET_NAME": "tces-r2-local",
-    "R2_S3_ACCESS_KEY_ID": "",
-    "R2_S3_SECRET_ACCESS_KEY": "",
-    "INVOICE_LIMIT": "3"
-  },
-  "observability": {
-    "enabled": true
-  },
-  "ai": {
-    "binding": "AI"
-  },
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "ORGANIZATION_AGENT",
-        "class_name": "OrganizationAgent"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["OrganizationAgent"]
-    }
-  ],
-  "workflows": [
-    {
-      "name": "invoice-extraction-workflow",
-      "binding": "INVOICE_EXTRACTION_WORKFLOW",
-      "class_name": "InvoiceExtractionWorkflow"
-    },
-    {
-      "name": "user-provisioning-workflow",
-      "binding": "USER_PROVISIONING_WORKFLOW",
-      "class_name": "UserProvisioningWorkflow"
-    }
-  ],
-  "d1_databases": [
-    {
-      "binding": "D1",
-      "database_name": "d1-local",
-      "database_id": "d1-local"
-    }
-  ],
-  "kv_namespaces": [
-    {
-      "binding": "KV",
-      "id": "kv-local"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "R2",
-      "bucket_name": "tces-r2-local"
-    }
-  ],
-  "queues": {
-    "producers": [
-      {
-        "queue": "tces-q-local",
-        "binding": "Q"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "tces-q-local",
-        "max_batch_size": 10,
-        "max_batch_timeout": 5,
-        "max_retries": 3,
-        "dead_letter_queue": "tces-dlq-local"
-      }
-    ]
-  },
-  "ratelimits": [
-    {
-      "name": "MAGIC_LINK_RATE_LIMITER",
-      "namespace_id": "1001",
-      "simple": {
-        "limit": 100,
-        "period": 60
-      }
-    }
-  ],
-  "triggers": {
-    "crons": ["0 0 * * *"]
-  },
-  "env": {
-    "production": {
-      "name": "tces",
-      "vars": {
-        "ENVIRONMENT": "production",
-        "DEMO_MODE": "true",
-        "TRANSACTIONAL_EMAIL": "noreply@example.com",
-        "BETTER_AUTH_URL": "https://tces.devxo.workers.dev",
-        "CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
-        "AI_GATEWAY_ID": "tces-ai-gateway",
-        "R2_BUCKET_NAME": "tces-r2-production",
-        "R2_S3_ACCESS_KEY_ID": "",
-        "R2_S3_SECRET_ACCESS_KEY": "",
-        "INVOICE_LIMIT": "5"
-      },
-      "d1_databases": [
-        {
-          "binding": "D1",
-          "database_name": "tces-d1-production",
-          "database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
-        }
-      ],
-      "kv_namespaces": [
-        {
-          "binding": "KV",
-          "id": "353a94f63ff54720a0023ec48a38cb8f"
-        }
-      ],
-      "ratelimits": [
-        {
-          "name": "MAGIC_LINK_RATE_LIMITER",
-          "namespace_id": "1001",
-          "simple": {
-            "limit": 5,
-            "period": 60
-          }
-        }
-      ],
-      "r2_buckets": [
-        {
-          "binding": "R2",
-          "bucket_name": "tces-r2-production"
-        }
-      ],
-      "queues": {
-        "producers": [
-          {
-            "queue": "tces-q-production",
-            "binding": "Q"
-          }
-        ],
-        "consumers": [
-          {
-            "queue": "tces-q-production",
-            "max_batch_size": 10,
-            "max_batch_timeout": 5,
-            "max_retries": 3,
-            "dead_letter_queue": "tces-dlq-production"
-          }
-        ]
-      },
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "ORGANIZATION_AGENT",
-            "class_name": "OrganizationAgent"
-          }
-        ]
-      },
-      "ai": {
-        "binding": "AI"
-      },
-      "migrations": [
-        {
-          "tag": "v1",
-          "new_sqlite_classes": ["OrganizationAgent"]
-        }
-      ],
-      "workflows": [
-        {
-          "name": "invoice-extraction-workflow",
-          "binding": "INVOICE_EXTRACTION_WORKFLOW",
-          "class_name": "InvoiceExtractionWorkflow"
-        },
-        {
-          "name": "user-provisioning-workflow",
-          "binding": "USER_PROVISIONING_WORKFLOW",
-          "class_name": "UserProvisioningWorkflow"
-        }
-      ],
-      "triggers": {
-        "crons": ["0 0 * * *"]
-      }
-    }
-  }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "tces-local",
+	"compatibility_date": "2025-09-17",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"account_id": "1422451be59cc2401532ad67d92ae773",
+	"main": "./src/worker.ts",
+	"vars": {
+		"ENVIRONMENT": "local",
+		"DEMO_MODE": "true",
+		"TRANSACTIONAL_EMAIL": "noreply@example.com",
+		"BETTER_AUTH_URL": "http://localhost:3000",
+		"ANALYTICS_TOKEN": "",
+		"CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
+		"AI_GATEWAY_ID": "tces-ai-gateway",
+		"R2_BUCKET_NAME": "tces-r2-local",
+		"R2_S3_ACCESS_KEY_ID": "",
+		"R2_S3_SECRET_ACCESS_KEY": "",
+		"INVOICE_LIMIT": "3"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"ai": {
+		"binding": "AI"
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "ORGANIZATION_AGENT",
+				"class_name": "OrganizationAgent"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"OrganizationAgent"
+			]
+		}
+	],
+	"workflows": [
+		{
+			"name": "invoice-extraction-workflow",
+			"binding": "INVOICE_EXTRACTION_WORKFLOW",
+			"class_name": "InvoiceExtractionWorkflow"
+		},
+		{
+			"name": "user-provisioning-workflow",
+			"binding": "USER_PROVISIONING_WORKFLOW",
+			"class_name": "UserProvisioningWorkflow"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "D1",
+			"database_name": "tces-d1-production",
+			"database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "353a94f63ff54720a0023ec48a38cb8f"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "R2",
+			"bucket_name": "tces-r2-production"
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"queue": "tces-q-local",
+				"binding": "Q"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "tces-q-local",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 3,
+				"dead_letter_queue": "tces-dlq-local"
+			}
+		]
+	},
+	"ratelimits": [
+		{
+			"name": "MAGIC_LINK_RATE_LIMITER",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 100,
+				"period": 60
+			}
+		}
+	],
+	"triggers": {
+		"crons": [
+			"0 0 * * *"
+		]
+	},
+	"env": {
+		"production": {
+			"name": "tces",
+			"vars": {
+				"ENVIRONMENT": "production",
+				"DEMO_MODE": "true",
+				"TRANSACTIONAL_EMAIL": "noreply@example.com",
+				"BETTER_AUTH_URL": "https://tces.devxo.workers.dev",
+				"CF_ACCOUNT_ID": "1422451be59cc2401532ad67d92ae773",
+				"AI_GATEWAY_ID": "tces-ai-gateway",
+				"R2_BUCKET_NAME": "tces-r2-production",
+				"R2_S3_ACCESS_KEY_ID": "",
+				"R2_S3_SECRET_ACCESS_KEY": "",
+				"INVOICE_LIMIT": "5"
+			},
+			"d1_databases": [
+				{
+					"binding": "D1",
+					"database_name": "tces-d1-production",
+					"database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "KV",
+					"id": "353a94f63ff54720a0023ec48a38cb8f"
+				}
+			],
+			"ratelimits": [
+				{
+					"name": "MAGIC_LINK_RATE_LIMITER",
+					"namespace_id": "1001",
+					"simple": {
+						"limit": 5,
+						"period": 60
+					}
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "R2",
+					"bucket_name": "tces-r2-production"
+				}
+			],
+			"queues": {
+				"producers": [
+					{
+						"queue": "tces-q-production",
+						"binding": "Q"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "tces-q-production",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 3,
+						"dead_letter_queue": "tces-dlq-production"
+					}
+				]
+			},
+			"durable_objects": {
+				"bindings": [
+					{
+						"name": "ORGANIZATION_AGENT",
+						"class_name": "OrganizationAgent"
+					}
+				]
+			},
+			"ai": {
+				"binding": "AI"
+			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": [
+						"OrganizationAgent"
+					]
+				}
+			],
+			"workflows": [
+				{
+					"name": "invoice-extraction-workflow",
+					"binding": "INVOICE_EXTRACTION_WORKFLOW",
+					"class_name": "InvoiceExtractionWorkflow"
+				},
+				{
+					"name": "user-provisioning-workflow",
+					"binding": "USER_PROVISIONING_WORKFLOW",
+					"class_name": "UserProvisioningWorkflow"
+				}
+			],
+			"triggers": {
+				"crons": [
+					"0 0 * * *"
+				]
+			}
+		}
+	}
 }
