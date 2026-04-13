@@ -100,12 +100,31 @@ Invoices are a vehicle to exercise Cloudflare primitives, Effect v4, and fault-t
 - Go to stripe and create a sandbox for testing named `tces-int`
   - Remember secret key for `STRIPE_SECRET_KEY` environment variable.
 
+### Cloudflare
+
+- AI Gateway | Create Gateway
+  - Gateway ID: tces-ai-gateway-int
+  - Cache Responses: on
+    - Automatically purged cached requests after 1 Week
+  - Rate Limit Requests: only: on
+    - Limit requests when rate exceeds 25 requests over a 60 sliding period.
+  - Authenticated Gateway: on
+    - Create authentication token: tces-ai-gateway-token-int
+    - Remember for `AI_GATEWAY_TOKEN` environment variable.
+- Workers AI | REST API | Create a Workers AI API Token: tces-workers-ai-token
+  - Remember for `WORKERS_AI_API_TOKEN` environment variable.
+
+### Google AI Studio (free api key)
+
+- aistudio.google.com | Get API Key | Create API key
+  - Remember for `GOOGLE_AI_STUDIO_API_KEY` environment variable.
+
 ### Local Env
 
 - Copy `.env.example` to `.env`.
-- Edit the `BETTER_AUTH_SECRET` and `STRIPE_SECRET_KEY` keys.
-- Edit account_id and CF_ACCOUNT_ID (local and production)
+- Edit the keys.
 - Set `STRIPE_WEBHOOK_SECRET` later after you run `pnpm stripe:listen` below.
+- Edit account_id and CF_ACCOUNT_ID (local and production) in wrangler.jsonc
 
 ```
 pnpm i
@@ -150,14 +169,21 @@ pnpm test:e2e
 - Cloudflare Web Analytics | Add a site
   - Remember token from script for ANALYTICS_TOKEN secret below.
 
+  AI Gateway for Production
+
 - pnpm exec wrangler queues create tces-q-production
 - pnpm exec wrangler kv namespace create tces-kv-production
 - Update wrangler.jsonc production kv_namespaces
 - pnpm d1:reset:PRODUCTION
 - pnpm deploy:PRODUCTION
+- Storage & databases | R2 Object Storage | Overview | API Tokens Manage | Create User API token
+  - Token name: tces-r2-user-token-production
+  - Permissions: Object Read only
+  - Specify bucket(s) | Apply to specific buckets only: tces-r2-production
+  - Remember keys for R2_S3_ACCESS_KEY_ID and R2_S3_SECRET_ACCESS_KEY secrrets.
 - pnpm exec wrangler r2 bucket notification create tces-r2-production --event-type object-create --queue tces-q-production
 - pnpm exec wrangler secret put SECRET --env production
-  - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN, R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY, WORKERS_AI_API_TOKEN AI_GATEWAY_TOKEN, GOOGLE_AI_STUDIO_API_KEY
+  - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN,R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY, WORKERS_AI_API_TOKEN AI_GATEWAY_TOKEN, GOOGLE_AI_STUDIO_API_KEY
 - Workers & Pages Settings: tces
   - Git repository: connect to git repo
   - Build configuration
