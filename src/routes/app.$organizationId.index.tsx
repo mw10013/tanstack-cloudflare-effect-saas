@@ -24,8 +24,9 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Auth } from "@/lib/Auth";
+import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import * as Domain from "@/lib/Domain";
-import { enqueue, getOrganizationAgentStubTrusted } from "@/lib/Q";
+import { enqueue } from "@/lib/Q";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
 
@@ -95,9 +96,11 @@ export const acceptInvitation = createServerFn({ method: "POST" })
               body: { invitationId },
             }),
           );
-          const stub = yield* getOrganizationAgentStubTrusted(
+          const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+          const id = ORGANIZATION_AGENT.idFromName(
             invitation.value.organizationId,
           );
+          const stub = ORGANIZATION_AGENT.get(id);
           yield* Effect.tryPromise(() =>
             stub.syncMembership({ userId, change: "added" }),
           ).pipe(Effect.catch(() => Effect.logWarning("eager sync failed")));

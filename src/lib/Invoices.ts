@@ -1,28 +1,9 @@
 import type * as OrganizationDomain from "@/lib/OrganizationDomain";
 import type { Organization } from "@/lib/Domain";
 
-import { Cause, Config, Effect, Redacted } from "effect";
+import { Config, Effect, Redacted } from "effect";
 
-import { Auth } from "@/lib/Auth";
-import { CloudflareEnv } from "@/lib/CloudflareEnv";
-import { Request as AppRequest } from "@/lib/Request";
-
-export const getOrganizationAgentStubForSession = Effect.fn(
-  "getOrganizationAgentStubForSession",
-)(function* (organizationId: Organization["id"]) {
-    const request = yield* AppRequest;
-    const auth = yield* Auth;
-    yield* auth.getSession(request.headers).pipe(
-      Effect.flatMap(Effect.fromOption),
-      Effect.filterOrFail(
-        (s) => s.session.activeOrganizationId === organizationId,
-        () => new Cause.NoSuchElementError(),
-      ),
-    );
-    const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
-    const id = ORGANIZATION_AGENT.idFromName(organizationId);
-    return ORGANIZATION_AGENT.get(id);
-  });
+import { getOrganizationAgentStubForSession } from "@/organization-agent";
 
 export const getInvoicesWithViewUrl = Effect.fn("getInvoicesWithViewUrl")(function* (
   organizationId: Organization["id"],

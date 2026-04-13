@@ -27,8 +27,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Auth } from "@/lib/Auth";
+import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import * as Domain from "@/lib/Domain";
-import { enqueue, getOrganizationAgentStubTrusted } from "@/lib/Q";
+import { enqueue } from "@/lib/Q";
 import { Repository } from "@/lib/Repository";
 import { Request } from "@/lib/Request";
 
@@ -119,7 +120,9 @@ export const removeMember = createServerFn({ method: "POST" })
           }),
         );
         if (Option.isSome(member)) {
-          const stub = yield* getOrganizationAgentStubTrusted(organizationId);
+          const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+          const id = ORGANIZATION_AGENT.idFromName(organizationId);
+          const stub = ORGANIZATION_AGENT.get(id);
           yield* Effect.tryPromise(() =>
             stub.syncMembership({ userId: member.value.userId, change: "removed" }),
           ).pipe(Effect.catch(() => Effect.logWarning("eager sync failed")));
@@ -156,7 +159,9 @@ const leaveOrganization = createServerFn({ method: "POST" })
             body: { organizationId },
           }),
         );
-        const stub = yield* getOrganizationAgentStubTrusted(organizationId);
+        const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+        const id = ORGANIZATION_AGENT.idFromName(organizationId);
+        const stub = ORGANIZATION_AGENT.get(id);
         yield* Effect.tryPromise(() =>
           stub.syncMembership({ userId, change: "removed" }),
         ).pipe(Effect.catch(() => Effect.logWarning("eager sync failed")));
@@ -192,7 +197,9 @@ const updateMemberRole = createServerFn({ method: "POST" })
             }),
           );
           if (Option.isSome(member)) {
-            const stub = yield* getOrganizationAgentStubTrusted(organizationId);
+            const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+            const id = ORGANIZATION_AGENT.idFromName(organizationId);
+            const stub = ORGANIZATION_AGENT.get(id);
             yield* Effect.tryPromise(() =>
               stub.syncMembership({ userId: member.value.userId, change: "role_changed" }),
             ).pipe(Effect.catch(() => Effect.logWarning("eager sync failed")));

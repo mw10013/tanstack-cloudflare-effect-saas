@@ -7,10 +7,12 @@ import type { MembershipSyncChange } from "@/lib/Q";
 
 import { SqliteClient } from "@effect/sql-sqlite-do";
 import { Agent, callable, getCurrentAgent } from "agents";
-import { Config, Effect, Layer, Option, Predicate } from "effect";
+import { Cause, Config, Effect, Layer, Option, Predicate } from "effect";
 import * as Schema from "effect/Schema";
 
 import { ActivityAction } from "@/lib/Activity";
+import { Auth } from "@/lib/Auth";
+import { CloudflareEnv } from "@/lib/CloudflareEnv";
 import { D1 } from "@/lib/D1";
 import * as Domain from "@/lib/Domain";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
@@ -30,6 +32,7 @@ import { OrganizationRepository } from "@/lib/OrganizationRepository";
 import { enqueue } from "@/lib/Q";
 import { R2 } from "@/lib/R2";
 import { Repository } from "@/lib/Repository";
+import { Request as AppRequest } from "@/lib/Request";
 
 const invoiceMimeTypes = [
   "application/pdf",
@@ -115,6 +118,23 @@ export const extractAgentInstanceName = (request: Request) => {
   }
   return segments[2] ?? null;
 };
+
+export const getOrganizationAgentStubForSession = Effect.fn(
+  "getOrganizationAgentStubForSession",
+)(function* (organizationId: Domain.Organization["id"]) {
+  const request = yield* AppRequest;
+  const auth = yield* Auth;
+  yield* auth.getSession(request.headers).pipe(
+    Effect.flatMap(Effect.fromOption),
+    Effect.filterOrFail(
+      (s) => s.session.activeOrganizationId === organizationId,
+      () => new Cause.NoSuchElementError(),
+    ),
+  );
+  const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+  const id = ORGANIZATION_AGENT.idFromName(organizationId);
+  return ORGANIZATION_AGENT.get(id);
+});
 
 export class OrganizationAgent extends Agent {
   declare private runEffect: ReturnType<typeof makeRunEffect>;

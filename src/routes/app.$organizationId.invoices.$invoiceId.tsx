@@ -26,7 +26,8 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { getInvoiceViewUrl, getOrganizationAgentStubForSession } from "@/lib/Invoices";
+import { getOrganizationAgentStubForSession } from "@/organization-agent";
+import { getInvoiceViewUrl } from "@/lib/Invoices";
 import { UpdateInvoiceInput } from "@/lib/OrganizationAgentSchemas";
 import { Organization } from "@/lib/Domain";
 import * as OrganizationDomain from "@/lib/OrganizationDomain";

@@ -50,16 +50,6 @@ export const enqueue = Effect.fn("enqueue")(function* (message: QueueMessage) {
   yield* Effect.tryPromise(() => env.Q.send(message));
 });
 
-// Queue handlers create stubs directly. Use idFromName() so Durable Object
-// name-based logic can resolve organization id from ctx.id.name.
-export const getOrganizationAgentStubTrusted = Effect.fn("getOrganizationAgentStubTrusted")(
-  function* (organizationId: Domain.Organization["id"]) {
-    const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
-    const id = ORGANIZATION_AGENT.idFromName(organizationId);
-    return ORGANIZATION_AGENT.get(id);
-  },
-);
-
 /**
  * Handles Cloudflare R2 event notification messages for object uploads.
  *
@@ -72,11 +62,12 @@ const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
   notification: typeof R2PutObjectNotification.Type,
 ) {
   const [organizationId] = notification.object.key.split("/", 1);
-  const stub = yield* getOrganizationAgentStubTrusted(
-    yield* Schema.decodeUnknownEffect(Domain.Organization.fields.id)(
-      organizationId,
-    ),
-  );
+  const organizationIdValue = yield* Schema.decodeUnknownEffect(
+    Domain.Organization.fields.id,
+  )(organizationId);
+  const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+  const id = ORGANIZATION_AGENT.idFromName(organizationIdValue);
+  const stub = ORGANIZATION_AGENT.get(id);
   yield* Effect.tryPromise(() =>
     stub.onInvoiceUpload({
       r2ActionTime: notification.eventTime,
@@ -88,7 +79,9 @@ const processInvoiceUpload = Effect.fn("processInvoiceUpload")(function* (
 const processFinalizeMembershipSync = Effect.fn(
   "processFinalizeMembershipSync",
 )(function* (message: typeof FinalizeMembershipSyncQueueMessage.Type) {
-  const stub = yield* getOrganizationAgentStubTrusted(message.organizationId);
+  const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
+  const id = ORGANIZATION_AGENT.idFromName(message.organizationId);
+  const stub = ORGANIZATION_AGENT.get(id);
   yield* Effect.tryPromise(() =>
     stub.onFinalizeMembershipSync({
       userId: message.userId,
