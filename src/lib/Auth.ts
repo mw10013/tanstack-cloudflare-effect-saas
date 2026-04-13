@@ -187,7 +187,7 @@ const makeAuth = ({
               const stripe = yield* Stripe;
               yield* stripe.ensureBillingPortalConfiguration();
             }
-          }),
+          }).pipe(Effect.withLogSpan("auth.ensureBillingPortalConfiguration")),
         ),
       ),
     },
@@ -210,7 +210,7 @@ const makeAuth = ({
                 subject: "Your Magic Link",
                 from: transactionalEmail,
               });
-            }),
+            }).pipe(Effect.withLogSpan("auth.sendMagicLink")),
           ),
       }),
       admin(),

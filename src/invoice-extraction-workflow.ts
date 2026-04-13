@@ -100,7 +100,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
                     bytes: bytes.byteLength,
                   });
                   return Encoding.encodeBase64(bytes);
-                }),
+                }).pipe(Effect.withLogSpan("invoice.extraction.loadFile")),
               ),
             ),
           catch: (cause) =>
@@ -134,7 +134,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
                     fileBytes,
                     contentType: event.payload.contentType,
                   });
-                }),
+                }).pipe(Effect.withLogSpan("invoice.extraction.extract")),
               ),
             ),
           catch: (cause) =>
@@ -154,7 +154,7 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
                     invoiceExtraction: extractionResult,
                     extractedJson: JSON.stringify(extractionResult),
                   }),
-                ),
+                ).pipe(Effect.withLogSpan("invoice.extraction.save")),
               ),
             ),
           catch: (cause) =>
@@ -167,7 +167,10 @@ export class InvoiceExtractionWorkflow extends AgentWorkflow<
           invoiceId: event.payload.invoiceId,
         });
         return { invoiceId: event.payload.invoiceId };
-      }).pipe(Effect.provide(runtimeLayer)),
+      }).pipe(
+        Effect.withLogSpan("invoice.extraction.workflow"),
+        Effect.provide(runtimeLayer),
+      ),
     );
   }
 }

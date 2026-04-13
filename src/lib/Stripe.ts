@@ -89,131 +89,137 @@ export class Stripe extends Context.Service<Stripe>()("Stripe", {
     });
 
     const getPlans = Effect.fn("Stripe.getPlans")(function* () {
-      const key = "stripe:plans";
-      const cachedPlans = yield* kv.getJson(key);
-      if (cachedPlans) {
-        const parseResult = Schema.decodeUnknownOption(
-          Schema.Array(PlanSchema),
-        )(cachedPlans);
-        if (Option.isSome(parseResult)) {
-          yield* Effect.logInfo("stripe.getPlans.cacheHit");
-          return [...parseResult.value] as readonly Plan[];
+      return yield* Effect.gen(function* () {
+        const key = "stripe:plans";
+        const cachedPlans = yield* kv.getJson(key);
+        if (cachedPlans) {
+          const parseResult = Schema.decodeUnknownOption(
+            Schema.Array(PlanSchema),
+          )(cachedPlans);
+          if (Option.isSome(parseResult)) {
+            yield* Effect.logInfo("stripe.getPlans.cacheHit");
+            return [...parseResult.value] as readonly Plan[];
+          }
         }
-      }
-      yield* Effect.logInfo("stripe.getPlans.cacheMiss");
-      const prices = yield* getPrices();
-      const plans = yield* Effect.all(
-        planData.map((plan) =>
-          Effect.gen(function* () {
-            const monthlyPrice = prices.find(
-              (price) => price.lookup_key === plan.monthlyPriceLookupKey,
-            );
-            if (!monthlyPrice) {
-              return yield* failStripe(
-                `Missing monthly price for ${plan.name}`,
+        yield* Effect.logInfo("stripe.getPlans.cacheMiss");
+        const prices = yield* getPrices();
+        const plans = yield* Effect.all(
+          planData.map((plan) =>
+            Effect.gen(function* () {
+              const monthlyPrice = prices.find(
+                (price) => price.lookup_key === plan.monthlyPriceLookupKey,
               );
-            }
-            if (typeof monthlyPrice.product === "string") {
-              return yield* failStripe("Product should be expanded");
-            }
-            const annualPrice = prices.find(
-              (price) => price.lookup_key === plan.annualPriceLookupKey,
-            );
-            if (!annualPrice) {
-              return yield* failStripe(`Missing annual price for ${plan.name}`);
-            }
-            return {
-              name: plan.name,
-              displayName: plan.displayName,
-              description: plan.description,
-              productId: monthlyPrice.product.id,
-              monthlyPriceId: monthlyPrice.id,
-              monthlyPriceLookupKey: plan.monthlyPriceLookupKey,
-              monthlyPriceInCents: plan.monthlyPriceInCents,
-              annualPriceId: annualPrice.id,
-              annualPriceLookupKey: plan.annualPriceLookupKey,
-              annualPriceInCents: plan.annualPriceInCents,
-              freeTrialDays: plan.freeTrialDays,
-            };
-          }),
-        ),
-      );
-      yield* kv.put(key, JSON.stringify(plans));
-      return plans as readonly Plan[];
+              if (!monthlyPrice) {
+                return yield* failStripe(
+                  `Missing monthly price for ${plan.name}`,
+                );
+              }
+              if (typeof monthlyPrice.product === "string") {
+                return yield* failStripe("Product should be expanded");
+              }
+              const annualPrice = prices.find(
+                (price) => price.lookup_key === plan.annualPriceLookupKey,
+              );
+              if (!annualPrice) {
+                return yield* failStripe(
+                  `Missing annual price for ${plan.name}`,
+                );
+              }
+              return {
+                name: plan.name,
+                displayName: plan.displayName,
+                description: plan.description,
+                productId: monthlyPrice.product.id,
+                monthlyPriceId: monthlyPrice.id,
+                monthlyPriceLookupKey: plan.monthlyPriceLookupKey,
+                monthlyPriceInCents: plan.monthlyPriceInCents,
+                annualPriceId: annualPrice.id,
+                annualPriceLookupKey: plan.annualPriceLookupKey,
+                annualPriceInCents: plan.annualPriceInCents,
+                freeTrialDays: plan.freeTrialDays,
+              };
+            }),
+          ),
+        );
+        yield* kv.put(key, JSON.stringify(plans));
+        return plans as readonly Plan[];
+      }).pipe(Effect.withLogSpan("stripe.getPlans"));
     });
 
     const ensureBillingPortalConfiguration = Effect.fn(
       "Stripe.ensureBillingPortalConfiguration",
     )(function* () {
-      const key = "stripe:isBillingPortalConfigured";
-      const isConfigured = yield* kv.get(key);
-      if (isConfigured === "true") return;
-      const configurations = yield* tryStripe(() =>
-        stripe.billingPortal.configurations.list({
-          limit: 2,
-        }),
-      );
-      if (configurations.data.length === 0) {
-        const plans = yield* getPlans();
-        const basicPlan = plans.find((plan) => plan.name === "basic");
-        if (!basicPlan) {
-          return yield* failStripe("Missing basic plan");
-        }
-        const proPlan = plans.find((plan) => plan.name === "pro");
-        if (!proPlan) {
-          return yield* failStripe("Missing pro plan");
-        }
-        yield* tryStripe(() =>
-          stripe.billingPortal.configurations.create({
-            business_profile: {
-              headline: "Manage your subscription and billing information",
-            },
-            features: {
-              customer_update: {
-                enabled: true,
-                allowed_updates: ["name", "phone"],
-              },
-              invoice_history: {
-                enabled: true,
-              },
-              payment_method_update: {
-                enabled: true,
-              },
-              subscription_cancel: {
-                enabled: true,
-                mode: "immediately",
-                proration_behavior: "create_prorations",
-              },
-              subscription_update: {
-                enabled: true,
-                default_allowed_updates: ["price"],
-                proration_behavior: "create_prorations",
-                products: [
-                  {
-                    product: basicPlan.productId,
-                    prices: [basicPlan.monthlyPriceId, basicPlan.annualPriceId],
-                  },
-                  {
-                    product: proPlan.productId,
-                    prices: [proPlan.monthlyPriceId, proPlan.annualPriceId],
-                  },
-                ],
-              },
-            },
+      return yield* Effect.gen(function* () {
+        const key = "stripe:isBillingPortalConfigured";
+        const isConfigured = yield* kv.get(key);
+        if (isConfigured === "true") return;
+        const configurations = yield* tryStripe(() =>
+          stripe.billingPortal.configurations.list({
+            limit: 2,
           }),
         );
-        yield* Effect.logInfo(
-          "stripe.ensureBillingPortalConfiguration.created",
-        );
-      } else {
-        if (configurations.data.length > 1) {
-          yield* Effect.logWarning(
-            "stripe.ensureBillingPortalConfiguration.multipleConfigurations",
-            { count: configurations.data.length },
+        if (configurations.data.length === 0) {
+          const plans = yield* getPlans();
+          const basicPlan = plans.find((plan) => plan.name === "basic");
+          if (!basicPlan) {
+            return yield* failStripe("Missing basic plan");
+          }
+          const proPlan = plans.find((plan) => plan.name === "pro");
+          if (!proPlan) {
+            return yield* failStripe("Missing pro plan");
+          }
+          yield* tryStripe(() =>
+            stripe.billingPortal.configurations.create({
+              business_profile: {
+                headline: "Manage your subscription and billing information",
+              },
+              features: {
+                customer_update: {
+                  enabled: true,
+                  allowed_updates: ["name", "phone"],
+                },
+                invoice_history: {
+                  enabled: true,
+                },
+                payment_method_update: {
+                  enabled: true,
+                },
+                subscription_cancel: {
+                  enabled: true,
+                  mode: "immediately",
+                  proration_behavior: "create_prorations",
+                },
+                subscription_update: {
+                  enabled: true,
+                  default_allowed_updates: ["price"],
+                  proration_behavior: "create_prorations",
+                  products: [
+                    {
+                      product: basicPlan.productId,
+                      prices: [basicPlan.monthlyPriceId, basicPlan.annualPriceId],
+                    },
+                    {
+                      product: proPlan.productId,
+                      prices: [proPlan.monthlyPriceId, proPlan.annualPriceId],
+                    },
+                  ],
+                },
+              },
+            }),
           );
+          yield* Effect.logInfo(
+            "stripe.ensureBillingPortalConfiguration.created",
+          );
+        } else {
+          if (configurations.data.length > 1) {
+            yield* Effect.logWarning(
+              "stripe.ensureBillingPortalConfiguration.multipleConfigurations",
+              { count: configurations.data.length },
+            );
+          }
+          yield* kv.put(key, "true");
         }
-        yield* kv.put(key, "true");
-      }
+      }).pipe(Effect.withLogSpan("stripe.ensureBillingPortalConfiguration"));
     });
 
     return {

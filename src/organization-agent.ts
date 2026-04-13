@@ -451,7 +451,7 @@ export class OrganizationAgent extends Agent {
           level: "info",
           text: `Invoice uploaded: ${metadata.fileName}`,
         });
-      }),
+      }).pipe(Effect.withLogSpan("organizationAgent.onInvoiceUpload")),
     );
   }
 
@@ -658,7 +658,7 @@ export class OrganizationAgent extends Agent {
             );
           }
         }
-      }),
+      }).pipe(Effect.withLogSpan("organizationAgent.syncMembership")),
     );
   }
 

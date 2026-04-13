@@ -207,7 +207,11 @@ export default {
           break;
         }
       }
-    }).pipe(Effect.provide(runtimeLayer), Effect.runPromise);
+    }).pipe(
+      Effect.withLogSpan("session.cleanup"),
+      Effect.provide(runtimeLayer),
+      Effect.runPromise,
+    );
   },
 
   queue,

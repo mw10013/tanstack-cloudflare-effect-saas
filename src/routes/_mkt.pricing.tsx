@@ -124,7 +124,7 @@ const upgradeSubscriptionServerFn = createServerFn({ method: "POST" })
             href: url,
           }),
         );
-      }),
+      }).pipe(Effect.withLogSpan("pricing.upgradeSubscription")),
     ),
   );
 
