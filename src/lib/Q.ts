@@ -50,17 +50,13 @@ export const enqueue = Effect.fn("enqueue")(function* (message: QueueMessage) {
   yield* Effect.tryPromise(() => env.Q.send(message));
 });
 
-// Queue handlers create stubs directly. Unlike routeAgentRequest(), that path
-// does not populate the Agents SDK instance name, so name-dependent features
-// like workflows can throw until we set it explicitly. See
-// https://github.com/cloudflare/workerd/issues/2240.
+// Queue handlers create stubs directly. Use idFromName() so Durable Object
+// name-based logic can resolve organization id from ctx.id.name.
 export const getOrganizationAgentStubTrusted = Effect.fn("getOrganizationAgentStubTrusted")(
   function* (organizationId: Domain.Organization["id"]) {
     const { ORGANIZATION_AGENT } = yield* CloudflareEnv;
     const id = ORGANIZATION_AGENT.idFromName(organizationId);
-    const stub = ORGANIZATION_AGENT.get(id);
-    yield* Effect.tryPromise(() => stub.setName(organizationId));
-    return stub;
+    return ORGANIZATION_AGENT.get(id);
   },
 );
 

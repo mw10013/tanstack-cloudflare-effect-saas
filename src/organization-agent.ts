@@ -287,7 +287,7 @@ export class OrganizationAgent extends Agent {
           });
         const organizationId = yield* Schema.decodeUnknownEffect(
           Domain.Organization.fields.id,
-        )(this.name);
+        )(this.ctx.id.name);
         const invoiceId = yield* Schema.decodeUnknownEffect(
           InvoiceSchema.fields.id,
         )(crypto.randomUUID());
@@ -355,11 +355,14 @@ export class OrganizationAgent extends Agent {
         const metadata = yield* Schema.decodeUnknownEffect(
           R2ObjectCustomMetadata,
         )(head.value.customMetadata);
-        if (metadata.organizationId !== this.name) {
+        const organizationId = yield* Schema.decodeUnknownEffect(
+          Domain.Organization.fields.id,
+        )(this.ctx.id.name);
+        if (metadata.organizationId !== organizationId) {
           yield* Effect.logWarning("onInvoiceUpload.organizationMismatch", {
             r2ObjectKey: upload.r2ObjectKey,
             organizationId: metadata.organizationId,
-            agentName: this.name,
+            agentName: organizationId,
           });
           return;
         }
@@ -545,7 +548,7 @@ export class OrganizationAgent extends Agent {
     userId: Domain.User["id"];
     change: MembershipSyncChange;
   }) {
-    return this.runEffect(syncMembershipImpl("syncMembership", this, input));
+    return this.syncMembershipImpl(input);
   }
 
   /**
@@ -567,8 +570,75 @@ export class OrganizationAgent extends Agent {
     userId: Domain.User["id"];
     change: MembershipSyncChange;
   }) {
+    return this.syncMembershipImpl(input);
+  }
+
+  /**
+   * Shared membership reconciliation for eager sync and queue finalization.
+   *
+   * Uses D1 as authority (`getMemberByUserAndOrg`) and aligns the DO-local
+   * `Member` table for the current organization agent instance.
+   *
+   * - `added` / `role_changed`: D1 must contain the member, then upsert locally.
+   * - `removed`: D1 must not contain the member, then delete locally and close
+   *   active connections for that user.
+   */
+  private syncMembershipImpl(input: {
+    userId: Domain.User["id"];
+    change: MembershipSyncChange;
+  }) {
     return this.runEffect(
-      syncMembershipImpl("onFinalizeMembershipSync", this, input),
+      Effect.gen({ self: this }, function* () {
+        const organizationId = yield* Schema.decodeUnknownEffect(
+          Domain.Organization.fields.id,
+        )(this.ctx.id.name);
+        const repository = yield* Repository;
+        const d1Member = yield* repository.getMemberByUserAndOrg({
+          userId: input.userId,
+          organizationId,
+        });
+        const repo = yield* OrganizationRepository;
+        switch (input.change) {
+          case "added":
+          case "role_changed": {
+            if (Option.isNone(d1Member))
+              return yield* new OrganizationAgentError({
+                message: `D1 has no member for userId=${input.userId} organizationId=${organizationId} (change=${input.change})`,
+              });
+            return yield* repo.upsertMember({
+              userId: input.userId,
+              role: d1Member.value.role,
+            });
+          }
+          case "removed": {
+            if (Option.isSome(d1Member))
+              return yield* new OrganizationAgentError({
+                message: `D1 still has member for userId=${input.userId} organizationId=${organizationId} (change=removed)`,
+              });
+            yield* repo.deleteMember(input.userId);
+            yield* Effect.forEach(
+              this.getConnections<OrganizationAgentConnectionState>(),
+              (conn) =>
+                conn.state?.userId === input.userId
+                  ? Effect.try({
+                      try: () => {
+                        conn.close(4003, "Membership revoked");
+                      },
+                      catch: (error) => error,
+                    }).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          "conn.close failed during membership removal",
+                          { userId: input.userId, organizationId, error },
+                        ),
+                      ),
+                    )
+                  : Effect.void,
+              { discard: true },
+            );
+          }
+        }
+      }),
     );
   }
 
@@ -656,96 +726,6 @@ export class OrganizationAgent extends Agent {
     );
   }
 }
-
-/**
- * Shared implementation for {@link OrganizationAgent.syncMembership} and
- * {@link OrganizationAgent.onFinalizeMembershipSync}.
- *
- * Reads the member's current state from D1 (authoritative) and aligns the
- * DO-local Member table accordingly. The `change` hint is validated against
- * D1 to guard against stale or reordered events:
- *
- * - `added` / `role_changed`: D1 must contain the member → upsert locally.
- * - `removed`: D1 must **not** contain the member → delete locally.
- *
- * If D1 contradicts the requested change the effect fails with
- * {@link OrganizationAgentError}, which causes queue retries when called
- * from `onFinalizeMembershipSync` and is safely caught when called from
- * `syncMembership`.
- */
-const syncMembershipImpl = Effect.fn("OrganizationAgent.syncMembership")(
-  function* (
-    caller: string,
-    agent: OrganizationAgent,
-    input: { userId: Domain.User["id"]; change: MembershipSyncChange },
-  ) {
-    const organizationId = yield* Schema.decodeUnknownEffect(
-      Domain.Organization.fields.id,
-    )(agent.name);
-    yield* Effect.logInfo(caller, {
-      organizationId,
-      userId: input.userId,
-      change: input.change,
-    });
-    const repository = yield* Repository;
-    const d1Member = yield* repository.getMemberByUserAndOrg({
-      userId: input.userId,
-      organizationId,
-    });
-    yield* Effect.logInfo(`${caller}.d1Check`, {
-      d1MemberFound: Option.isSome(d1Member),
-      change: input.change,
-    });
-    const repo = yield* OrganizationRepository;
-    switch (input.change) {
-      case "added":
-      case "role_changed": {
-        if (Option.isNone(d1Member))
-          return yield* new OrganizationAgentError({
-            message: `D1 has no member for userId=${input.userId} organizationId=${organizationId} (change=${input.change})`,
-          });
-        return yield* repo.upsertMember({
-          userId: input.userId,
-          role: d1Member.value.role,
-        });
-      }
-      case "removed": {
-        if (Option.isSome(d1Member))
-          return yield* new OrganizationAgentError({
-            message: `D1 still has member for userId=${input.userId} organizationId=${organizationId} (change=removed)`,
-          });
-        yield* repo.deleteMember(input.userId);
-        // connection.close() is full cleanup — no manual bookkeeping needed.
-        // PartyServer's InMemoryConnectionManager auto-deletes from its internal
-        // Map<id, Connection> via close/error event listeners, and in hibernation
-        // mode the platform handles tracking entirely. getConnections() also
-        // filters to readyState === OPEN, so closed connections are immediately
-        // invisible. Agent-level state lives in a WeakMap and is GC'd with the
-        // connection object.
-        yield* Effect.forEach(
-          agent.getConnections<OrganizationAgentConnectionState>(),
-          (conn) =>
-            conn.state?.userId === input.userId
-              ? Effect.try({
-                  try: () => {
-                    conn.close(4003, "Membership revoked");
-                  },
-                  catch: (error) => error,
-                }).pipe(
-                  Effect.catch((error) =>
-                    Effect.logWarning(
-                      "conn.close failed during membership removal",
-                      { userId: input.userId, organizationId, error },
-                    ),
-                  ),
-                )
-              : Effect.void,
-          { discard: true },
-        );
-      }
-    }
-  },
-);
 
 /**
  * Membership guard for the current agent invocation.

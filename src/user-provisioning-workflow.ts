@@ -102,22 +102,6 @@ const createOrganization = Effect.fn("userProvisioning.createOrganization")(
   },
 );
 
-const initializeActiveOrganizationForUserSessions = Effect.fn(
-  "userProvisioning.initializeActiveOrganizationForUserSessions",
-)(function* ({
-  userId,
-  organizationId,
-}: {
-  userId: Domain.User["id"];
-  organizationId: Domain.Organization["id"];
-}) {
-  const repository = yield* Repository;
-  yield* repository.initializeActiveOrganizationForUserSessions({
-    userId,
-    organizationId,
-  });
-});
-
 export class UserProvisioningWorkflow extends WorkflowEntrypoint<
   Env,
   UserProvisioningWorkflowParams
@@ -143,19 +127,15 @@ export class UserProvisioningWorkflow extends WorkflowEntrypoint<
         yield* Effect.tryPromise(() =>
           step.do("initialize-active-organization-for-sessions", () =>
             runEffect(
-              initializeActiveOrganizationForUserSessions({
-                userId,
-                organizationId,
+              Effect.gen(function* () {
+                const repository = yield* Repository;
+                yield* repository.initializeActiveOrganizationForUserSessions({
+                  userId,
+                  organizationId,
+                });
               }),
             ),
           ),
-        );
-        yield* Effect.tryPromise(() =>
-          step.do("init-organization-agent", async () => {
-            const id = organizationAgent.idFromName(organizationId);
-            const stub = organizationAgent.get(id);
-            await stub.setName(organizationId);
-          }),
         );
         yield* Effect.tryPromise(() =>
           step.do("sync-membership", async () => {

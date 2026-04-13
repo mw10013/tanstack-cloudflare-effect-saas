@@ -303,7 +303,7 @@ layer(repositoryLayer)("createOrganization idempotency", (it) => {
 });
 
 layer(repositoryLayer)("workflow steps", (it) => {
-  it.effect("full workflow completes all 4 steps", () =>
+  it.effect("full workflow completes all 3 steps", () =>
     Effect.gen(function* () {
       yield* resetDb();
       const user = yield* seedUser();
@@ -326,7 +326,6 @@ layer(repositoryLayer)("workflow steps", (it) => {
           const orgId = await instance.waitForStepResult({ name: "create-organization" });
           expect(orgId).toBeDefined();
           await instance.waitForStepResult({ name: "initialize-active-organization-for-sessions" });
-          await instance.waitForStepResult({ name: "init-organization-agent" });
           await instance.waitForStepResult({ name: "sync-membership" });
           await instance.waitForStatus("complete");
 
