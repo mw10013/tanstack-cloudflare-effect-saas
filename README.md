@@ -111,7 +111,7 @@ Invoices are a vehicle to exercise Cloudflare primitives, Effect v4, and fault-t
   - Authenticated Gateway: on
     - Create authentication token: tces-ai-gateway-token-int
     - Remember for `AI_GATEWAY_TOKEN` environment variable.
-- Workers AI | REST API | Create a Workers AI API Token: tces-workers-ai-token
+- Workers AI | REST API | Create a Workers AI API Token: tces-workers-ai-api-token-int
   - Remember for `WORKERS_AI_API_TOKEN` environment variable.
 
 ### Google AI Studio (free api key)
@@ -182,8 +182,19 @@ pnpm test:e2e
   - Specify bucket(s) | Apply to specific buckets only: tces-r2-production
   - Remember keys for R2_S3_ACCESS_KEY_ID and R2_S3_SECRET_ACCESS_KEY secrrets.
 - pnpm exec wrangler r2 bucket notification create tces-r2-production --event-type object-create --queue tces-q-production
+- AI Gateway | Create Gateway
+  - Gateway ID: tces-ai-gateway-production
+  - Cache Responses: on
+    - Automatically purged cached requests after 1 Week
+  - Rate Limit Requests: only: on
+    - Limit requests when rate exceeds 25 requests over a 60 sliding period.
+  - Authenticated Gateway: on
+    - Create authentication token: tces-ai-gateway-token-production
+    - Remember for `AI_GATEWAY_TOKEN` secret.
+- Workers AI | REST API | Create a Workers AI API Token: tces-workers-ai-api-token-production
+  - Remember for `WORKERS_AI_API_TOKEN` secret.
 - pnpm exec wrangler secret put SECRET --env production
-  - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN,R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY, WORKERS_AI_API_TOKEN AI_GATEWAY_TOKEN, GOOGLE_AI_STUDIO_API_KEY
+  - BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ANALYTICS_TOKEN,R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY, AI_GATEWAY_TOKEN, WORKERS_AI_API_TOKEN  GOOGLE_AI_STUDIO_API_KEY
 - Workers & Pages Settings: tces
   - Git repository: connect to git repo
   - Build configuration
