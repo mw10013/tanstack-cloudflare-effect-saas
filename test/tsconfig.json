@@ -2,6 +2,7 @@
   "extends": "../tsconfig.json",
   "include": [
     "./**/*.ts",
+    "./**/*.tsx",
     "./**/*.d.ts",
     "../worker-configuration.d.ts",
     "../src/routeTree.gen.ts"

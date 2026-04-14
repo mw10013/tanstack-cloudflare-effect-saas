@@ -94,7 +94,7 @@ Runtime providers the authenticated subtree installs (`src/routes/app.$organizat
 
 ### Tooling
 
-Dev deps include `vitest` 4.1.4 and `@vitest/browser-playwright` 4.1.4. Add `vitest-browser-react` at the same pin — it provides the `render()` helper that mounts React into the Vitest iframe and integrates with `vitest/browser`'s `page` locators.
+Dev deps include `vitest` 4.1.4, `@vitest/browser-playwright` 4.1.4, and `vitest-browser-react` 2.2.0 — the latter provides `render()` and integrates with `vitest/browser`'s `page` locators. (`vitest-browser-react` versions separately from `vitest`.)
 
 ### Fixtures
 
@@ -286,17 +286,13 @@ Target: message-handling logic in `src/lib/Activity.ts:3-30`. **Not a Browser Mo
 
 ## Practical Recommendation
 
-If you keep Browser Mode in this repo, budget two upfront costs:
+- Default to Pattern 1 (prop-driven subcomponents, fake router backing `Link`s only). Export prop-driven subcomponents from their route module as needed.
+- Reach for Pattern 2 when a route-wide test requires real `beforeLoad`/loader wiring. Use `Route.update({ ... })` to override the real `beforeLoad`/`loader` without hitting the network.
+- Mock `agents/react`'s `useAgent` when rendering any route under `/app/$organizationId` — its websocket won't connect from the iframe.
+- If a candidate needs neither a rendered component nor real browser APIs, it is integration.
+- If it needs real auth or multi-page flow, it is Playwright.
 
-1. Add `vitest-browser-react` (pinned to the `vitest` version) and create `test/browser/fixtures.ts` with the fakes above.
-2. Export the prop-driven subcomponents that are currently module-local (`AppSidebar` is first).
-
-Then:
-
-- Write Pattern 1 tests first (prop-driven subcomponents, fake router backing `Link`s only).
-- Reach for Pattern 2 when a route-wide test requires real `beforeLoad`/loader wiring.
-- If a candidate needs neither a rendered component nor real browser APIs, it is integration — not Browser Mode.
-- If a candidate needs real auth or multi-page flow, it is Playwright — not Browser Mode.
+Working examples live at `test/browser/app-sidebar.test.tsx` (Pattern 1) and `test/browser/organization-index.test.tsx` (Pattern 2).
 
 [^browser-api]: [`refs/vitest/docs/config/browser/api.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/config/browser/api.md#L1-L21)
 [^playwright-provider]: [`refs/vitest/docs/config/browser/playwright.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/config/browser/playwright.md#L1-L58) and [`refs/vitest/docs/config/browser/playwright.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/config/browser/playwright.md#L156-L163)

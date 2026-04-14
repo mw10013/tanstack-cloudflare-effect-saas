@@ -144,7 +144,7 @@ function RouteComponent() {
   );
 }
 
-function AppSidebar({
+export function AppSidebar({
   organization,
   organizations,
   user,
