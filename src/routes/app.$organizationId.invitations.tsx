@@ -198,7 +198,7 @@ export const invite = createServerFn({ method: "POST" })
       ),
   );
 
-function InviteForm({ organizationId }: { organizationId: string }) {
+export function InviteForm({ organizationId }: { organizationId: string }) {
   const router = useRouter();
   const isHydrated = useHydrated();
   const inviteServerFn = useServerFn(invite);
