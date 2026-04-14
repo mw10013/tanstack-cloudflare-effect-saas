@@ -2,261 +2,35 @@
 
 ## Bottom Line
 
-Vitest Browser Mode with `playwright()` means:
+Vitest Browser Mode with `playwright()`:
 
-- Vitest is still the test runner
+- Vitest is the test runner
 - Playwright is the browser provider Vitest uses to drive a real browser
-- your tests still use Vitest APIs like `test`, `expect`, `vi`, and `vitest/browser`
+- tests use Vitest APIs (`test`, `expect`, `vi`) plus `vitest/browser` locators
+- tests render components into an iframe served by Vitest's own Vite-powered browser server (default port `63315`)
 
-Standalone Playwright means:
+Standalone Playwright:
 
-- Playwright Test is both the runner and the browser automation layer
-- your tests use Playwright fixtures like `{ page }` from `@playwright/test`
-- the mental model is end-to-end test runner first, not unit/integration runner first
+- Playwright Test is runner and browser automation
+- tests use `@playwright/test` fixtures (`{ page }`)
+- mental model is end-to-end runner first
 
-That is the main distinction. Browser Mode is not "Playwright with a different import path". It is Vitest running browser tests, with Playwright plugged in underneath.
+Browser Mode is a component/integration runner with real browser semantics. It is not a miniature Playwright.
 
-## Execution Perspective
+## What Browser Mode Is For
 
-The easiest way to think about the three layers in this repo:
+One rule, applied consistently: **Browser Mode renders a React component into a real browser and asserts on its behavior.** That is the whole shape of the idiomatic test.
 
-- Playwright E2E: the test is a remote control running in Node
-- Vitest Browser Mode: the test body itself runs in a real browser page
-- Vitest integration: the test runs in Node and calls the worker directly with no browser
+- the component is the subject
+- its props, context providers, and mocks are the inputs
+- real DOM, real events, real browser APIs are the runtime
+- no real app server, no real auth, no cross-origin navigation
 
-The important question is not just "does it use Playwright?". The important question is: where does the test body execute?
-
-### Diagram: Playwright E2E Execution
-
-```mermaid
-flowchart TB
-  pw_test[Test code runs in Node]
-  pw_cfg[playwright.config webServer]
-  pw_browser[Real browser page]
-  app_http[App dev server pnpm dev]
-  pw_test -->|uses page fixture| pw_browser
-  pw_test -->|starts app server| pw_cfg
-  pw_cfg -->|command pnpm dev| app_http
-  pw_browser -->|HTTP to app| app_http
-```
-
-### Diagram: Browser Mode Execution
-
-```mermaid
-flowchart TB
-  bm_runner[Vitest main process in Node]
-  bm_cfg[test/browser vitest config]
-  bm_iframe[Test code runs in browser iframe]
-  bm_setup[globalSetup starts pnpm dev]
-  bm_cmd[appFetch command runs on Node side]
-  app_http2[App dev server pnpm dev]
-  bm_runner -->|loads browser provider| bm_cfg
-  bm_cfg -->|serves test to browser| bm_iframe
-  bm_runner -->|runs once before tests| bm_setup
-  bm_setup -->|command pnpm dev| app_http2
-  bm_iframe -->|commands.appFetch| bm_cmd
-  bm_cmd -->|fetch to app| app_http2
-```
-
-### Diagram: Integration Execution
-
-```mermaid
-flowchart TB
-  vi_test[Test code runs in Node worker]
-  vi_cfg[test/integration vitest config]
-  vi_utils[TestUtils helpers]
-  vi_worker[src/test-worker exports src/worker]
-  vi_test -->|booted by| vi_cfg
-  vi_test -->|calls workerFetch or callServerFn| vi_utils
-  vi_utils -->|in-process fetch| vi_worker
-```
-
-### Diagram: Playwright E2E Request Path
-
-```mermaid
-sequenceDiagram
-  participant PWNode as Playwright test in Node
-  participant PWBrowser as Browser page
-  participant App as App server
-
-  PWNode->>PWBrowser: page.click fill goto
-  PWBrowser->>App: real HTTP requests
-  App-->>PWBrowser: HTML JSON redirects
-```
-
-### Diagram: Browser Mode Request Path
-
-```mermaid
-sequenceDiagram
-  participant BMNode as Vitest main process in Node
-  participant BMIframe as Browser Mode test in browser
-  participant BMCmd as appFetch command in Node
-  participant App as App server
-
-  BMNode->>BMIframe: serve test file into browser iframe
-  BMIframe->>BMCmd: commands.appFetch(url, init)
-  BMCmd->>App: fetch(url)
-  App-->>BMCmd: Response
-  BMCmd-->>BMIframe: Serialized response
-```
-
-### Diagram: Integration Request Path
-
-```mermaid
-sequenceDiagram
-  participant VINode as Integration test in Node
-  participant VIUtils as TestUtils
-  participant Worker as In-process worker fetch
-
-  VINode->>VIUtils: workerFetch or callServerFn
-  VIUtils->>Worker: exports.default.fetch(Request)
-  Worker-->>VIUtils: Response
-  VIUtils-->>VINode: result
-```
-
-### Playwright E2E Perspective
-
-From the test's point of view: "I am Node code controlling a browser."
-
-- the test body runs in Node in files like [`e2e/upload.spec.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/e2e/upload.spec.ts#L15-L76)
-- Playwright starts the app server via [`playwright.config.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/playwright.config.ts#L29-L34)
-- your app's client code runs in the real browser page
-- your app's server code runs in `pnpm dev`
-
-So when Playwright does this:
-
-```ts
-await page.goto("/login")
-await page.getByRole("button", { name: "Send magic link" }).click()
-```
-
-the test code is running in Node, but the browser performs the click and the browser sends a real HTTP request to the running app server.
-
-### Vitest Browser Mode Perspective
-
-From the test's point of view: "I am browser code, but I can ask Vitest's Node side to do things for me."
-
-- the test body runs in the browser in files like [`test/browser/login.test.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/login.test.ts#L39-L64)
-- Vitest configures Browser Mode in [`test/browser/vitest.config.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/vitest.config.ts#L33-L46)
-- `globalSetup` runs on the Node side in [`test/browser/global-setup.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/global-setup.ts#L34-L72)
-- custom browser commands also run on the Node side, for example [`test/browser/app-fetch-command.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/app-fetch-command.ts#L21-L48)
-
-That split is why Browser Mode feels weird at first. It has two execution contexts:
-
-- browser side: test body plus browser-importable app code
-- Node side: Vitest main process, setup, and commands
-
-In this repo, the browser-mode login test works like this:
-
-1. the test body runs in the browser
-2. it imports and calls `login(...)`
-3. it calls `commands.appFetch(...)`
-4. that command runs on the Node side
-5. the command does a real `fetch` to the running app server
-
-So Browser Mode is not "all browser" and not "all Node". It is split across both.
-
-### Vitest Integration Perspective
-
-From the test's point of view: "I am Node code calling the worker directly."
-
-- the test body runs in Node in files like [`test/integration/login.test.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/integration/login.test.ts#L9-L80)
-- the integration runtime is configured in [`test/integration/vitest.config.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/integration/vitest.config.ts#L22-L80)
-- the helper functions live in [`test/TestUtils.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/TestUtils.ts#L35-L103)
-- those helpers call `exports.default.fetch(...)` directly, which lands in [`src/worker.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/worker.ts#L172-L185)
-
-So integration tests have:
-
-- no browser
-- no real dev server
-- no real HTTP network hop
-- direct in-process calls into the worker module
-
-### Short Version
-
-If you want one sentence per layer:
-
-- Playwright E2E: pretend to be a user in a real browser against a real app server
-- Vitest Browser Mode: run the test itself in a real browser, with escape hatches back to Node
-- Vitest integration: call the worker and server-fn boundary directly from Node without a browser
-
-## What Vitest Actually Manages
-
-Vitest Browser Mode starts its own Vite-powered browser server for the test iframe and transformed modules.
-
-Vitest docs are explicit about this:
-
-> "Configure options for Vite server that serves code in the browser."
-
-That is [`browser.api`](../refs/vitest/docs/config/browser/api.md), whose default port is `63315`.[^browser-api]
-
-Vitest also documents that this is separate from your app dev server:
-
-> "Vitest assigns port `63315` to avoid conflicts with the development server, allowing you to run both in parallel."[^browser-guide]
-
-So yes: Browser Mode does use a local server, but it is Vitest's own browser server, not your TanStack Start app server.
-
-## What Your App Still Has To Manage
-
-If the test needs your full app HTTP boundary, worker entrypoint, auth routes, webhooks, or anything else outside the Vitest iframe, you still need to run that app separately.
-
-This repo already does that in [`test/browser/global-setup.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/global-setup.ts#L1-L56):
-
-```ts
-const devServer = spawn("pnpm", ["dev"], {
-  cwd: rootDir,
-  detached: true,
-  env: { ...process.env },
-  stdio: "ignore",
-});
-```
-
-Then it waits for the app to be reachable:
-
-```ts
-const ready = await fetch(new URL("/login", appUrl))
-  .then((response) => response.ok)
-  .catch(() => false);
-```
-
-So in this repo the split is:
-
-- Vitest manages the Browser Mode server and Playwright browser session
-- `globalSetup` manages the TanStack Start app server by spawning `pnpm dev`
-
-That matches Vitest's lifecycle docs: `globalSetup` runs once before test workers and can return teardown logic.[^global-setup]
-
-## Why This Repo Needs Both
-
-The test in [`test/browser/login.test.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/login.test.ts#L1-L58) does not only click DOM in the Vitest iframe. It imports the real client login helper and forces its network call through the running app boundary.
-
-That bridge is implemented with a custom Browser Mode command in [`test/browser/app-fetch-command.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/app-fetch-command.ts#L1-L42):
-
-```ts
-export const appFetch: BrowserCommand<
-  [url: string, init: SerializedRequestInit]
-> = async (_ctx, url, init) => {
-  const appUrl = process.env.VITEST_BROWSER_APP_URL;
-  const requestUrl = new URL(url, appUrl);
-  const response = await fetch(requestUrl, {
-    body: init.body ?? undefined,
-    headers: init.headers,
-    method: init.method,
-  });
-```
-
-So the current repo pattern is not "Vitest Browser Mode talks directly to the worker by magic". The real pattern is:
-
-1. Vitest runs the test in a real browser
-2. `globalSetup` starts the app server
-3. browser-side code calls a custom command
-4. that command performs server-side `fetch` against the running app
-
-That is more grounded than the previous worker-fetch section, so I removed the speculative version.
+If a test does not render a component, it is not a Browser Mode test. If a test needs to cross the app HTTP boundary, it is not a Browser Mode test. Those belong in integration or Playwright respectively.
 
 ## Picking The Right Layer
 
-The decision is primarily about **what is under test**, not **what tools are available**.
+The decision is about **what is under test**, not **what tools are available**.
 
 | If the test is primarily about...                           | Use                    |
 | ----------------------------------------------------------- | ---------------------- |
@@ -264,214 +38,266 @@ The decision is primarily about **what is under test**, not **what tools are ava
 | A UI component or route fragment on a single page           | **Vitest Browser Mode** |
 | A user journey that crosses pages, auth, or sessions        | **Playwright E2E**     |
 
-Concrete heuristics:
+Heuristics:
 
-- **If the test only calls server fns and asserts on responses, it is not a Browser Mode test.** Put it in `test/integration/`. A browser adds cost (real DOM, iframe, Playwright context) and buys nothing if nothing renders. The existing [`test/browser/login.test.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/login.test.ts#L1-L65) is borderline by this rule: it imports `login` and asserts on the server fn response. Unless the value is specifically "prove this runs from a browser origin", it belongs in integration.
-- **If the test navigates between routes, it is not a Browser Mode test.** Browser Mode reuses a single page per file and is designed to exercise a component or one rendered surface, not multi-page flows. Use Playwright.
-- **If the test renders a component and exercises real browser APIs** (`matchMedia`, clipboard, `File`, focus, keyboard, `scrollIntoView`, popover/dialog focus traps), Browser Mode is the right home — it gives you real DOM plus direct module imports and Vitest mocks.
-- **If the test needs auth cookies, multi-tab, downloads, redirects, or a cold session**, use Playwright. Browser Mode has no runner-managed app startup, no multi-context isolation per test, and no network interception at the runner level.
+- **If the test only calls server fns and asserts on responses, it is an integration test.** A browser buys nothing if nothing renders. Put it in `test/integration/`.
+- **If the test navigates between routes, it is a Playwright test.** Vitest Browser Mode reuses a single page per file (see the provider constraint below); multi-page flows are not its model.
+- **If the test renders a component and exercises real browser APIs** (`matchMedia`, clipboard, `File`, focus, keyboard, popover/dialog focus traps), Browser Mode is correct — it gives real DOM plus direct module imports and Vitest mocks.
+- **If the test needs real auth cookies, multi-tab, downloads, or cold sessions**, use Playwright.
 
-Vitest's own docs reinforce the single-page constraint:
+Vitest's own docs on the single-page constraint:
 
 > "Unlike Playwright test runner, Vitest opens a single page to run all tests that are defined in the same file. This means that isolation is restricted to a single test file, not to every individual test."[^playwright-provider]
 
 > "Vitest creates a new context for every test file"[^playwright-provider]
 
-So Browser Mode's sweet spot is deliberately narrow: **one page, one component or route fragment, real browser semantics, Vitest ergonomics**. Anything wider is Playwright; anything headless is integration.
+So Browser Mode's sweet spot is deliberately narrow: **one page, one component or route fragment, real browser semantics, Vitest ergonomics**.
 
-## When Playwright Wins
+## Execution Model
 
-This repo's [`playwright.config.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/playwright.config.ts#L1-L84) already shows the cleanest case for full-app tests:
+- **Playwright E2E**: test code runs in Node, drives a real browser against a real app server (`playwright.config.ts` `webServer` spawns `pnpm dev`).
+- **Vitest Browser Mode**: test code runs in a browser iframe served by Vitest's Vite-powered browser server on port `63315`.[^browser-api] It imports application source modules directly and renders components into the iframe.
+- **Vitest integration**: test code runs in Node, calls the worker's `fetch` in-process, no browser.
+
+The important question is: **where does the test body execute?** In Browser Mode the answer is "in a real browser", and the test's job is to render UI there.
+
+## Why Auth Is Handled With Mocks
+
+The app serves from one port (e.g. `:3100`), Vitest serves the test iframe from another (`:63315`). Session cookies are origin-bound and `better-auth.session_token` is HttpOnly — not settable from JavaScript. Top-level navigation to the app would unload the test iframe and terminate the test body.
+
+The idiomatic Browser Mode response is not a workaround: it is to **not need real auth at all**. The component is rendered with mocked context and providers. That is the same pattern component tests use in every React testing framework; real-auth UI coverage is Playwright's job.
+
+## Authenticating Browser Mode Tests
+
+Every interesting page in this repo is under `/app/$organizationId/...`. The strategy is to mock auth and route context and render the component directly.
+
+### What has to be satisfied
+
+Route context layers:
+
+| Route                       | Context added                                          | Source                                     |
+| --------------------------- | ------------------------------------------------------ | ------------------------------------------ |
+| `__root`                    | `{ queryClient: QueryClient }`                         | `createRootRouteWithContext`               |
+| `/app`                      | `{ sessionUser }`                                      | `beforeLoad` → server fn reads session     |
+| `/app/$organizationId`      | `{ organization, organizations, sessionUser }`         | `beforeLoad` → server fn + `listOrganizations` |
+
+Types to satisfy (from `src/lib/Auth.ts`):
+
+- `sessionUser`: `AuthInstance["$Infer"]["Session"]["user"]`
+- `organization` / `organizations[number]`: `AuthInstance["$Infer"]["Organization"]`
+
+Runtime providers the authenticated subtree installs (`src/routes/app.$organizationId.tsx:123-144`):
+
+- `OrganizationAgentProvider` — supplies `{ call, stub, ready, identified }` from `useAgent()` (websocket to a Cloudflare Durable Object via `agents/react`). Tests provide a fake value; the real one will never connect from the iframe.
+- `SidebarProvider` — state-only, safe to use as-is.
+- `QueryClientProvider` — tests use a fresh `QueryClient` with retry disabled.
+
+### Tooling
+
+Dev deps include `vitest` 4.1.4 and `@vitest/browser-playwright` 4.1.4. Add `vitest-browser-react` at the same pin — it provides the `render()` helper that mounts React into the Vitest iframe and integrates with `vitest/browser`'s `page` locators.
+
+### Fixtures
+
+Drop these into `test/browser/fixtures.ts`:
 
 ```ts
-webServer: {
-  command: "pnpm dev",
-  url: `http://localhost:${process.env.PORT}`,
-  reuseExistingServer: !process.env.CI,
-  stdout: "pipe",
-},
+import type { AuthInstance } from "@/lib/Auth";
+
+export const fakeOrg: AuthInstance["$Infer"]["Organization"] = {
+  id: "org_test",
+  name: "Test Org",
+  slug: "test-org",
+  logo: null,
+  metadata: null,
+  createdAt: new Date("2026-01-01"),
+};
+
+export const fakeUser: AuthInstance["$Infer"]["Session"]["user"] = {
+  id: "user_test",
+  email: "u@u.com",
+  name: "Test User",
+  emailVerified: true,
+  image: null,
+  role: "user",
+  createdAt: new Date("2026-01-01"),
+  updatedAt: new Date("2026-01-01"),
+};
+
+export const fakeAppContext = {
+  organization: fakeOrg,
+  organizations: [fakeOrg],
+  sessionUser: fakeUser,
+};
+
+export const fakeAgent = {
+  call: async () => undefined,
+  stub: {} as never,
+  ready: true,
+  identified: true,
+};
 ```
 
-That means Playwright Test can own app startup for normal end-to-end tests. If the goal is "open the app and drive the real product", Playwright is usually the simpler choice.
+### Three patterns, ranked
+
+**Pattern 1 — Prop-driven subcomponent (preferred).** Many components already take their auth/org data as props. `AppSidebar` (`src/routes/app.$organizationId.tsx:147-263`) takes `{ organization, organizations, user }` and has no Route hooks. Render it wrapped in `SidebarProvider` + a mocked `OrganizationAgentProvider` + a router stub (needed only to back `Link` and `useMatchRoute`). This is the default pattern.
+
+**Pattern 2 — Test router with stubbed `beforeLoad`.** For components that call `Route.useRouteContext()`, `Route.useLoaderData()`, or `Route.useParams()`, those hooks are bound to the module-level `Route` export and require a router. Build one using the real `routeTree` and `createMemoryHistory({ initialEntries: ["/app/org_test/invoices"] })`, and use `vi.mock()` to replace server fn modules so `beforeLoad` returns fake context without network I/O. Heavier; reserve for tests where the real wiring is the point.
+
+**Pattern 3 — Refactor to accept context as props.** When a page is thin and only uses Route hooks to pull context/params, extract a prop-driven inner component and pass props from the route shell. Converts a Pattern 2 test into a Pattern 1 test. Do this opportunistically.
+
+### Worked example — Pattern 1
+
+```tsx
+// test/browser/app-sidebar.test.tsx
+import { render } from "vitest-browser-react";
+import { page } from "vitest/browser";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider, createRouter, createMemoryHistory } from "@tanstack/react-router";
+import { describe, expect, it } from "vitest";
+
+import { routeTree } from "@/routeTree.gen";
+import { OrganizationAgentProvider } from "@/lib/OrganizationAgentContext";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/routes/app.$organizationId"; // export it from the module
+import { fakeAgent, fakeOrg, fakeUser } from "./fixtures";
+
+const renderSidebar = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({
+      initialEntries: ["/app/org_test/invoices"],
+    }),
+    context: { queryClient },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router}>
+        <OrganizationAgentProvider value={fakeAgent}>
+          <SidebarProvider>
+            <AppSidebar
+              organization={fakeOrg}
+              organizations={[fakeOrg]}
+              user={fakeUser}
+            />
+          </SidebarProvider>
+        </OrganizationAgentProvider>
+      </RouterProvider>
+    </QueryClientProvider>,
+  );
+};
+
+describe("AppSidebar", () => {
+  it("marks the invoices item active on /invoices", async () => {
+    renderSidebar();
+    const invoices = page.getByRole("link", { name: "Invoices" });
+    await expect.element(invoices).toHaveAttribute("data-status", "active");
+  });
+});
+```
+
+Notes:
+
+- `AppSidebar` is currently module-local in `src/routes/app.$organizationId.tsx`. A one-line `export` is required.
+- `RouterProvider` is present only to back `Link` and `useMatchRoute` inside the sidebar — the authenticated route subtree is not mounted, so `beforeLoad` never runs.
+- `OrganizationAgentProvider` is fed a fake; no Durable Object connection is attempted.
+
+### Worked example — Pattern 2
+
+For a whole route that must exercise the real `beforeLoad`/loader wiring, mock the server fn modules:
+
+```ts
+vi.mock("@/routes/app", async (orig) => {
+  const actual = await orig<typeof import("@/routes/app")>();
+  return {
+    ...actual,
+    Route: {
+      ...actual.Route,
+      options: { ...actual.Route.options, beforeLoad: () => ({ sessionUser: fakeUser }) },
+    },
+  };
+});
+vi.mock("@/routes/app.$organizationId", async (orig) => {
+  const actual = await orig<typeof import("@/routes/app.$organizationId")>();
+  return {
+    ...actual,
+    Route: {
+      ...actual.Route,
+      options: {
+        ...actual.Route.options,
+        beforeLoad: () => ({
+          organization: fakeOrg,
+          organizations: [fakeOrg],
+          sessionUser: fakeUser,
+        }),
+      },
+    },
+  };
+});
+```
+
+Then build the router against the real `routeTree` and mock any additional server fns the leaf route's loader calls.
 
 ## Sidecar Processes
 
-Neither Vitest Browser Mode nor Playwright's `webServer` manage sidecar processes (e.g. `stripe listen`) as a first-class concern. A sidecar is any auxiliary process the test depends on beyond the app server itself — webhook forwarders, queue workers, external emulators. They must be started separately (manual terminal, `globalSetup` spawn, or a process manager wrapping the runner) and are out of scope for this document.
+Neither Vitest Browser Mode nor Playwright's `webServer` manage sidecar processes (e.g. `stripe listen`) as a first-class concern. A sidecar is any auxiliary process the test depends on beyond the app itself — webhook forwarders, queue workers, external emulators. They must be started separately (manual terminal, `globalSetup` spawn, or a process manager wrapping the runner) and are out of scope for this document. Idiomatic Browser Mode tests don't need sidecars because they don't hit the app server.
 
-## Coverage Gaps In This Repo
+## Candidate Tests In This Repo
 
-Current Playwright coverage is mostly full-flow product behavior:
-
-- invoice CRUD and upload in `e2e/new-invoice.spec.ts`, `e2e/edit-invoice.spec.ts`, `e2e/delete-invoice.spec.ts`, and `e2e/upload.spec.ts`
-- invitation flows in `e2e/invite.spec.ts`
-- billing and Stripe flows in `e2e/stripe.spec.ts`
-- cross-session org authorization in `e2e/organization-agent-authorization.spec.ts`
-
-Current integration coverage is mostly worker, repository, queue, workflow, and server-fn behavior:
-
-- login/session flow in `test/integration/login.test.ts`
-- invoice RPC/upload workflow in `test/integration/invoice-crud.test.ts` and `test/integration/upload-invoice.test.ts`
-- org authorization in `test/integration/organization-agent-authorization.test.ts`
-- repository and provisioning behavior in `test/integration/*.test.ts`
-
-What is thin today is the middle layer: client-heavy behavior that depends on real browser APIs, real focus and keyboard handling, real file and clipboard behavior, or Base UI popover/dialog behavior, but does not justify a full end-to-end flow. That is the strongest case for Browser Mode here.[^component-testing]
-
-## Strong Browser Mode Candidates
+Client-heavy behavior that depends on real browser APIs, real focus and keyboard handling, or Base UI popover/dialog behavior — but doesn't justify a full end-to-end flow — is the sweet spot.[^component-testing]
 
 ### 1. Sidebar keyboard and responsive behavior
 
-Best target:
+Targets: `src/components/ui/sidebar.tsx:26-108`, `src/hooks/use-mobile.ts:3-20`. Pattern 1.
 
-- [`src/components/ui/sidebar.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/components/ui/sidebar.tsx#L26-L108)
-- [`src/hooks/use-mobile.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/hooks/use-mobile.ts#L3-L20)
+Why Browser Mode: depends on `window.matchMedia`, `window.innerWidth`, `document.cookie`, real keyboard events. Desktop and mobile paths diverge. Reusable UI infrastructure, not a journey.
 
-Why it is a good Browser Mode test:
-
-- it depends on `window.matchMedia`, `window.innerWidth`, `document.cookie`, and real keyboard events
-- desktop and mobile paths intentionally diverge: desktop toggles collapsed state, mobile opens a sheet
-- it is reusable UI infrastructure used by the authenticated app shell, not a single user journey
-
-Why it does not fit the other layers:
-
-- integration tests cannot realistically exercise `matchMedia`, browser key handling, or cookie writes
-- Playwright could cover it, but it would be an expensive, layout-fragile E2E for a UI primitive
-
-High-value assertions:
-
-- `Ctrl+B` or `Cmd+B` toggles the sidebar and writes `sidebar_state` cookie
-- desktop toggle changes `data-state` between `expanded` and `collapsed`
-- mobile toggle opens the sheet path instead of the desktop collapse path
+High-value assertions: `Ctrl+B`/`Cmd+B` toggles and writes `sidebar_state` cookie; desktop toggle flips `data-state`; mobile toggle opens the sheet path.
 
 ### 2. Invoice list browser-only micro-interactions
 
-Best target:
+Targets: `src/routes/app.$organizationId.invoices.index.tsx:122-207` and `:629-664`. Pattern 3 refactor (extract list UI) → Pattern 1; or Pattern 2 with mocked RPC.
 
-- [`src/routes/app.$organizationId.invoices.index.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/app.%24organizationId.invoices.index.tsx#L122-L207)
-- [`src/routes/app.$organizationId.invoices.index.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/app.%24organizationId.invoices.index.tsx#L629-L664)
+Why Browser Mode: `File`, `arrayBuffer`, `navigator.clipboard.writeText`, `setTimeout`, non-trivial post-upload client logic (clear input, store pending id, invalidate, auto-select on refresh).
 
-Why it is a good Browser Mode test:
-
-- it uses real browser-only APIs: `File`, `arrayBuffer`, `navigator.clipboard.writeText`, and `setTimeout`
-- it has non-trivial client logic around upload success: clear file input, store pending invoice id, invalidate route, then auto-select once the refreshed invoice exists
-
-Why it does not fit the other layers:
-
-- integration already covers the upload RPC and workflow, but not file input encoding, clipboard, or post-invalidate selection behavior
-- Playwright already covers full upload happy path, but that path is dominated by app/server workflow and would not isolate these client regressions well
-
-High-value assertions:
-
-- selecting a `File` causes the mutation to receive correct `fileName`, `contentType`, and base64 payload
-- successful upload clears the file input
-- after invalidate and refreshed loader data, the new invoice becomes selected automatically
-- clicking `Copy JSON` writes to the clipboard, changes the label to `Copied`, then resets after 2 seconds
+High-value assertions: `File` selection produces correct `fileName`/`contentType`/base64 payload; successful upload clears the file input; post-invalidate the new invoice auto-selects; `Copy JSON` writes clipboard, flips label to `Copied`, resets after 2 seconds.
 
 ### 3. Invitations form validation and role select behavior
 
-Best target:
+Target: `src/routes/app.$organizationId.invitations.tsx:201-320`. Pattern 3 refactor → Pattern 1, or Pattern 2.
 
-- [`src/routes/app.$organizationId.invitations.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/app.%24organizationId.invitations.tsx#L201-L320)
+Why Browser Mode: TanStack Form client validation on transformed comma-separated email input, plus Base UI select/popover keyboard interaction.
 
-Why it is a good Browser Mode test:
-
-- this route combines TanStack Form client validation with Base UI select/popover interaction
-- the input accepts comma-separated emails and validates transformed data against schema rules
-- the role picker is a real interactive select, not a plain `<select>`
-
-Why it does not fit the other layers:
-
-- integration tests can validate the `invite` server fn, but not client-side field errors, `canSubmit`, or select keyboard behavior
-- Playwright invite E2E already covers happy-path invitation flows; malformed email lists and select interaction details are too narrow for that layer
-
-High-value assertions:
-
-- invalid comma-separated emails show field errors before submit
-- more than 10 emails is rejected client-side
-- keyboard interaction can open the role select and choose `Admin`
-- successful submit resets the form and invalidates the route
+High-value assertions: invalid comma-separated emails show field errors; >10 emails is rejected client-side; keyboard can open the role select and pick `Admin`; submit resets form and invalidates the route.
 
 ### 4. Admin search and dialog interaction
 
-Best target:
+Targets: `src/components/ui/input-group.tsx:46-64`, `src/routes/admin.users.tsx:156-199` and `:390-430`, `src/routes/admin.sessions.tsx:72-111`. Pattern 1 for the input group; Pattern 2 for admin routes.
 
-- [`src/components/ui/input-group.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/components/ui/input-group.tsx#L46-L64)
-- [`src/routes/admin.users.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/admin.users.tsx#L156-L199)
-- [`src/routes/admin.users.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/admin.users.tsx#L390-L430)
-- [`src/routes/admin.sessions.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/admin.sessions.tsx#L72-L111)
+Why Browser Mode: click-to-focus on addon; form submit resets `page` in router search params; dropdown → dialog focus flow.
 
-Why it is a good Browser Mode test:
-
-- the search input group has explicit click-to-focus behavior on the addon
-- the admin users page mixes form submission, router search params, dropdown menus, and dialog state reset
-- these are real browser interaction details, but not core end-to-end product flows
-
-Why it does not fit the other layers:
-
-- integration tests would only prove repository filtering, not the client interaction contract
-- Playwright could test this, but admin search and modal micro-behavior would be noisy and low-signal as full E2E coverage
-
-High-value assertions:
-
-- clicking the search icon focuses the input
-- submitting a filter resets `page` to `1` while preserving the filter string in route state
-- opening Ban dialog, typing a reason, closing, and reopening resets the field as intended
-- dropdown-menu -> dialog flow works with keyboard and focus
+High-value assertions: clicking the search icon focuses the input; submit preserves filter and resets `page=1`; reopening Ban dialog resets the field.
 
 ### 5. Live invoice invalidation from agent messages
 
-Best target:
-
-- [`src/routes/app.$organizationId.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/app.%24organizationId.tsx#L96-L121)
-- [`src/lib/Activity.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/lib/Activity.ts#L3-L30)
-
-Why it is a good Browser Mode test:
-
-- it is pure client runtime behavior: decode websocket message, decide whether to invalidate, refresh the invoice route
-- it is important to user experience because invoice state changes are async and arrive out-of-band
-
-Why it does not fit the other layers:
-
-- integration tests prove the backend events and authorization rules, but not that the browser reacts correctly to activity messages
-- Playwright could cover it with two pages and real websocket timing, but that would be slow and brittle relative to the logic under test
-
-High-value assertions:
-
-- `invoice.created`, `invoice.uploaded`, `invoice.extraction.completed`, and `invoice.extraction.failed` trigger invoice-route invalidation
-- `invoice.extraction.progress` does not invalidate
-- malformed events are ignored safely
-
-This one may deserve a tiny extraction of the message-handling logic if you want it to be easy to test in isolation.
-
-## Secondary Candidates
-
-These are useful, but weaker than the list above:
-
-- pricing annual toggle in [`src/routes/_mkt.pricing.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/_mkt.pricing.tsx#L131-L228): good for isolating monthly/annual toggle and lookup-key selection without running Stripe, but lower leverage than sidebar/invoice/invitation coverage because Stripe E2E already exercises the path indirectly
-- members role select in [`src/routes/app.$organizationId.members.tsx`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/src/routes/app.%24organizationId.members.tsx#L286-L331): useful for Base UI select behavior and optimistic invalidation, but more redundant with existing invitation/authorization E2E and integration coverage
+Target: message-handling logic in `src/lib/Activity.ts:3-30`. **Not a Browser Mode test.** Pure data logic — `decodeActivityMessage` + `shouldInvalidateForInvoice` are unit-testable in integration without a browser. The `useAgent` wiring in the route component is glue that Playwright would cover implicitly if it mattered.
 
 ## Practical Recommendation
 
-If you keep Browser Mode in this repo, the most compelling use is not another full route journey. It is a small set of browser-real component or route-fragment tests around:
+If you keep Browser Mode in this repo, budget two upfront costs:
 
-1. sidebar responsive and keyboard behavior
-2. invoice list clipboard and file-input behavior
-3. invitations form validation and select behavior
-4. admin filter and dialog interaction
-5. live invoice invalidation from agent messages
+1. Add `vitest-browser-react` (pinned to the `vitest` version) and create `test/browser/fixtures.ts` with the fakes above.
+2. Export the prop-driven subcomponents that are currently module-local (`AppSidebar` is first).
 
-That gives coverage where Playwright E2E is too heavy and Vitest integration is too server-focused.
+Then:
 
-## Recommendation For This Repo
-
-Given the repo shape and your decision to standardize on Playwright:
-
-- use Playwright for end-to-end coverage of the running app
-- keep Vitest Browser Mode only for cases where real browser execution matters but direct module imports and Vitest ergonomics still buy you something
-
-The existing browser test in [`test/browser/login.test.ts`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/test/browser/login.test.ts#L1-L65) is a borderline case: it runs client code in a real browser and crosses the app HTTP boundary, but it renders no UI and asserts only on the server fn response. Under the heuristics above, it is closer to an integration test with extra ceremony than a true Browser Mode test. Keep it only if the "from a browser origin" property is load-bearing; otherwise move it to `test/integration/`.
+- Write Pattern 1 tests first (prop-driven subcomponents, fake router backing `Link`s only).
+- Reach for Pattern 2 when a route-wide test requires real `beforeLoad`/loader wiring.
+- If a candidate needs neither a rendered component nor real browser APIs, it is integration — not Browser Mode.
+- If a candidate needs real auth or multi-page flow, it is Playwright — not Browser Mode.
 
 [^browser-api]: [`refs/vitest/docs/config/browser/api.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/config/browser/api.md#L1-L21)
-[^browser-guide]: [`refs/vitest/docs/guide/browser/index.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/guide/browser/index.md#L92-L123)
-[^global-setup]: [`refs/vitest/docs/config/globalsetup.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/config/globalsetup.md#L1-L41)
 [^playwright-provider]: [`refs/vitest/docs/config/browser/playwright.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/config/browser/playwright.md#L1-L58) and [`refs/vitest/docs/config/browser/playwright.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/config/browser/playwright.md#L156-L163)
 [^component-testing]: [`refs/vitest/docs/guide/browser/component-testing.md`](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-saas/refs/vitest/docs/guide/browser/component-testing.md#L1-L56)

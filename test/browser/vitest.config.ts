@@ -7,8 +7,6 @@ import { playwright } from "@vitest/browser-playwright";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { defineConfig } from "vitest/config";
 
-import { appFetch } from "./app-fetch-command";
-
 const rootDir = path.resolve(import.meta.dirname, "../..");
 const headless = process.env.VITEST_BROWSER_HEADLESS !== "false";
 
@@ -31,17 +29,13 @@ export default defineConfig({
     },
   },
   test: {
-    globalSetup: ["test/browser/global-setup.ts"],
     browser: {
-      commands: {
-        appFetch,
-      },
       enabled: true,
       headless,
       instances: [{ browser: "chromium" }],
       provider: playwright(),
     },
-    include: ["test/browser/**/*.test.ts"],
+    include: ["test/browser/**/*.test.{ts,tsx}"],
     testTimeout: 30000,
   },
 });
