@@ -21,7 +21,7 @@ import {
   assertAgentRpcSuccess,
   callAgentRpc,
   callServerFn,
-  login,
+  loginUser,
   workerFetch,
 } from "../TestUtils";
 
@@ -156,8 +156,8 @@ layer(configLayer, { excludeTestServices: true })(
         const ownerEmail = `int-auth-owner-${crypto.randomUUID()}@test.com`;
         const memberEmail = `int-auth-member-${crypto.randomUUID()}@test.com`;
 
-        const owner = yield* login(ownerEmail);
-        const member = yield* login(memberEmail);
+        const owner = yield* loginUser(ownerEmail);
+        const member = yield* loginUser(memberEmail);
 
         yield* inviteMember({
           ownerSessionCookie: owner.sessionCookie,
@@ -237,8 +237,8 @@ layer(configLayer, { excludeTestServices: true })(
         const outsiderEmail =
           `int-auth-never-outsider-${crypto.randomUUID()}@test.com`;
 
-        const owner = yield* login(ownerEmail);
-        const outsider = yield* login(outsiderEmail);
+        const owner = yield* loginUser(ownerEmail);
+        const outsider = yield* loginUser(outsiderEmail);
 
         const response = yield* workerFetch(
           `http://w/agents/organization-agent/${owner.organizationId}`,
@@ -260,8 +260,8 @@ layer(configLayer, { excludeTestServices: true })(
         const ownerEmail = `int-auth-removed-owner-${crypto.randomUUID()}@test.com`;
         const memberEmail = `int-auth-removed-member-${crypto.randomUUID()}@test.com`;
 
-        const owner = yield* login(ownerEmail);
-        const member = yield* login(memberEmail);
+        const owner = yield* loginUser(ownerEmail);
+        const member = yield* loginUser(memberEmail);
 
         yield* inviteMember({
           ownerSessionCookie: owner.sessionCookie,

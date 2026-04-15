@@ -16,7 +16,7 @@ import {
   callServerFn,
   drainAgentAlarms,
   getOrganizationAgentStub,
-  login,
+  loginUser,
   pollInvoiceStatus,
 } from "../TestUtils";
 
@@ -82,7 +82,7 @@ layer(configLayer, { excludeTestServices: true })(
       "deleteInvoice schedules a finalization alarm that removes the R2 object",
       () =>
         Effect.gen(function* () {
-          const { sessionCookie, organizationId } = yield* login(
+          const { sessionCookie, organizationId } = yield* loginUser(
             "delete-alarm-happy@test.com",
           );
           const ws = yield* agentWebSocket(organizationId, sessionCookie);
@@ -150,7 +150,7 @@ layer(configLayer, { excludeTestServices: true })(
       "finalization alarm is idempotent when the R2 object is already gone",
       () =>
         Effect.gen(function* () {
-          const { sessionCookie, organizationId } = yield* login(
+          const { sessionCookie, organizationId } = yield* loginUser(
             "delete-alarm-idempotent@test.com",
           );
           const ws = yield* agentWebSocket(organizationId, sessionCookie);
@@ -213,7 +213,7 @@ layer(configLayer, { excludeTestServices: true })(
       "deleteInvoice on a nonexistent id schedules nothing",
       () =>
         Effect.gen(function* () {
-          const { sessionCookie, organizationId } = yield* login(
+          const { sessionCookie, organizationId } = yield* loginUser(
             "delete-alarm-noop@test.com",
           );
           const ws = yield* agentWebSocket(organizationId, sessionCookie);

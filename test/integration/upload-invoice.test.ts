@@ -12,7 +12,7 @@ import {
   assertAgentRpcSuccess,
   callAgentRpc,
   workerFetch,
-  login,
+  loginUser,
   pollInvoiceStatus,
 } from "../TestUtils";
 
@@ -33,7 +33,7 @@ const configLayer = Layer.succeedContext(
 layer(configLayer, { excludeTestServices: true })("uploadInvoice", (it) => {
   it.effect("upload → queue → workflow → ready invoice", () =>
     Effect.gen(function*() {
-      const { sessionCookie, organizationId } = yield* login("upload@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("upload@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const uploadResult = yield* callAgentRpc(ws, "uploadInvoice", [
@@ -63,7 +63,7 @@ layer(configLayer, { excludeTestServices: true })("uploadInvoice", (it) => {
 
   it.effect("rejects invalid content type", () =>
     Effect.gen(function*() {
-      const { sessionCookie, organizationId } = yield* login("invalid-type@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("invalid-type@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const result = yield* callAgentRpc(ws, "uploadInvoice", [
@@ -80,7 +80,7 @@ layer(configLayer, { excludeTestServices: true })("uploadInvoice", (it) => {
 
   it.effect("rejects base64 exceeding size limit", () =>
     Effect.gen(function*() {
-      const { sessionCookie, organizationId } = yield* login("oversize@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("oversize@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const maxBase64Size = Math.ceil((10_000_000 * 4) / 3) + 4;
@@ -100,7 +100,7 @@ layer(configLayer, { excludeTestServices: true })("uploadInvoice", (it) => {
 
   it.effect("enforces invoice limit", () =>
     Effect.gen(function*() {
-      const { sessionCookie, organizationId } = yield* login("invoice-limit@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("invoice-limit@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const tinyPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
