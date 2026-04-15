@@ -47,12 +47,11 @@ Downloaded source code of libraries are in `refs/` for reference.
 pnpm dev                # Start dev server (see Port Configuration above)
 pnpm typecheck          # TypeScript type checking (includes wrangler types generation)
 pnpm lint               # Run ESLint
-pnpm test               # Run all tests with Vitest. We only have d1-adapter tests so not that useful yet.
+pnpm test               # Run all tests with Vitest.
 npm run test:e2e --     # Playwright via npm (uses pnpm exec in script); pass args after -- and may be helpful to use --trace on
 ```
 
-- Do not run `pnpm test:integration` since its tests are broken.
-- Run typecheck and lint after generating code.
+- Run typecheck and lint after generating code. Not necessary if just research.
 
 ## Server Log Monitoring
 

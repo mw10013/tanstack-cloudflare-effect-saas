@@ -110,7 +110,7 @@ export const Session = Schema.Struct({
   ipAddress: Schema.NullishOr(Schema.String),
   userAgent: Schema.NullishOr(Schema.String),
   userId: Schema.NonEmptyString.pipe(Schema.brand("UserId")),
-  impersonatedBy: Schema.UndefinedOr(
+  impersonatedBy: Schema.NullishOr(
     Schema.NonEmptyString.pipe(Schema.brand("UserId")),
   ),
   activeOrganizationId: Schema.NullishOr(
