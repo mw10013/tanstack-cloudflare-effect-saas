@@ -129,6 +129,40 @@ declare module "@tanstack/react-start" {
   }
 }
 
+/**
+ * Pre-upgrade/pre-request authorization gate for agent traffic routed by
+ * {@link routeAgentRequest}. Passed to partyserver as both `onBeforeConnect`
+ * (WS upgrade) and `onBeforeRequest` (non-WS HTTP to `/agents/*`). Fires at
+ * most once per incoming HTTP request — individual `@callable` RPC frames
+ * flow as WebSocket messages on an already-upgraded socket and never
+ * re-enter this handler (per-RPC membership is enforced inside the DO by
+ * `assertCallerMember`).
+ *
+ * Returning a `Response` short-circuits routing with that response; returning
+ * a `Request` forwards the (possibly rewritten) request to the agent.
+ *
+ * Checks, in order:
+ * 1. **Session** — reject unauthenticated callers with 401.
+ * 2. **Organization scope** — the agent instance name in the URL path
+ *    (`/agents/<binding>/<name>`) must equal the session's
+ *    `activeOrganizationId`. Prevents a signed-in user from addressing
+ *    another organization's agent by crafting the URL.
+ * 3. **D1 membership** — verify the session's user is still a member of
+ *    that organization in D1. This is the only membership gate at WS
+ *    upgrade time: the DO's `onConnect` trusts the header injected below
+ *    and defers membership enforcement to `assertCallerMember` on each
+ *    `@callable` invocation. Without this D1 check, a stale session whose
+ *    `activeOrganizationId` points at an org the user was removed from
+ *    could still open a socket (RPCs would then fail or the connection
+ *    would be closed by `syncMembership`, but the upgrade itself would
+ *    succeed).
+ *
+ * On success, forwards the request with an injected
+ * `x-organization-agent-user-id` header so the DO can populate
+ * `connection.state.userId` in `onConnect` without re-running
+ * `auth.getSession` (session resolution requires D1 + KV bindings wired
+ * through the app's Effect layers, which the DO does not reconstruct).
+ */
 const authorizeAgentRequest = Effect.fn("authorizeAgentRequest")(function* (
   request: Request,
 ) {
