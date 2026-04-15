@@ -70,11 +70,12 @@ export const callServerFn = Effect.fn("callServerFn")(function* <
   serverFn: ServerFn<TInputValidator, TResponse>;
   data: Parameters<ServerFn<TInputValidator, TResponse>>[0]["data"];
   headers?: HeadersInit;
-}): Effect.fn.Return<Awaited<TResponse>, Error> {
-  return yield* Effect.promise(() => {
-    if (!serverFn.serverFnMeta)
-      throw new Error("Missing serverFnMeta in integration test");
-    const clientRpc = createClientRpc(serverFn.serverFnMeta.id);
+}) {
+  return yield* Effect.tryPromise({
+    try: () => {
+      if (!serverFn.serverFnMeta)
+        throw new Error("Missing serverFnMeta in integration test");
+      const clientRpc = createClientRpc(serverFn.serverFnMeta.id);
     const fetchServerFn = (url: string, init?: RequestInit) => {
       const mergedHeaders = new Headers(init?.headers);
       if (headers) {
@@ -108,15 +109,13 @@ export const callServerFn = Effect.fn("callServerFn")(function* <
         }) as Promise<{ result: Awaited<TResponse>; error?: unknown }>,
     ).then((r) => {
       if (r.error) {
-        if (r.error instanceof Error) throw r.error;
-        throw new Error(
-          typeof r.error === "string"
-            ? r.error
-            : (JSON.stringify(r.error) ?? "Unknown server fn error"),
-        );
+        // oxlint-disable-next-line typescript-eslint/only-throw-error
+        throw r.error;
       }
       return r.result;
     });
+    },
+    catch: (error) => error,
   });
 });
 
