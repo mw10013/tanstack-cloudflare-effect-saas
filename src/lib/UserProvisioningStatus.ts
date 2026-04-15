@@ -25,7 +25,7 @@ export const getProvisioningStatusServerFn = createServerFn({ method: "GET" })
         const session = yield* auth
           .getSession(request.headers)
           .pipe(Effect.flatMap(Effect.fromOption));
-        const userId = yield* Schema.decodeUnknownEffect(Domain.User.fields.id)(session.user.id);
+        const userId = session.user.id;
         const env = yield* CloudflareEnv;
         const instance = yield* Effect.tryPromise(() =>
           env.USER_PROVISIONING_WORKFLOW.get(userId),

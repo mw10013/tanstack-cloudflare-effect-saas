@@ -51,12 +51,36 @@ export class Auth extends Context.Service<Auth>()("Auth", {
     const handler = Effect.fn("auth.handler")(function* (request: Request) {
       return yield* Effect.tryPromise(() => auth.handler(request));
     });
+    /**
+     * Resolves the current session from request headers and validates it into
+     * `Domain.User` / `Domain.Session`.
+     *
+     * `Domain.*` schemas decode D1 rows (encoded side: ints, ISO strings,
+     * plain strings) into the domain shape (decoded side: booleans, Dates,
+     * branded ids). Better Auth's `auth.api.getSession` returns the **decoded
+     * side already** — its adapter coerced D1 rows before we see them.
+     * Running `Schema.decodeUnknownEffect(Domain.User)` on that output would
+     * fail because the transforms expect the encoded shape as input.
+     *
+     * `Schema.toType(S)` derives a schema whose `Encoded === Type ===
+     * S["Type"]` — a validator over the decoded shape. It enforces that
+     * Better Auth's output actually matches `Domain.User` / `Domain.Session`
+     * (including branded ids) without re-running the D1 transforms.
+     */
     const getSession = Effect.fn("auth.getSession")(function* (
       headers: Headers,
     ) {
-      return Option.fromNullishOr(
-        yield* Effect.tryPromise(() => auth.api.getSession({ headers })),
+      const result = yield* Effect.tryPromise(() =>
+        auth.api.getSession({ headers }),
       );
+      if (!result) return Option.none();
+      const user = yield* Schema.decodeUnknownEffect(Schema.toType(Domain.User))(
+        result.user,
+      );
+      const session = yield* Schema.decodeUnknownEffect(
+        Schema.toType(Domain.Session),
+      )(result.session);
+      return Option.some({ user, session });
     });
 
     return {

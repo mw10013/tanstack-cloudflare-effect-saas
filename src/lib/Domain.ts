@@ -90,12 +90,12 @@ export const User = Schema.Struct({
   name: Schema.String,
   email: emailSchema,
   emailVerified: intToBoolean,
-  image: Schema.NullOr(Schema.String),
+  image: Schema.NullishOr(Schema.String),
   role: UserRole,
   banned: intToBoolean,
-  banReason: Schema.NullOr(Schema.String),
-  banExpires: Schema.NullOr(isoDatetimeToDate),
-  stripeCustomerId: Schema.NullOr(Schema.String),
+  banReason: Schema.NullishOr(Schema.String),
+  banExpires: Schema.NullishOr(isoDatetimeToDate),
+  stripeCustomerId: Schema.NullishOr(Schema.String),
   createdAt: isoDatetimeToDate,
   updatedAt: isoDatetimeToDate,
 });
@@ -107,13 +107,13 @@ export const Session = Schema.Struct({
   token: Schema.NonEmptyString,
   createdAt: isoDatetimeToDate,
   updatedAt: isoDatetimeToDate,
-  ipAddress: Schema.NullOr(Schema.String),
-  userAgent: Schema.NullOr(Schema.String),
+  ipAddress: Schema.NullishOr(Schema.String),
+  userAgent: Schema.NullishOr(Schema.String),
   userId: Schema.NonEmptyString.pipe(Schema.brand("UserId")),
-  impersonatedBy: Schema.NullOr(
+  impersonatedBy: Schema.UndefinedOr(
     Schema.NonEmptyString.pipe(Schema.brand("UserId")),
   ),
-  activeOrganizationId: Schema.NullOr(
+  activeOrganizationId: Schema.NullishOr(
     Schema.NonEmptyString.pipe(Schema.brand("OrganizationId")),
   ),
 });
