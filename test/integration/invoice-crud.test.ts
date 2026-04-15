@@ -2,6 +2,7 @@ import { Config, ConfigProvider, Effect, Layer, Schedule, Context } from "effect
 import * as Schema from "effect/Schema";
 import { layer } from "@effect/vitest";
 import { assertInclude } from "@effect/vitest/utils";
+import { isNotFound } from "@tanstack/react-router";
 import { env } from "cloudflare:workers";
 import { expect } from "vitest";
 
@@ -14,7 +15,7 @@ import {
   assertAgentRpcSuccess,
   callAgentRpc,
   callServerFn,
-  login,
+  loginUser,
 } from "../TestUtils";
 
 const InvoiceIdResult = Schema.Struct({
@@ -31,7 +32,7 @@ const configLayer = Layer.succeedContext(
 layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
   it.effect("creates a blank invoice and retrieves it", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-create@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-create@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const createResult = yield* callAgentRpc(ws, "createInvoice", []);
@@ -51,7 +52,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("getInvoices includes created invoice", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-list@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-list@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const createResult = yield* callAgentRpc(ws, "createInvoice", []);
@@ -66,20 +67,20 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
       expect(invoices.some((i) => i.id === invoiceId)).toBe(true);
     }));
 
-  it.effect("invoice detail loader returns undefined for non-existent id", () =>
+  it.effect("invoice detail loader fails with not-found for non-existent id", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-get-null@test.com");
-      const result = yield* callServerFn({
+      const { sessionCookie, organizationId } = yield* loginUser("crud-get-null@test.com");
+      const error = yield* Effect.flip(callServerFn({
         serverFn: getInvoiceLoaderData,
         data: { organizationId, invoiceId: "nonexistent-id" },
         headers: { Cookie: sessionCookie },
-      });
-      expect(result).toBeUndefined();
+      }));
+      expect(isNotFound(error)).toBe(true);
     }));
 
   it.effect("getInvoices returns empty for fresh user", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-empty@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-empty@test.com");
       const { invoices } = yield* callServerFn({
         serverFn: getInvoicesLoaderData,
         data: { organizationId },
@@ -90,7 +91,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("getInvoices orders by createdAt DESC", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-order@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-order@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const r1 = yield* callAgentRpc(ws, "createInvoice", []);
@@ -113,7 +114,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("updates invoice fields", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-update@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-update@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const createResult = yield* callAgentRpc(ws, "createInvoice", []);
@@ -167,7 +168,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("updates invoice with line items", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-items@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-items@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const createResult = yield* callAgentRpc(ws, "createInvoice", []);
@@ -216,7 +217,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("deletes an invoice", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-delete@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-delete@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const createResult = yield* callAgentRpc(ws, "createInvoice", []);
@@ -236,7 +237,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("getInvoices excludes deleted invoice", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-del-list@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-del-list@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const r1 = yield* callAgentRpc(ws, "createInvoice", []);
@@ -261,7 +262,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("delete is idempotent for non-existent id", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-del-noop@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-del-noop@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
 
       const result = yield* callAgentRpc(ws, "deleteInvoice", [{ invoiceId: "nonexistent-id" }]);
@@ -270,7 +271,7 @@ layer(configLayer, { excludeTestServices: true })("invoice-crud", (it) => {
 
   it.effect("createInvoice enforces INVOICE_LIMIT", () =>
     Effect.gen(function* () {
-      const { sessionCookie, organizationId } = yield* login("crud-limit@test.com");
+      const { sessionCookie, organizationId } = yield* loginUser("crud-limit@test.com");
       const ws = yield* agentWebSocket(organizationId, sessionCookie);
       const invoiceLimit = yield* Config.number("INVOICE_LIMIT");
 
